@@ -101,16 +101,17 @@ export default function EmotionPage() {
 
       // Insert into Supabase
       const { error: insertError } = await supabase
-        .from('articles')
+        .from('news_items')
         .insert(generatedItems.map(item => ({
           title: item.title,
           summary: item.summary,
           content: item.content,
           source: item.source,
-          category: item.emotion,
-          thumbnail_url: `https://image.pollinations.ai/prompt/${encodeURIComponent(item.imagePrompt)}?nologo=true&private=true&enhance=true`,
-          is_public: true,
-          views: 0
+          emotion: type,
+          image: `https://image.pollinations.ai/prompt/${encodeURIComponent(item.imagePrompt)}?nologo=true&private=true&enhance=true`,
+          category: "AI Generated",
+          views: 0,
+          saves: 0
         })));
 
       if (insertError) {

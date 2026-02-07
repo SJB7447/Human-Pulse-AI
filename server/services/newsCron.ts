@@ -49,7 +49,7 @@ async function processWithAI(title: string, snippet: string, country: string) {
     2. 입력된 '내용요약'이 짧더라도, 문맥을 추론하여 **3~4문단의 풍성한 한국어 기사 본문**으로 확장해서 작성해. (중요: 독자가 읽을 실제 기사 내용이어야 함)
     3. 문체는 객관적이지만 몰입감 있는 뉴스 어조를 사용해.
     4. 결과는 오직 JSON 형식으로만 출력해.
-
+    
     [JSON 출력 예시]
     {
       "emotion": "중립",
@@ -127,8 +127,7 @@ export async function runAutoNewsUpdate() {
                     views: 0,
                     saves: 0,
                     intensity: 50 + Math.floor(Math.random() * 40),
-                    is_published: true, // Auto-publish
-                    // createdAt is auto-handled by DB default
+                    // is_published: true, // Auto-publish
                 };
 
                 const { error } = await supabase.from('news_items').insert(newItem);
