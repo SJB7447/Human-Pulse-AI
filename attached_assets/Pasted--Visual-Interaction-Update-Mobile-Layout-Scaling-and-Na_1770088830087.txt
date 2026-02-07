@@ -1,0 +1,70 @@
+# Visual & Interaction Update: Mobile Layout, Scaling, and Navigation
+
+## Objective
+We need to finalize the 3D scene with three critical updates: fixing the mobile layout, emphasizing the Gray sphere, and improving the click navigation logic.
+
+Please implement the following changes in `Scene.jsx` and `EMOTION_CONFIG`.
+
+## 1. Interaction Logic: "Click to Focus, Click Again to Enter"
+Currently, the click interaction might be ambiguous. Let's make it strict.
+
+* **Interaction Flow:**
+    1.  **First Click:** The camera zooms in, and the sphere becomes "Active" (Focus Mode).
+    2.  **Second Click (on the same sphere):** If the user clicks the *already active* sphere, immediately navigate to the route (e.g., `/emotion/joy`).
+    3.  **Clicking Background:** Resets to "Idle Mode" (Zoom out).
+
+* **Code Logic:**
+    ```javascript
+    const handleSphereClick = (emotion) => {
+      if (activeEmotion === emotion.name) {
+        // Already active? -> Navigate
+        navigate(emotion.path);
+      } else {
+        // Not active? -> Set Active (Zoom In Animation)
+        setActiveEmotion(emotion.name);
+      }
+    };
+    ```
+
+---
+
+## 2. Mobile Responsiveness (Vertical Layout)
+The current pentagon layout overlaps on portrait screens. Implement a responsive check (e.g., `window.innerWidth < 768px`).
+
+### Coordinate Configuration
+Update `EMOTION_CONFIG` to support `positionDesktop` and `positionMobile`.
+
+* **Desktop (Pentagon):** Keep existing positions.
+* **Mobile (Vertical Zig-Zag):**
+    * Joy (Top): `[0, 2.5, 0]`
+    * Anger (Mid-Right): `[1.0, 1.0, 0]`
+    * Calm (Mid-Left): `[-1.0, 1.0, 0]`
+    * Sadness (Low-Right): `[0.6, -0.8, 0]`
+    * Fear (Low-Left): `[-0.6, -0.8, 0]`
+
+### Camera Adjustment
+* **Desktop Z:** `8`
+* **Mobile Z:** `10` or `11` (Zoom out to fit the taller vertical stack).
+
+---
+
+## 3. Visual Hierarchy: Larger Gray Sphere
+The **Gray Sphere (Fear/Neutral)** must be visually emphasized (larger/heavier).
+
+### Scaling Logic (Conditional Scale)
+Apply a scaling multiplier based on the emotion type.
+
+* **Desktop Scales:**
+    * Standard Spheres: `scale = 1.0`
+    * **Gray Sphere (Fear):** `scale = 1.3` (Visibly larger)
+
+* **Mobile Scales (Reduced overall):**
+    * Standard Spheres: `scale = 0.7`
+    * **Gray Sphere (Fear):** `scale = 0.9` (Still larger than others, but fits screen)
+
+---
+
+## 4. Implementation Request
+Please refactor `Scene.jsx` to:
+1.  Dynamic Position/Scale: Calculate values based on `isMobile` and `emotion.name` (for the Gray sphere).
+2.  Updated Click Handler: Implement the "Select vs Navigate" logic described in Section 1.

@@ -1,0 +1,73 @@
+[Context] 나는 'Human Pulse'라는 AI 기반 인터랙티브 뉴스 서비스를 만들고 있어. 디자인 레퍼런스는 https://follow.art/ 이며, 핵심은 Web 3D(Three.js)를 활용한 감정의 시각화야. 지금부터 아래 요구사항에 맞춰 React, Vite, Tailwind CSS, React Three Fiber (R3F) 기반의 프로젝트를 처음부터 구축해줘.
+
+[1. 기술 스택 & 환경 설정]
+
+Framework: React (Vite) + JavaScript
+
+Styling: Tailwind CSS (폰트는 Inter 또는 Pretendard, 배경은 #f8f9fa 미색 화이트)
+
+3D Library: @react-three/fiber, @react-three/drei, three
+
+Animation: framer-motion (UI용), react-spring (3D용)
+
+State Management: zustand (현재 선택된 감정 상태 및 애니메이션 단계 관리)
+
+[2. 핵심 기능: 3D Scene (Canvas)] 배경 전체를 차지하는 Canvas를 만들고 다음 요소들을 배치해줘.
+
+A. 메인 감정 구체 (5 Main Spheres)
+
+배치: 화면 중앙 (0,0,0)을 기준으로 반지름 1.3 정도의 좁은 오각형 형태로 옹기종기 모아줘. (너무 멀리 퍼지면 안 됨)
+
+재질: MeshDistortMaterial을 사용하여 심장처럼 천천히 두근거리는(Pulse) 느낌을 줘.
+
+색상 및 구성 (EMOTION_CONFIG):
+
+Joy (기쁨): #FFD700 (Yellow) / 위치: 중앙 상단
+
+
+Anger (분노/속보): #FF4D4D (Red) / 위치: 우측 상단 
+
+
+Sadness (슬픔/심층): #4D96FF (Blue) / 위치: 우측 하단 
+
+Fear (두려움): #8E44AD (Purple) / 위치: 좌측 하단
+
+
+Calm (평온/힐링): #2ECC71 (Green) / 위치: 좌측 상단 
+
+인터랙션: 구체에 마우스를 올리면(Hover) 살짝 커지고, 클릭하면 Active Mode로 진입.
+
+B. 배경 파티클 시스템 (Background Particles)
+
+초기 생성: 화면 전체 (x: -10~10, y: -10~10) 영역에 100개의 작은 물방울(Sphere)을 랜덤하게 흩뿌려줘.
+
+재질: MeshTransmissionMaterial (유리/물방울 질감).
+
+색상: 위 5가지 감정 색상 중 하나를 랜덤하게 할당.
+
+애니메이션 로직 (useFrame):
+
+Idle 상태: 그냥 배경에서 천천히 부유(Floating)함.
+
+Active 상태 (구체 클릭 시): 모든 파티클이 자신의 색상과 같은 메인 구체를 찾아 날아감.
+
+Sticking Effect: 파티클이 메인 구체 표면(반지름 거리)에 도착하면, 뚫고 들어가지 않고 표면에 자석처럼 달라붙어서 몽글몽글하게 움직여야 함. (절대 처음부터 붙어있으면 안 됨!)
+
+[3. UI 레이아웃 (Overlay)] 3D 캔버스 위에 올라가는 UI는 Glassmorphism(반투명 유리) 스타일로 심플하게 만들어줘.
+
+Center: 거대한 타이틀 "HUMAN PULSE". (Bold, Tracking-tight)
+
+Top-Right: [Login], [Sign Up] 버튼.
+
+
+Bottom-Right: 'Emotional Check' 플로팅 버튼 (클릭 시 채팅창 모달 팝업). 
+
+Bottom-Left: 아주 작고 흐릿하게 'Admin' 텍스트 링크.
+
+[4. 페이지 라우팅 & 전환]
+
+메인 구체를 클릭하고 파티클들이 다 모이면(약 1.5초 후), 카메라가 해당 구체로 Zoom-in 되면서 화면이 해당 감정 컬러로 가득 차게 해줘.
+
+그 후 /emotion/[type] 페이지(뉴스 리스트 화면)로 부드럽게 전환되도록 라우팅 구조를 잡아줘.
+
+[요약] 위 내용을 바탕으로 App.jsx, Scene.jsx, Particles.jsx, store.js 등 필요한 파일 구조를 잡고 코드를 작성해줘. 파티클이 자연스럽게 날아와서 붙는 '물리적 느낌' 구현이 제일 중요해.

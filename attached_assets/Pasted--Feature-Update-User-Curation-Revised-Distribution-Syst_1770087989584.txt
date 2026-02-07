@@ -1,0 +1,33 @@
+# Feature Update: User Curation & Revised Distribution System
+
+Please update the project requirements with these two specific changes regarding User Interaction and the Journalist Distribution workflow.
+
+## 1. New Feature for General Users: "Add My Insight" (User Curation)
+Empower general users to not just save articles, but **remix/annotate** them with their own thoughts.
+
+* **Trigger:** Add a **[Add Thought / Insight]** button to the Article Detail Modal (next to Save/Share).
+* **Interaction Flow:**
+    1.  Clicking the button opens an "Insight Editor" overlay.
+    2.  **Base Article:** The original article summary serves as the background context.
+    3.  **User Input:** A text area for the user to write their opinion, feelings, or summary (Limit: 300 chars).
+    4.  **Emotion Stamp:** User selects an emotion color that represents their *interpretation* of the article (can be different from the article's original color).
+* **Output:**
+    * Saves to **My Page > My Articles**.
+    * Displays as a **"Curated Card"** combining the original headline + user's comment.
+    * **Sharing:** When shared to social media, it shows the user's comment overlaid on the article cover.
+
+---
+
+## 2. Updated Journalist Portal: Distribution System (Platform Selection)
+Update the **"Distribution (Publishing)"** section in Phase 4. Remove the "Dong-A Ilbo" internal CMS option to focus on external social platforms for this MVP.
+
+* **Platform Selection (Checkboxes):**
+    * ✅ **Interactive Web Page:** Publish directly to Human Pulse service.
+    * ✅ **Instagram:** AI auto-generates a "Card News" image set (1080x1080).
+    * ✅ **YouTube:** AI auto-generates a "Shorts" video script or video file.
+    * ✅ **Threads:** AI auto-generates a text-based summary thread.
+    * *(Note: "Dong-A Ilbo" CMS integration is excluded).*
+* **AI SEO Assistant:**
+    * Once platforms are selected, display a **"Distribution Settings"** panel.
+    * **Auto-Tagging:** Generate platform-specific hashtags (e.g., `#HumanPulse #Healing` for Insta).
+    * **Title Optimization:** Suggest click-bait titles optimized for YouTube/Instagram algorithms.

@@ -1,0 +1,102 @@
+# Project: Human Pulse (Comprehensive Interactive News Platform)
+
+## 1. Project Overview & Vibe
+Build a **React + Vite** application with **Three.js (R3F)**.
+The core concept is **"Digital Healing & Emotional Balance."**
+* **Atmosphere:** Relaxing, Fluid, Glassmorphism, Dreamy Light.
+* **Core Tech:** React, Tailwind CSS, React Three Fiber, Zustand, Framer Motion, Recharts (for Admin).
+
+## 2. Design System (Strict Adherence)
+Apply these exact colors to Tailwind config and 3D materials.
+
+### Color Palette
+* **🔴 Anger (Coral Red):** `#f4606b`
+* **🟡 Joy (Yellow):** `#ffd150`
+* **🟢 Calm (Green):** `#88d84a`
+* **🔵 Sadness (Light Navy):** `#3f65ef`
+* **⚪ Fear/Neutral (Gray):** `#bababa`
+* **Sub Colors (Pastel):** `#ffc7ce`, `#f9e1a5`, `#b8f498`, `#bdcaef`, `#e5e5e5`
+* **Text:** Main(`#232221`), Sub(`#999898`), Disable(`#d6d6d6`)
+
+---
+
+## 3. Core Features & Implementation Guide
+
+### Phase 1: The Intro & 3D Scene (Landing Page)
+1.  **Intro Overlay:**
+    * Before showing the spheres, display a centering text: **"오늘 당신의 색은 어떤 색인가요?" (What is your color today?)"** with a slow fade-in/out animation.
+    * After 2 seconds, fade out text and reveal the 3D Scene.
+2.  **3D Main Spheres (5 Emotions):**
+    * **Material:** High-quality `MeshDistortMaterial` (Glossy, Liquid-like).
+    * **Interaction:**
+        * **Hover:** Show a floating label (HTML/Text) above the sphere indicating the Emotion Name.
+        * **Click:** Trigger 'Active Mode' (Camera Zoom-in).
+3.  **Particle System (Absorption Logic):**
+    * **Idle:** Particles float randomly.
+    * **Active (Click):** Particles fly towards their matching color sphere.
+    * **Absorption Effect:** As particles reach the sphere surface, animate their **Opacity from 1 to 0** (fade out) to simulate them being "absorbed" into the liquid sphere. Do not just stop them; make them vanish smoothly into the surface.
+
+### Phase 2: Global AI Assistant (The "Pulse Bot")
+* **Visibility:** Floating Button (Bottom-Right) visible on **ALL pages**.
+* **Features:**
+    * **Real-time Chat:** Mock UI for chatting.
+    * **Proactive Check-in:** Using `setInterval`, the bot occasionally pops up a toast message: *"기사 내용이 너무 어둡나요? 환기가 필요하면 말씀해주세요."* (Psychological care).
+    * **Bias Check:** If a user reads only one category (e.g., Anger) for too long, the bot suggests a 'Calm' article.
+
+### Phase 3: User System (My Page)
+* **Route:** `/mypage`
+* **Features:**
+    * **User Info:** Edit profile (Mock form).
+    * **Saved Articles:** List of bookmarked articles.
+    * **My Custom Articles:** List of "AI-generated Interactive Articles" created by the user.
+    * **Actions:** Buttons to [View], [Edit], [Delete] each article.
+
+---
+
+### Phase 4: Journalist Portal (Reporter Mode)
+* **Route:** `/journalist` (Login required mock)
+* **Dashboard Features:**
+    1.  **Keyword Search:** Input field to search trending topics.
+    2.  **AI Writing Assistant:**
+        * Button: [Generate Draft].
+        * Button: [Fix Typos & Compliance Check] (Mock check for copyright/policy).
+    3.  **Media Tools:**
+        * Upload Image / Video.
+        * Button: [Generate AI Image] / [Create Short-form Video].
+    4.  **Distribution (Publishing):**
+        * Select Platform Checkboxes: [Interactive Page], [Dong-A Ilbo], [Instagram], [YouTube], [Threads].
+        * **AI SEO Helper:** Show auto-generated hashtags and titles for each platform.
+    5.  **Bias Guard:** A gauge chart showing the journalist's recent sentiment distribution. If 'Anger' is > 70%, show a warning: *"균형 잡힌 시각이 필요합니다."*
+
+---
+
+### Phase 5: Admin Dashboard (Manager Mode)
+* **Route:** `/admin`
+* **Data Visualization (Infographics):** Use `recharts` to show:
+    * Most selected emotion (Pie Chart).
+    * Most viewed/saved articles (Bar Chart).
+    * Platform distribution stats (Line Chart).
+    * Journalist activity logs.
+* **Management Tools:**
+    * **Content Review:** List of reported articles. AI 'Risk Score' (0-100).
+    * **Action:** [Make Private], [Send Message to Reporter/User].
+* **Data Export:**
+    * Buttons: [Export Excel], [Export PDF], [Export Word]. (Implement mock download function using `blob`).
+
+---
+
+## 4. Technical Constraints & Optimization
+1.  **Mobile Optimization:**
+    * Stack the 5 spheres vertically or in a tighter cluster on mobile screens (`max-width: 768px`).
+    * Ensure Glassmorphism UI is readable on small screens.
+2.  **Performance:**
+    * Use `InstancedMesh` for particles.
+    * Use `React.memo` for the Admin Dashboard charts.
+3.  **File Structure:**
+    * `src/components/3d/...` (Scene, Spheres, Particles)
+    * `src/pages/...` (Home, MyPage, Journalist, Admin)
+    * `src/components/ui/...` (Chatbot, Modal, Navbar)
+    * `src/store/useStore.js` (Global State)
+
+## 5. Execution Instruction
+Please generate the **complete project structure** and code based on these requirements. Start by setting up the **Tailwind Config** with the custom colors, then build the **Store**, and finally implement the **Routes and Components** step-by-step.

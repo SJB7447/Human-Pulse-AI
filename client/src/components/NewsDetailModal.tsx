@@ -1,0 +1,444 @@
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Tag, Lightbulb, Check } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { type NewsItem } from '@/hooks/useNews';
+import { EMOTION_CONFIG, EmotionType } from '@/lib/store';
+
+import { useEmotionStore } from '@/lib/store';
+
+interface CuratedArticle {
+  id: number;
+  originalArticle: NewsItem;
+  userComment: string;
+  userEmotion: EmotionType;
+  createdAt: string;
+}
+
+interface NewsDetailModalProps {
+  article: NewsItem | null;
+  emotionType: EmotionType;
+  onClose: () => void;
+  onSaveCuration?: (curation: CuratedArticle) => void;
+}
+
+export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration }: NewsDetailModalProps) {
+  const { toast } = useToast();
+  const { user } = useEmotionStore();
+  const [isTransforming, setIsTransforming] = useState(false);
+  const [showInsightEditor, setShowInsightEditor] = useState(false);
+  const [insightText, setInsightText] = useState('');
+  const [selectedEmotion, setSelectedEmotion] = useState<EmotionType>(emotionType);
+  const MAX_INSIGHT_LENGTH = 300;
+
+  const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
+  const color = emotionConfig?.color || '#888888';
+
+  const handleSave = () => {
+    toast({
+      title: "저장 완료",
+      description: "보관함에 저장되었습니다.",
+    });
+  };
+
+  const handleShare = async () => {
+    if (navigator.share && article) {
+      try {
+        await navigator.share({
+          title: article.title,
+          text: article.summary,
+        });
+        toast({
+          title: "공유 완료",
+          description: "기사가 공유되었습니다.",
+        });
+      } catch {
+        toast({
+          title: "공유하기",
+          description: "링크가 복사되었습니다.",
+        });
+      }
+    } else {
+      toast({
+        title: "공유하기",
+        description: "링크가 복사되었습니다.",
+      });
+    }
+  };
+
+  const handleMyArticle = () => {
+    setIsTransforming(true);
+    setTimeout(() => {
+      setIsTransforming(false);
+      toast({
+        title: "AI 변환 완료",
+        description: "나만의 기사가 준비되었습니다!",
+      });
+    }, 2500);
+  };
+
+  const handleSaveInsight = () => {
+    if (!article || !insightText.trim()) {
+      toast({
+        title: "입력 필요",
+        description: "인사이트 내용을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const curation: CuratedArticle = {
+      id: Date.now(),
+      originalArticle: article,
+      userComment: insightText.trim(),
+      userEmotion: selectedEmotion,
+      createdAt: new Date().toISOString(),
+    };
+
+    if (onSaveCuration) {
+      onSaveCuration(curation);
+    }
+
+    toast({
+      title: "인사이트 저장 완료",
+      description: "마이페이지에서 확인하실 수 있습니다.",
+    });
+
+    setShowInsightEditor(false);
+    setInsightText('');
+    setSelectedEmotion(emotionType);
+  };
+
+  const formatTimeAgo = (date: Date | string | null | undefined): string => {
+    if (!date) return 'recently';
+    const now = new Date();
+    const then = new Date(date);
+    const diffMs = now.getTime() - then.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+    if (diffHours < 1) return 'just now';
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
+  const glowCore = `0 0 20px ${color}60`;
+  const glowMid = `0 0 60px ${color}30`;
+  const glowAmbient = `0 0 120px ${color}10`;
+  const fullGlow = `${glowCore}, ${glowMid}, ${glowAmbient}`;
+
+  return (
+    <AnimatePresence>
+      {article && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+            animate={{ opacity: 1, backdropFilter: 'blur(12px)' }}
+            exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+            transition={{ duration: 0.4 }}
+            className="absolute inset-0 bg-black/60"
+            style={{
+              WebkitBackdropFilter: 'blur(12px)',
+            }}
+          />
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{
+              opacity: 1,
+              scale: 1,
+              y: 0,
+            }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            transition={{
+              duration: 0.4,
+              type: "spring",
+              stiffness: 300,
+              damping: 25
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="relative w-full max-w-lg max-h-[85vh] overflow-hidden rounded-2xl"
+            style={{
+              backgroundColor: 'rgba(20, 20, 25, 0.85)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            <motion.div
+              className="absolute inset-0 rounded-2xl pointer-events-none"
+              initial={{
+                opacity: 0,
+                boxShadow: 'none'
+              }}
+              animate={{
+                opacity: [0, 1, 0.7, 1, 0.7],
+                boxShadow: [
+                  'none',
+                  fullGlow,
+                  `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
+                  fullGlow,
+                  `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
+                ],
+              }}
+              transition={{
+                opacity: {
+                  duration: 0.5,
+                  times: [0, 0.2, 0.5, 0.7, 1],
+                  repeat: Infinity,
+                  repeatDelay: 2,
+                },
+                boxShadow: {
+                  duration: 4,
+                  times: [0, 0.125, 0.5, 0.625, 1],
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                },
+              }}
+            />
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="absolute top-4 right-4 z-10 bg-white/10 text-white/80"
+              data-testid="button-close-modal"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+
+            {article.image && (
+              <div className="relative h-48 overflow-hidden">
+                <img
+                  src={article.image}
+                  alt={article.title}
+                  className="w-full h-full object-cover"
+                />
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: 'linear-gradient(to top, rgba(20, 20, 25, 1) 0%, rgba(20, 20, 25, 0) 100%)',
+                  }}
+                />
+              </div>
+            )}
+
+            <div className="p-6 overflow-y-auto" style={{ maxHeight: article.image ? 'calc(85vh - 12rem)' : 'calc(85vh - 4rem)' }}>
+              <div className="flex items-center gap-3 mb-4">
+                {article.category && (
+                  <span
+                    className="text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1"
+                    style={{
+                      backgroundColor: `${color}30`,
+                      color: color,
+                    }}
+                  >
+                    <Tag className="w-3 h-3" />
+                    {article.category}
+                  </span>
+                )}
+                <span className="text-xs text-white/50 flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {formatTimeAgo(article.created_at)}
+                </span>
+              </div>
+
+              <h2 className="text-2xl font-bold text-white mb-3 leading-tight">
+                {article.title}
+              </h2>
+
+              <p className="text-sm text-white/60 mb-4">
+                {article.source}
+              </p>
+
+              <p className="text-white/80 leading-relaxed mb-6">
+                {article.content || article.summary}
+              </p>
+
+              <div className="flex items-center gap-2 pt-4 border-t border-white/10 flex-wrap">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (!user) {
+                      toast({ title: "로그인 필요", description: "로그인 후 이용 가능합니다.", variant: "destructive" });
+                      return;
+                    }
+                    handleSave();
+                  }}
+                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20"
+                  data-testid="button-save-article"
+                >
+                  <Bookmark className="w-4 h-4" />
+                  저장
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  onClick={handleShare}
+                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20"
+                  data-testid="button-share-article"
+                >
+                  <Share2 className="w-4 h-4" />
+                  공유
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (!user) {
+                      toast({ title: "로그인 필요", description: "인사이트는 로그인 후 작성 가능합니다.", variant: "destructive" });
+                      return;
+                    }
+                    setShowInsightEditor(true);
+                  }}
+                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20"
+                  data-testid="button-add-insight"
+                >
+                  <Lightbulb className="w-4 h-4" />
+                  인사이트
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    if (!user) {
+                      toast({ title: "로그인 필요", description: "AI 변환은 로그인 후 이용 가능합니다.", variant: "destructive" });
+                      return;
+                    }
+                    handleMyArticle();
+                  }}
+                  disabled={isTransforming}
+                  className="flex-1 min-w-[100px]"
+                  style={{
+                    backgroundColor: color,
+                    color: '#ffffff',
+                    boxShadow: `0 4px 20px ${color}50`,
+                    borderColor: color,
+                  }}
+                  data-testid="button-my-article"
+                >
+                  {isTransforming ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      변환 중...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      AI 변환
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Insight Editor Overlay */}
+              <AnimatePresence>
+                {showInsightEditor && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 20 }}
+                    className="absolute inset-0 z-20 flex flex-col rounded-2xl overflow-visible"
+                    style={{
+                      backgroundColor: 'rgba(20, 20, 25, 0.95)',
+                      backdropFilter: 'blur(24px)',
+                    }}
+                  >
+                    <div className="flex items-center justify-between p-4 border-b border-white/10">
+                      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                        <Lightbulb className="w-5 h-5" style={{ color }} />
+                        인사이트 추가
+                      </h3>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowInsightEditor(false)}
+                        className="bg-white/10 text-white/80"
+                        data-testid="button-close-insight"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <div className="flex-1 p-4 overflow-y-auto">
+                      {/* Original Article Context */}
+                      <div className="mb-4 p-3 rounded-lg bg-white/5 border border-white/10">
+                        <p className="text-xs text-white/50 mb-1">원본 기사</p>
+                        <p className="text-sm text-white/80 font-medium line-clamp-2">{article?.title}</p>
+                      </div>
+
+                      {/* User Input */}
+                      <div className="mb-4">
+                        <label className="block text-sm text-white/70 mb-2">
+                          나의 생각 ({insightText.length}/{MAX_INSIGHT_LENGTH})
+                        </label>
+                        <textarea
+                          value={insightText}
+                          onChange={(e) => setInsightText(e.target.value.slice(0, MAX_INSIGHT_LENGTH))}
+                          placeholder="이 기사에 대한 당신의 생각, 감정, 요약을 적어주세요..."
+                          rows={5}
+                          className="w-full px-4 py-3 rounded-lg border border-white/20 bg-white/5 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
+                          data-testid="textarea-insight"
+                        />
+                      </div>
+
+                      {/* Emotion Selection */}
+                      <div>
+                        <label className="block text-sm text-white/70 mb-2">
+                          나의 해석 감정
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {EMOTION_CONFIG.map((emotion) => (
+                            <button
+                              key={emotion.type}
+                              onClick={() => setSelectedEmotion(emotion.type)}
+                              className={`px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${selectedEmotion === emotion.type
+                                ? 'ring-2 ring-offset-2 ring-offset-gray-900 opacity-100'
+                                : 'opacity-70'
+                                }`}
+                              style={{
+                                backgroundColor: `${emotion.color}30`,
+                                color: emotion.color,
+                                ...(selectedEmotion === emotion.type && { ringColor: emotion.color }),
+                              }}
+                              data-testid={`emotion-stamp-${emotion.type}`}
+                            >
+                              {selectedEmotion === emotion.type && <Check className="w-3 h-3" />}
+                              {emotion.labelKo}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 border-t border-white/10">
+                      <Button
+                        onClick={handleSaveInsight}
+                        className="w-full"
+                        style={{
+                          backgroundColor: EMOTION_CONFIG.find(e => e.type === selectedEmotion)?.color || color,
+                          color: '#ffffff',
+                        }}
+                        data-testid="button-save-insight"
+                      >
+                        <Check className="w-4 h-4" />
+                        인사이트 저장
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

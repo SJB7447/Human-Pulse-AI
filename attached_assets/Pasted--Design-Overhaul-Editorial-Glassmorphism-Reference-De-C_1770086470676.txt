@@ -1,0 +1,57 @@
+# Design Overhaul: Editorial Glassmorphism (Reference: De Correspondent)
+
+## 1. Objective
+Redesign the **News List/Article Page** (`/emotion/[type]`) to match the structural elegance of **[De Correspondent](https://decorrespondent.nl/)**, while maintaining the **Human Pulse brand identity** (Glassmorphism, 3D Background, Healing Vibe).
+
+* **Current Issue:** The current design looks too much like a generic mobile app or dashboard (simple vertical list, too rounded).
+* **Target Vibe:** A **High-End Interactive Magazine**. Trustworthy, Readable, yet Emotionally Resonant.
+
+## 2. Design Reference Analysis (De Correspondent Style)
+We need to adopt these specific elements from the reference:
+1.  **Grid Layout:** Instead of a single column, use a **Masonry or Multi-column Grid**. A large "Hero Article" on top, followed by a grid of smaller stories.
+2.  **Typography:** Use a sophisticated **Serif Font** for headlines (e.g., `Playfair Display`, `Merriweather`) to give an editorial feel, paired with Sans-serif for UI.
+3.  **Author Focus:** Highlight the journalist/creator with circular avatars and names, just like De Correspondent highlights their correspondents.
+4.  **Whitespace:** Use generous padding to create a sense of "calm" and "focus."
+
+## 3. Implementation Details (Tailwind CSS)
+
+### A. Layout Structure (The Glass Sheet)
+Instead of floating independent cards, create a main content area that feels like a sheet of frosted glass on top of the 3D background.
+* **Container:** `max-w-6xl mx-auto px-4 py-12`
+* **Grid:** `grid grid-cols-1 md:grid-cols-12 gap-8`
+* **Hero Article (Top):** Spans full width or `col-span-12`. Large typography, bold image.
+* **Sub Articles:** `col-span-12 md:col-span-6 lg:col-span-4`.
+
+### B. Typography & Color (Apply Strict Palette)
+* **Headlines:** Use a Serif font. `font-serif text-human-main font-bold`.
+* **Body/UI:** Use `Inter` or `Pretendard`. `text-human-sub`.
+* **Accent Colors:** Use the **Current Emotion Color** (e.g., `#88d84a` for Calm) for small accents like:
+    * The "Read More" arrow.
+    * The active category indicator.
+    * A subtle thin border on the top of the cards (`border-t-4`).
+
+### C. The "Editorial Glass" Card Style
+Replace the current bubbly cards with this style:
+* **Shape:** `rounded-xl` (Less round than before, more professional).
+* **Background:** `bg-white/40` (Light frosted glass).
+* **Border:** `border border-white/30`.
+* **Shadow:** `shadow-sm hover:shadow-md transition-all`.
+* **Content Arrangement:**
+    1.  **Category Tag:** Small, pill-shaped, colored by emotion.
+    2.  **Image:** High-quality thumbnail (aspect ratio 3:2).
+    3.  **Headline:** Serif, Large, Dark (`text-[#232221]`).
+    4.  **Excerpt:** Clamp to 2 lines, lighter gray (`text-[#999898]`).
+    5.  **Footer:** Journalist Avatar (Circle) + Name + Date.
+
+### D. Navigation (Minimalist)
+* Clean top bar, similar to De Correspondent.
+* Logo on the left, "Emotions / Stories / Journalists" centered, "My Page" on the right.
+* Use a `backdrop-blur-md` sticky header.
+
+## 4. Execution Request
+1.  **Install Font:** Add a Serif font (e.g., `@fontsource/merriweather` or `playfair-display`) to the project.
+2.  **Refactor Page:** Rewrite the Article List component using the **Grid Layout** described above.
+3.  **Update Cards:** Re-style the article cards to look like the "Editorial Glass" style.
+4.  **Preserve 3D:** Ensure the 3D background is still visible and moving slowly behind the glass content.
+
+**Goal:** When I look at the page, it should feel like reading a high-quality magazine floating in a peaceful, emotional space.

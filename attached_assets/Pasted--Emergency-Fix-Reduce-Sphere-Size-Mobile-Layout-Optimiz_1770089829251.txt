@@ -1,0 +1,45 @@
+# Emergency Fix: Reduce Sphere Size & Mobile Layout Optimization
+
+## Issue Description
+Based on the latest visual check (Image 5), the 3D spheres have become **excessively large**, causing severe overlapping. They are currently obscuring the "HUMAN PULSE" title and overlapping with each other on mobile devices.
+
+We need to **drastically reduce the scale** and **spread out the positions** to ensure a clean, readable UI.
+
+## Implementation Instructions
+
+Please modify `Scene.jsx` and `EMOTION_CONFIG` with the specific values below.
+
+### 1. Drastic Scale Reduction (Fix Oversizing)
+The current scale values are too high. Please update the scaling logic to use these **smaller base values**:
+
+* **Mobile Screens (`isMobile = true`):**
+    * Standard Spheres (Joy, Anger, Calm, Sadness): **`scale = 0.5`** (Previously ~0.8)
+    * Gray Sphere (Fear): **`scale = 0.65`** (Larger than standard, but much smaller than now)
+* **Desktop Screens (`isMobile = false`):**
+    * Standard Spheres: **`scale = 0.75`**
+    * Gray Sphere: **`scale = 0.95`**
+
+### 2. Update Mobile Coordinates (Vertical Spreading)
+To prevent overlap on portrait screens, we need to spread the spheres vertically and horizontally away from the center text. Update `EMOTION_CONFIG` for **Mobile Layout**:
+
+* **Joy (Yellow - Top):** Move higher.
+    * Coordinate: **`[0, 3.2, 0]`**
+* **Anger (Red - Mid Right):** Move wider and lower.
+    * Coordinate: **`[1.4, 1.0, 0]`**
+* **Calm (Green - Mid Left):** Move wider and lower.
+    * Coordinate: **`[-1.4, 1.0, 0]`**
+* **Sadness (Blue - Low Right):** Move further down and wide.
+    * Coordinate: **`[0.9, -1.8, 0]`**
+* **Fear (Gray - Low Left):** Move further down and wide.
+    * Coordinate: **`[-0.9, -1.8, 0]`**
+
+### 3. Camera Adjustment (Mobile)
+Since the spheres are now spread out vertically, pull the camera back to keep them in the viewport.
+
+* **Mobile Camera Position:** Change Z-axis from `10` to **`13`**.
+    * `camera={{ position: [0, 0, isMobile ? 13 : 8], ... }}`
+
+## Expected Outcome
+1.  **No Overlap:** Spheres must NOT touch each other on mobile.
+2.  **Text Visibility:** The center area where "HUMAN PULSE" is located must be clear of any spheres.
+3.  **Visual Balance:** The Gray sphere should still be slightly larger (`0.65`) than others (`0.5`), but not overwhelming.
