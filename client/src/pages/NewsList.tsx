@@ -1,6 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { supabase } from '../services/supabaseClient';
+import { motion } from 'framer-motion';
+import { EMOTION_CONFIG } from '@/lib/store';
+
+interface Article {
+    id: number;
+    title: string;
+    summary: string;
+    thumbnail_url: string;
+    created_at: string;
+    category: string;
+}
 
 const emotionColors = {
     joy: 'border-yellow-400/50 text-yellow-100 bg-yellow-900/20',
@@ -14,7 +25,7 @@ export default function NewsList() {
     const params = useParams();
     const category = params.category;
     const [, setLocation] = useLocation();
-    const [articles, setArticles] = useState([]);
+    const [articles, setArticles] = useState<Article[]>([]);
     const [loading, setLoading] = useState(true);
     const [debugMsg, setDebugMsg] = useState(''); // 화면에 에러 띄우기용
 
@@ -55,7 +66,7 @@ export default function NewsList() {
         fetchArticles();
     }, [category]);
 
-    const themeClass = emotionColors[category?.toLowerCase()] || emotionColors.joy;
+    const themeClass = emotionColors[(category?.toLowerCase() || 'joy') as keyof typeof emotionColors] || emotionColors.joy;
 
     return (
         <div className="w-full min-h-screen bg-black text-white p-8 pt-24 overflow-y-auto">
@@ -78,25 +89,41 @@ export default function NewsList() {
             {/* 기사 리스트 */}
             {!loading && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
-                    {articles.map((article) => (
-                        <div
-                            key={article.id}
-                            className={`p-6 rounded-2xl border backdrop-blur-lg transition hover:-translate-y-2 cursor-pointer ${themeClass}`}
-                        >
-                            <div className="w-full h-48 bg-gray-800 rounded-lg mb-4 overflow-hidden relative">
-                                {article.thumbnail_url ? (
-                                    <img src={article.thumbnail_url} alt="썸네일" className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="absolute inset-0 flex items-center justify-center text-white/20">No Image</div>
-                                )}
-                            </div>
-                            <h2 className="text-2xl font-serif font-bold mb-2">{article.title}</h2>
-                            <p className="opacity-70 text-sm line-clamp-2">{article.summary || "요약 내용 없음"}</p>
-                            <div className="mt-4 text-xs opacity-40 text-right">
-                                {new Date(article.created_at).toLocaleDateString()}
-                            </div>
-                        </div>
-                    ))}
+                    {articles.map((article) => {
+                        // Determine the glow color based on the current category (since list is filtered) or fallback
+                        const currentConfig = EMOTION_CONFIG.find(e => e.type === (category?.toLowerCase() || 'joy')) || EMOTION_CONFIG[0];
+                        const glowColor = currentConfig?.color || '#ffffff';
+
+                        return (
+                            <motion.div
+                                key={article.id}
+                                initial={{ opacity: 0, y: 50 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true, margin: "-50px" }}
+                                transition={{ duration: 0.5, ease: "easeOut" }}
+                                whileHover={{
+                                    y: -8,
+                                    boxShadow: `0 15px 30px -5px ${glowColor}80`, // Adding transparency
+                                    borderColor: glowColor
+                                }}
+                                className={`p-6 rounded-2xl border backdrop-blur-lg cursor-pointer ${themeClass}`}
+                                style={{ transformOrigin: "center" }}
+                            >
+                                <div className="w-full h-48 bg-gray-800 rounded-lg mb-4 overflow-hidden relative">
+                                    {article.thumbnail_url ? (
+                                        <img src={article.thumbnail_url} alt="썸네일" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="absolute inset-0 flex items-center justify-center text-white/20">No Image</div>
+                                    )}
+                                </div>
+                                <h2 className="text-2xl font-serif font-bold mb-2">{article.title}</h2>
+                                <p className="opacity-70 text-sm line-clamp-2">{article.summary || "요약 내용 없음"}</p>
+                                <div className="mt-4 text-xs opacity-40 text-right">
+                                    {new Date(article.created_at).toLocaleDateString()}
+                                </div>
+                            </motion.div>
+                        );
+                    })}
                 </div>
             )}
         </div>

@@ -8,6 +8,7 @@ import { NewsDetailModal } from '@/components/NewsDetailModal';
 import { useNews, type NewsItem } from '@/hooks/useNews';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
+import { EmotionTag } from '@/components/ui/EmotionTag';
 
 const EMOTION_ICONS: Record<EmotionType, typeof Heart> = {
   joy: Sparkles,
@@ -288,16 +289,7 @@ export default function EmotionPage() {
                     </div>
                     <div className="p-8 flex flex-col justify-center">
                       <div className="flex items-center gap-3 mb-4">
-                        <span
-                          className="text-xs font-medium px-3 py-1 rounded-full"
-                          style={{
-                            backgroundColor: `${emotionConfig.color}15`,
-                            color: emotionConfig.color,
-                          }}
-                          data-testid={`badge-emotion-${heroArticle.id}`}
-                        >
-                          {emotionConfig.labelKo}
-                        </span>
+                        <EmotionTag emotion={emotionConfig.type} />
                         <span className="text-xs text-human-sub flex items-center gap-1" data-testid={`text-time-${heroArticle.id}`}>
                           <Clock className="w-3 h-3" />
                           {formatTimeAgo(heroArticle.created_at)}

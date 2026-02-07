@@ -5,6 +5,8 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { type NewsItem } from '@/hooks/useNews';
 import { EMOTION_CONFIG, EmotionType } from '@/lib/store';
+import { TypewriterText } from '@/components/ui/TypewriterText';
+import { EmotionTag } from '@/components/ui/EmotionTag';
 
 import { useEmotionStore } from '@/lib/store';
 
@@ -30,6 +32,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
   const [showInsightEditor, setShowInsightEditor] = useState(false);
   const [insightText, setInsightText] = useState('');
   const [selectedEmotion, setSelectedEmotion] = useState<EmotionType>(emotionType);
+  const [rewrittenContent, setRewrittenContent] = useState<string | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
@@ -71,6 +74,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
     setIsTransforming(true);
     setTimeout(() => {
       setIsTransforming(false);
+      const aiContent = `[AI Rewritten Article]\n\n${article?.title}에 대한 새로운 시각의 분석입니다.\n\n이 기사는 현재 ${emotionConfig?.labelKo}의 감정 흐름을 타고 있습니다. AI가 분석한 결과, 이 사건은 우리에게 중요한 메세지를 던지고 있습니다.\n\n${article?.summary}\n\n우리는 이 변화 속에서 어떤 준비를 해야 할까요? 더 깊은 통찰과 함께, 앞으로의 변화를 주의 깊게 지켜봐야 할 것입니다.`;
+      setRewrittenContent(aiContent);
       toast({
         title: "AI 변환 완료",
         description: "나만의 기사가 준비되었습니다!",
@@ -234,16 +239,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
             <div className="p-6 overflow-y-auto" style={{ maxHeight: article.image ? 'calc(85vh - 12rem)' : 'calc(85vh - 4rem)' }}>
               <div className="flex items-center gap-3 mb-4">
                 {article.category && (
-                  <span
-                    className="text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1"
-                    style={{
-                      backgroundColor: `${color}30`,
-                      color: color,
-                    }}
-                  >
-                    <Tag className="w-3 h-3" />
-                    {article.category}
-                  </span>
+                  <EmotionTag emotion={article.category.toLowerCase() as EmotionType} showIcon={true} />
                 )}
                 <span className="text-xs text-white/50 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
@@ -259,9 +255,28 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                 {article.source}
               </p>
 
-              <p className="text-white/80 leading-relaxed mb-6">
-                {article.content || article.summary}
-              </p>
+              <div className="text-white/80 leading-relaxed mb-6 min-h-[100px]">
+                {rewrittenContent ? (
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs font-bold text-purple-400 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" /> AI GENERATED
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs text-white/40 hover:text-white"
+                        onClick={() => setRewrittenContent(null)}
+                      >
+                        원본 보기
+                      </Button>
+                    </div>
+                    <TypewriterText text={rewrittenContent} speed={0.02} />
+                  </div>
+                ) : (
+                  article.content || article.summary
+                )}
+              </div>
 
               <div className="flex items-center gap-2 pt-4 border-t border-white/10 flex-wrap">
                 <Button
@@ -315,12 +330,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                     handleMyArticle();
                   }}
                   disabled={isTransforming}
-                  className="flex-1 min-w-[100px]"
+                  className="flex-1 min-w-[100px] border-0"
+                  variant="flowing"
                   style={{
-                    backgroundColor: color,
+                    backgroundColor: undefined, // Let variant handle bg
                     color: '#ffffff',
                     boxShadow: `0 4px 20px ${color}50`,
-                    borderColor: color,
                   }}
                   data-testid="button-my-article"
                 >
