@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS news_items (
   views INTEGER NOT NULL DEFAULT 0,
   saves INTEGER NOT NULL DEFAULT 0,
   platforms TEXT[] DEFAULT ARRAY['interactive'],
-  platforms TEXT[] DEFAULT ARRAY['interactive'],
   is_published BOOLEAN DEFAULT true,
   author_id UUID,
   author_name TEXT,
