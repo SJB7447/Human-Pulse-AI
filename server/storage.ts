@@ -14,8 +14,10 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   getNewsByEmotion(emotion: EmotionType): Promise<NewsItem[]>;
-  getAllNews(): Promise<NewsItem[]>;
+  getAllNews(includeHidden?: boolean): Promise<NewsItem[]>;
   createNewsItem(item: InsertNewsItem): Promise<NewsItem>;
+  updateNewsItem(id: string, updates: Partial<NewsItem>): Promise<NewsItem | null>;
+  deleteNewsItem(id: string): Promise<boolean>;
 
   // Admin & Interaction Methods
   incrementView(id: string): Promise<void>;
@@ -91,6 +93,9 @@ export class MemStorage implements IStorage {
         views: Math.floor(Math.random() * 5000) + 100, // Seed views
         saves: Math.floor(Math.random() * 500),         // Seed saves count (display only)
         platforms: ['interactive'],
+        isPublished: true,
+        authorId: null,
+        authorName: null,
         createdAt: new Date(Date.now() - Math.random() * 86400000 * 3),
       };
       this.newsItems.set(id, newsItem);
@@ -121,8 +126,9 @@ export class MemStorage implements IStorage {
       .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   }
 
-  async getAllNews(): Promise<NewsItem[]> {
+  async getAllNews(includeHidden: boolean = false): Promise<NewsItem[]> {
     return Array.from(this.newsItems.values())
+      .filter(item => includeHidden || item.isPublished !== false)
       .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
   }
 
@@ -141,10 +147,25 @@ export class MemStorage implements IStorage {
       views: 0,
       saves: 0,
       platforms: ['interactive'],
+      isPublished: true,
+      authorId: item.authorId ?? null,
+      authorName: item.authorName ?? null,
       createdAt: new Date(),
     };
     this.newsItems.set(id, newsItem);
     return newsItem;
+  }
+
+  async updateNewsItem(id: string, updates: Partial<NewsItem>): Promise<NewsItem | null> {
+    const item = this.newsItems.get(id);
+    if (!item) return null;
+    const updated = { ...item, ...updates };
+    this.newsItems.set(id, updated);
+    return updated;
+  }
+
+  async deleteNewsItem(id: string): Promise<boolean> {
+    return this.newsItems.delete(id);
   }
 
   // Admin Methods
@@ -246,11 +267,14 @@ export class SupabaseStorage implements IStorage {
     return (data || []) as NewsItem[];
   }
 
-  async getAllNews(): Promise<NewsItem[]> {
-    const { data } = await supabase
-      .from('news_items')
-      .select('*')
-      .order('created_at', { ascending: false });
+  async getAllNews(includeHidden: boolean = false): Promise<NewsItem[]> {
+    let query = supabase.from('news_items').select('*').order('created_at', { ascending: false });
+
+    if (!includeHidden) {
+      query = query.eq('is_published', true);
+    }
+
+    const { data } = await query;
     return (data || []) as NewsItem[];
   }
 
@@ -259,12 +283,34 @@ export class SupabaseStorage implements IStorage {
       .from('news_items')
       .insert({
         ...item,
-        platforms: ['interactive']
+        platforms: ['interactive'],
+        is_published: true // Default
       })
       .select()
       .single();
     if (error) throw error;
     return data as NewsItem;
+  }
+
+  async updateNewsItem(id: string, updates: Partial<NewsItem>): Promise<NewsItem | null> {
+    const { data, error } = await supabase
+      .from('news_items')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) return null;
+    return data as NewsItem;
+  }
+
+  async deleteNewsItem(id: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('news_items')
+      .delete()
+      .eq('id', id);
+
+    return !error;
   }
 
   // Admin & Interaction Methods

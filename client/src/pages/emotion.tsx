@@ -311,7 +311,9 @@ export default function EmotionPage() {
                           </div>
                           <div>
                             <p className="text-sm font-medium text-human-main" data-testid={`text-author-${heroArticle.id}`}>{getRandomAuthor(heroArticle.id).name}</p>
-                            <p className="text-xs text-human-sub" data-testid={`text-source-${heroArticle.id}`}>{heroArticle.source}</p>
+                            <p className="text-xs text-human-sub truncate max-w-[200px]" data-testid={`text-source-${heroArticle.id}`}>
+                              {heroArticle.source?.startsWith('http') ? new URL(heroArticle.source).hostname.replace('www.', '') : heroArticle.source}
+                            </p>
                           </div>
                         </div>
                         <span
@@ -372,16 +374,16 @@ export default function EmotionPage() {
                   <div className="p-6">
                     <div className="flex items-center gap-2 mb-3">
                       <span
-                        className="text-xs font-medium px-2 py-0.5 rounded-full"
+                        className="text-xs font-medium px-2 py-0.5 rounded-full truncate max-w-[150px]"
                         style={{
                           backgroundColor: `${emotionConfig.color}15`,
                           color: emotionConfig.color,
                         }}
                         data-testid={`badge-source-${item.id}`}
                       >
-                        {item.source}
+                        {item.source?.startsWith('http') ? new URL(item.source).hostname.replace('www.', '') : item.source}
                       </span>
-                      <span className="text-xs text-human-sub" data-testid={`text-time-${item.id}`}>
+                      <span className="text-xs text-human-sub shrink-0" data-testid={`text-time-${item.id}`}>
                         {formatTimeAgo(item.created_at)}
                       </span>
                     </div>

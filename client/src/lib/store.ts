@@ -84,6 +84,7 @@ export interface User {
   id: string;
   email?: string;
   name?: string;
+  role?: 'admin' | 'journalist' | 'general';
 }
 
 interface EmotionState {

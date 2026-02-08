@@ -1,56 +1,116 @@
 // client/src/services/dbService.ts
 
 import { supabase } from './supabaseClient'; // 같은 폴더에 있는 설정 파일 사용
+import { useEmotionStore } from '@/lib/store';
 
 export const DBService = {
 
     // [User] 현재 로그인한 사용자 정보 가져오기
     async getCurrentUser() {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return null;
 
-        // profiles 테이블에서 추가 정보 가져오기
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
+        // Return Supabase user if exists
+        if (user) {
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+            return { ...user, profile };
+        }
 
-        return { ...user, profile };
+        // Fallback to Zustand Store (Demo User)
+        const storeUser = useEmotionStore.getState().user;
+        if (storeUser && storeUser.id.startsWith('demo-')) {
+            return {
+                ...storeUser,
+                profile: {
+                    username: storeUser.name,
+                    email: storeUser.email,
+                    role: storeUser.role
+                },
+                user_metadata: {
+                    name: storeUser.name
+                }
+            };
+        }
+
+        return null;
     },
 
     // [1] 기사 저장 (작성자 ID 포함) - Journalist 페이지용
-    async saveArticle({ title, content, originalUrl, emotionLabel }: any) {
-        // 로그인 체크
-        const { data: { user } } = await supabase.auth.getUser();
+    async saveArticle({ title, content, summary, source, image, category, emotionLabel }: {
+        title: string;
+        content: string;
+        summary?: string;
+        source?: string;
+        image?: string;
+        category?: string;
+        emotionLabel: string;
+    }) {
+        // 로그인 체크 (Store User or Supabase User)
+        const user = await this.getCurrentUser();
         if (!user) throw new Error("로그인이 필요합니다.");
 
-        // 감정 ID 찾기
-        const { data: emotionData, error: emoError } = await supabase
-            .from('emotions')
-            .select('id')
-            .eq('label', emotionLabel)
-            .single();
+        // Emotion Validation
+        const validEmotions = ['joy', 'anger', 'sadness', 'fear', 'calm'];
+        const emotion = validEmotions.includes(emotionLabel) ? emotionLabel : 'calm';
 
-        if (emoError || !emotionData) throw new Error(`감정 카테고리를 찾을 수 없습니다: ${emotionLabel}`);
+        // 기사 저장 (/api/articles API 호출 - RLS 우회)
+        const response = await fetch('/api/articles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title,
+                content,
+                summary: summary || content.slice(0, 100) + '...',
+                source: source || 'HueBrief Journalist',
+                image: image || null,
+                category: category || 'General',
+                emotion: emotion,
+                authorId: user.id || 'anonymous',
+                authorName: user.user_metadata?.name || user.email || 'Anonymous'
+            })
+        });
 
-        // 기사 저장
-        const { data, error } = await supabase
-            .from('articles')
-            .insert([
-                {
-                    title,
-                    content,
-                    original_url: originalUrl,
-                    emotion_id: emotionData.id,
-                    author_id: user.id // 작성자 ID 자동 입력
-                }
-            ])
-            .select()
-            .single();
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to save article');
+        }
 
-        if (error) throw error;
+        const data = await response.json();
         return data;
+    },
+
+    // [New] 기사 수정
+    async updateArticle(id: string, updates: any) {
+        const response = await fetch(`/api/articles/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        });
+        if (!response.ok) throw new Error('Failed to update article');
+        return await response.json();
+    },
+
+    // [New] 기사 삭제
+    async deleteArticle(id: string) {
+        const response = await fetch(`/api/articles/${id}`, {
+            method: 'DELETE'
+        });
+        if (!response.ok) throw new Error('Failed to delete article');
+        return true;
+    },
+
+    // [New] 내 기사 조회 (Client-side filtering for MVP)
+    async getMyArticles(authorId: string) {
+        // Fetch all (including hidden)
+        const response = await fetch('/api/articles?all=true');
+        if (!response.ok) throw new Error('Failed to fetch articles');
+        const allArticles = await response.json();
+
+        // Filter by authorId
+        return allArticles.filter((a: any) => a.authorId === authorId);
     },
 
     // [2] 생성된 콘텐츠 저장 - 상세 페이지용
@@ -70,23 +130,14 @@ export const DBService = {
         return data;
     },
 
-    // [3] 관리자용: 전체 데이터 조회
+    // [3] 관리자용: 전체 데이터 조회 (Hidden 포함)
     async getAdminDashboardData() {
-        const { data, error } = await supabase
-            .from('articles')
-            .select(`
-        *,
-        emotions ( label ),
-        profiles ( email, username ),
-        generated_contents ( id, generated_text, deploy_status, admin_memo )
-      `)
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        return data;
+        const response = await fetch('/api/articles?all=true');
+        if (!response.ok) throw new Error('Failed to fetch admin data');
+        return await response.json();
     },
 
-    // [4] 관리자용: 콘텐츠 수정 및 승인
+    // [4] 관리자용: 콘텐츠 수정 및 승인 (Legacy - used for generated_contents table)
     async updateGeneratedContent(generatedId: number, generatedText: string, status: string) {
         const { error } = await supabase
             .from('generated_contents')

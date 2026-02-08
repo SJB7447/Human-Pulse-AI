@@ -29,7 +29,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Users, FileText, CheckCircle, Clock, ArrowLeft, Download, RefreshCw } from 'lucide-react';
+import { Users, FileText, CheckCircle, Clock, ArrowLeft, Download, RefreshCw, Eye, EyeOff, Trash2 } from 'lucide-react';
 
 export default function AdminPage() {
   const [articles, setArticles] = useState<any[]>([]);
@@ -69,6 +69,29 @@ export default function AdminPage() {
     }
   };
 
+  const handleHide = async (id: string, currentStatus: boolean) => {
+    if (!confirm(currentStatus ? "이 기사를 숨기시겠습니까? (메인에서 보이지 않음)" : "이 기사를 다시 공개하시겠습니까?")) return;
+    try {
+      // is_published field update
+      await DBService.updateArticle(id, { is_published: !currentStatus });
+      fetchData();
+    } catch (e) {
+      console.error(e);
+      alert("상태 변경 실패");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("정말로 이 기사를 삭제하시겠습니까? (복구 불가)")) return;
+    try {
+      await DBService.deleteArticle(id);
+      fetchData();
+    } catch (e) {
+      console.error(e);
+      alert("삭제 실패");
+    }
+  };
+
   // --- External News Fetching ---
   const [crawling, setCrawling] = useState(false);
   const handleManualUpdateConfirmed = async () => {
@@ -78,7 +101,7 @@ export default function AdminPage() {
       const result = await res.json();
 
       if (res.ok) {
-        alert(`완료!\n- 저장됨: ${result.stats.saved}건\n- 중복패스: ${result.stats.skipped}건\n- 실패: ${result.stats.failed}건`);
+        alert(`완료!\n - 저장됨: ${result.stats.saved} 건\n - 중복패스: ${result.stats.skipped} 건\n - 실패: ${result.stats.failed} 건`);
         fetchData(); // Refresh list
       } else {
         alert("업데이트 중 오류가 발생했습니다: " + result.error);
@@ -95,12 +118,12 @@ export default function AdminPage() {
   const exportToExcel = () => {
     const dataToExport = articles.map(item => ({
       ID: item.id,
-      Emotion: item.emotions?.label,
+      Emotion: item.emotion,
       Title: item.title,
-      Author: item.profiles?.email,
+      Author: item.source || 'Unknown', // Use source as author/origin
       Date: new Date(item.created_at).toLocaleDateString(),
-      Generated_Content: item.generated_contents?.[0]?.generated_text || 'N/A',
-      Status: item.generated_contents?.[0]?.deploy_status || 'pending'
+      Summary: item.summary || 'N/A',
+      Status: 'published' // Default status for now
     }));
 
     const ws = XLSX.utils.json_to_sheet(dataToExport);
@@ -115,18 +138,18 @@ export default function AdminPage() {
     doc.setFontSize(18);
     doc.text("Human Pulse AI - Admin Report", 14, 22);
     doc.setFontSize(11);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
+    doc.text(`Generated: ${new Date().toLocaleString()} `, 14, 30);
 
     const tableData = articles.map(item => [
       item.id,
-      item.emotions?.label || '-',
+      item.emotion || '-',
       item.title,
-      item.profiles?.email || 'Unknown',
-      item.generated_contents?.[0]?.deploy_status || 'pending'
+      item.source || 'Unknown',
+      'published'
     ]);
 
     autoTable(doc, {
-      head: [['ID', 'Emotion', 'Title', 'Author', 'Status']],
+      head: [['ID', 'Emotion', 'Title', 'Source', 'Status']],
       body: tableData,
       startY: 40,
       styles: { fontSize: 8 },
@@ -183,7 +206,7 @@ export default function AdminPage() {
               <button
                 disabled={crawling}
                 className={`flex items-center px-4 py-2 rounded-lg shadow-sm transition text-sm font-medium text-white ${crawling ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
-                  }`}
+                  } `}
               >
                 {crawling ? (
                   <>
@@ -245,13 +268,13 @@ export default function AdminPage() {
         <StatCard
           title="Content Deployed"
           // Calculate deployed count from articles list as an approximation or use real stats if added
-          value={articles.filter(a => a.generated_contents?.[0]?.deploy_status === 'deployed').length.toString()}
+          value={articles.length.toString()}
           icon={<CheckCircle className="w-6 h-6 text-green-600" />}
           bgColor="bg-green-50"
         />
         <StatCard
           title="Pending Review"
-          value={articles.filter(a => a.generated_contents?.[0]?.deploy_status !== 'deployed').length.toString()}
+          value={'0'} // No pending review process in current schema
           icon={<Clock className="w-6 h-6 text-yellow-600" />}
           bgColor="bg-yellow-50"
         />
@@ -275,7 +298,7 @@ export default function AdminPage() {
                   dataKey="value"
                 >
                   {sentimentData.map((entry: any, index: number) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                    <Cell key={`cell - ${index} `} fill={entry.color} />
                   ))}
                 </Pie>
                 <RechartsTooltip />
@@ -322,56 +345,74 @@ export default function AdminPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {articles.map((item) => {
-                const genContent = item.generated_contents?.[0];
-                const isDeployed = genContent?.deploy_status === 'deployed';
+                const emotionLabel = item.emotion;
+                const source = item.source || 'Unknown';
+                const summary = item.summary;
+                const isPublished = item.is_published !== false; // Default true if undefined
 
                 return (
                   <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="py-4 px-6">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isDeployed
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                        {isDeployed ? 'Deployed' : 'Pending'}
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isPublished ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        } `}>
+                        {isPublished ? 'Published' : 'Hidden'}
                       </span>
                     </td>
                     <td className="py-4 px-6">
                       <span
                         className="px-2 py-1 rounded-md text-xs font-bold text-white shadow-sm"
-                        style={{ backgroundColor: getEmotionColor(item.emotions?.label || 'default') }}
+                        style={{ backgroundColor: getEmotionColor(emotionLabel || 'default') }}
                       >
-                        {item.emotions?.label?.toUpperCase() || '-'}
+                        {emotionLabel?.toUpperCase() || '-'}
                       </span>
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex flex-col">
                         <span className="font-semibold text-gray-900 line-clamp-1">{item.title}</span>
-                        <span className="text-xs text-gray-400 mt-1">{item.profiles?.email}</span>
+                        <span className="text-xs text-gray-400 mt-1">{source}</span>
                         <span className="text-xs text-gray-300">{new Date(item.created_at).toLocaleDateString()}</span>
                       </div>
                     </td>
                     <td className="py-4 px-6">
-                      {genContent ? (
+                      {summary ? (
                         <div className="max-w-xs relative group cursor-pointer">
-                          <p className="text-sm text-gray-600 line-clamp-2">{genContent.generated_text}</p>
-                          {/* Hover tooltip for full text could be added here */}
+                          <p className="text-sm text-gray-600 line-clamp-2">{summary}</p>
                         </div>
                       ) : (
-                        <span className="text-gray-400 text-sm italic">No content generated</span>
+                        <span className="text-gray-400 text-sm italic">No summary</span>
                       )}
                     </td>
                     <td className="py-4 px-6 text-center">
-                      {genContent && !isDeployed && (
+                      <div className="flex items-center justify-center space-x-3">
                         <button
-                          onClick={() => handleDeploy(genContent.id, genContent.generated_text)}
-                          className="w-full bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-indigo-700 transition shadow-sm hover:shadow-md"
+                          onClick={() => handleHide(item.id, isPublished)}
+                          className={`flex items-center px-4 py-2 rounded-md text-sm font-semibold transition-colors ${isPublished
+                            ? 'bg-gray-600 text-white hover:bg-gray-700'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                            }`}
+                          title={isPublished ? "Click to Hide" : "Click to Publish"}
                         >
-                          Approve Deploy
+                          {isPublished ? (
+                            <>
+                              <EyeOff size={14} className="mr-1.5" />
+                              Hide
+                            </>
+                          ) : (
+                            <>
+                              <Eye size={14} className="mr-1.5" />
+                              Publish
+                            </>
+                          )}
                         </button>
-                      )}
-                      {isDeployed && (
-                        <span className="text-xs text-gray-400 font-medium">Completed</span>
-                      )}
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="flex items-center px-4 py-2 rounded-md text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition-colors"
+                          title="Delete Article"
+                        >
+                          <Trash2 size={14} className="mr-1.5" />
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -384,12 +425,17 @@ export default function AdminPage() {
   );
 }
 
+// Handler functions (Define inside component or use updated DBService)
+// Adding here for context, but I need to inject them into the component scope.
+// Using a separate replacement for handlers.
+
+
 // --- Helper Components & Functions ---
 
 function StatCard({ title, value, icon, bgColor }: any) {
   return (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 transition-transform hover:-translate-y-1">
-      <div className={`p-3 rounded-xl ${bgColor}`}>
+      <div className={`p-3 rounded-xl ${bgColor} `}>
         {icon}
       </div>
       <div>

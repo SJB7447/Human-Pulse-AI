@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLocation, Link } from 'wouter';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Loader2, ArrowLeft, Eye, EyeOff, User, Newspaper, Shield, Check } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowLeft, Eye, EyeOff, User, Newspaper, Shield, Check, FlaskConical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -412,6 +412,34 @@ export default function LoginPage() {
                             <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
                         </svg>
                         {isSignUp ? 'Sign up with Google' : 'Continue with Google'}
+                    </Button>
+
+                    <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full relative mt-2 border-dashed border-human-main/40 text-human-main hover:bg-human-main/5"
+                        onClick={() => {
+                            setIsLoading(true);
+                            // Simulate network delay
+                            setTimeout(() => {
+                                setUser({
+                                    id: 'demo-user-123',
+                                    email: 'demo@example.com',
+                                    name: '데모 사용자',
+                                    role: 'admin', // Grant admin role for free pass
+                                });
+                                toast({
+                                    title: '데모 로그인 성공',
+                                    description: '테스트 계정으로 접속했습니다.',
+                                });
+                                setLocation('/');
+                                setIsLoading(false);
+                            }, 800);
+                        }}
+                        data-testid="button-demo-login"
+                    >
+                        <FlaskConical className="w-4 h-4 mr-2" />
+                        Test Account Login (Free Pass)
                     </Button>
 
                     <div className="mt-6 text-center">

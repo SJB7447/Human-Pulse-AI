@@ -30,9 +30,9 @@ export function useNews(emotion: EmotionType | undefined) {
             console.log('[useNews] Supabase client:', supabase ? 'OK' : 'NULL');
 
             const { data, error } = await supabase
-                .from('articles')
+                .from('news_items')
                 .select('*')
-                .eq('category', emotion)
+                .eq('emotion', emotion)
                 .order('created_at', { ascending: false });
 
             console.log('[useNews] Query result:', { data, error });
@@ -42,17 +42,17 @@ export function useNews(emotion: EmotionType | undefined) {
                 throw error;
             }
 
-            // Map 'articles' schema to 'NewsItem' interface
+            // Map 'news_items' schema to 'NewsItem' interface
             const mappedData: NewsItem[] = (data || []).map((item: any) => ({
                 id: item.id,
                 title: item.title,
                 summary: item.summary,
                 content: item.content,
                 source: item.source || 'Unknown Source',
-                image: item.thumbnail_url || null, // Map thumbnail_url to image
+                image: item.image || null,
                 category: item.category,
-                emotion: item.category as EmotionType, // Map category to emotion
-                intensity: 5, // Default intensity as it's missing in articles
+                emotion: item.emotion as EmotionType,
+                intensity: item.intensity || 50,
                 created_at: item.created_at,
             }));
 

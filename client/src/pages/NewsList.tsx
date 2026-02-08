@@ -41,9 +41,9 @@ export default function NewsList() {
 
                 // 2. Supabase 쿼리 실행
                 const { data, error } = await supabase
-                    .from('articles')
+                    .from('news_items')
                     .select('*')
-                    .eq('category', targetCategory)
+                    .eq('emotion', targetCategory)
                     .order('created_at', { ascending: false });
 
                 // 3. 결과 처리
@@ -52,7 +52,16 @@ export default function NewsList() {
                     setDebugMsg(`데이터 불러오기 실패: ${error.message}`);
                 } else {
                     console.log(`✅ [성공] 받아온 데이터 개수: ${data?.length}`);
-                    setArticles(data || []);
+                    // Map news_items fields to Article interface
+                    const mappedData = (data || []).map((item: any) => ({
+                        id: item.id,
+                        title: item.title,
+                        summary: item.summary,
+                        thumbnail_url: item.image, // Map image to thumbnail_url
+                        created_at: item.created_at,
+                        category: item.category,
+                    }));
+                    setArticles(mappedData);
                     if (data?.length === 0) setDebugMsg('데이터는 불러왔으나 결과가 0개입니다. (DB 데이터를 확인하세요)');
                 }
             } catch (err: any) {

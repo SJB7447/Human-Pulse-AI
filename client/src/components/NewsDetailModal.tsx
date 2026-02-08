@@ -170,7 +170,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
               damping: 25
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-lg max-h-[85vh] overflow-hidden rounded-2xl"
+            className="relative w-full max-w-lg h-[85vh] flex flex-col overflow-hidden rounded-2xl"
             style={{
               backgroundColor: 'rgba(20, 20, 25, 0.85)',
               backdropFilter: 'blur(24px)',
@@ -178,50 +178,41 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
               border: '1px solid rgba(255, 255, 255, 0.1)',
             }}
           >
-            <motion.div
-              className="absolute inset-0 rounded-2xl pointer-events-none"
-              initial={{
-                opacity: 0,
-                boxShadow: 'none'
-              }}
-              animate={{
-                opacity: [0, 1, 0.7, 1, 0.7],
-                boxShadow: [
-                  'none',
-                  fullGlow,
-                  `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
-                  fullGlow,
-                  `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
-                ],
-              }}
-              transition={{
-                opacity: {
-                  duration: 0.5,
-                  times: [0, 0.2, 0.5, 0.7, 1],
-                  repeat: Infinity,
-                  repeatDelay: 2,
-                },
-                boxShadow: {
-                  duration: 4,
-                  times: [0, 0.125, 0.5, 0.625, 1],
-                  repeat: Infinity,
-                  ease: "easeInOut",
-                },
-              }}
-            />
+            <div className="absolute inset-0 rounded-2xl pointer-events-none z-0">
+              <motion.div
+                className="absolute inset-0 rounded-2xl"
+                initial={{ opacity: 0, boxShadow: 'none' }}
+                animate={{
+                  opacity: [0, 1, 0.7, 1, 0.7],
+                  boxShadow: [
+                    'none',
+                    fullGlow,
+                    `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
+                    fullGlow,
+                    `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
+                  ],
+                }}
+                transition={{
+                  opacity: { duration: 0.5, repeat: Infinity, repeatDelay: 2 },
+                  boxShadow: { duration: 4, repeat: Infinity, ease: "easeInOut" },
+                }}
+              />
+            </div>
 
+            {/* Header / Close Button */}
             <Button
               variant="ghost"
               size="icon"
               onClick={onClose}
-              className="absolute top-4 right-4 z-10 bg-white/10 text-white/80"
+              className="absolute top-4 right-4 z-50 bg-black/20 text-white/90 hover:bg-black/40 backdrop-blur-sm"
               data-testid="button-close-modal"
             >
               <X className="w-5 h-5" />
             </Button>
 
+            {/* Image Section (Fixed at top) */}
             {article.image && (
-              <div className="relative h-48 overflow-hidden">
+              <div className="relative h-48 shrink-0 overflow-hidden z-10">
                 <img
                   src={article.image}
                   alt={article.title}
@@ -236,7 +227,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
               </div>
             )}
 
-            <div className="p-6 overflow-y-auto" style={{ maxHeight: article.image ? 'calc(85vh - 12rem)' : 'calc(85vh - 4rem)' }}>
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 z-10">
               <div className="flex items-center gap-3 mb-4">
                 {article.category && (
                   <EmotionTag emotion={article.category.toLowerCase() as EmotionType} showIcon={true} />
@@ -251,34 +243,43 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                 {article.title}
               </h2>
 
-              <p className="text-sm text-white/60 mb-4">
-                {article.source}
+              <p className="text-sm text-white/60 mb-6 flex items-center gap-2">
+                <span className="bg-white/10 px-2 py-0.5 rounded text-xs text-white/70">
+                  {article.source?.startsWith('http') ? new URL(article.source).hostname.replace('www.', '') : article.source}
+                </span>
               </p>
 
-              <div className="text-white/80 leading-relaxed mb-6 min-h-[100px]">
+              <div className="text-white/90 text-lg leading-8 font-light mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide">
                 {rewrittenContent ? (
-                  <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-xs font-bold text-purple-400 flex items-center gap-1">
+                  <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
+                    <div className="flex justify-between items-center mb-4">
+                      <span className="text-xs font-bold text-purple-400 flex items-center gap-2 bg-purple-500/10 px-2 py-1 rounded">
                         <Sparkles className="w-3 h-3" /> AI GENERATED
                       </span>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 text-xs text-white/40 hover:text-white"
+                        className="h-7 text-xs text-white/40 hover:text-white hover:bg-white/10"
                         onClick={() => setRewrittenContent(null)}
                       >
                         원본 보기
                       </Button>
                     </div>
-                    <TypewriterText text={rewrittenContent} speed={0.02} />
+                    <TypewriterText text={rewrittenContent} speed={0.015} />
                   </div>
                 ) : (
-                  article.content || article.summary
+                  <div className="space-y-4">
+                    {(article.content || article.summary).split('\n\n').map((paragraph, idx) => (
+                      <p key={idx} className="text-justify opacity-95">{paragraph}</p>
+                    ))}
+                  </div>
                 )}
               </div>
+            </div>
 
-              <div className="flex items-center gap-2 pt-4 border-t border-white/10 flex-wrap">
+            {/* Fixed Footer Buttons */}
+            <div className="p-4 border-t border-white/10 bg-[#141419]/95 backdrop-blur z-20 shrink-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -288,7 +289,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                     }
                     handleSave();
                   }}
-                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20"
+                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20 hover:bg-white/20"
                   data-testid="button-save-article"
                 >
                   <Bookmark className="w-4 h-4" />
@@ -298,7 +299,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                 <Button
                   variant="ghost"
                   onClick={handleShare}
-                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20"
+                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20 hover:bg-white/20"
                   data-testid="button-share-article"
                 >
                   <Share2 className="w-4 h-4" />
@@ -314,7 +315,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                     }
                     setShowInsightEditor(true);
                   }}
-                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20"
+                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20 hover:bg-white/20"
                   data-testid="button-add-insight"
                 >
                   <Lightbulb className="w-4 h-4" />
@@ -330,7 +331,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                     handleMyArticle();
                   }}
                   disabled={isTransforming}
-                  className="flex-1 min-w-[100px] border-0"
+                  className="flex-1 min-w-[100px] border-0 hover:brightness-110 transition-all font-semibold"
                   variant="flowing"
                   style={{
                     backgroundColor: undefined, // Let variant handle bg
@@ -352,108 +353,109 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                   )}
                 </Button>
               </div>
-
-              {/* Insight Editor Overlay */}
-              <AnimatePresence>
-                {showInsightEditor && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 20 }}
-                    className="absolute inset-0 z-20 flex flex-col rounded-2xl overflow-visible"
-                    style={{
-                      backgroundColor: 'rgba(20, 20, 25, 0.95)',
-                      backdropFilter: 'blur(24px)',
-                    }}
-                  >
-                    <div className="flex items-center justify-between p-4 border-b border-white/10">
-                      <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                        <Lightbulb className="w-5 h-5" style={{ color }} />
-                        인사이트 추가
-                      </h3>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowInsightEditor(false)}
-                        className="bg-white/10 text-white/80"
-                        data-testid="button-close-insight"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-
-                    <div className="flex-1 p-4 overflow-y-auto">
-                      {/* Original Article Context */}
-                      <div className="mb-4 p-3 rounded-lg bg-white/5 border border-white/10">
-                        <p className="text-xs text-white/50 mb-1">원본 기사</p>
-                        <p className="text-sm text-white/80 font-medium line-clamp-2">{article?.title}</p>
-                      </div>
-
-                      {/* User Input */}
-                      <div className="mb-4">
-                        <label className="block text-sm text-white/70 mb-2">
-                          나의 생각 ({insightText.length}/{MAX_INSIGHT_LENGTH})
-                        </label>
-                        <textarea
-                          value={insightText}
-                          onChange={(e) => setInsightText(e.target.value.slice(0, MAX_INSIGHT_LENGTH))}
-                          placeholder="이 기사에 대한 당신의 생각, 감정, 요약을 적어주세요..."
-                          rows={5}
-                          className="w-full px-4 py-3 rounded-lg border border-white/20 bg-white/5 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
-                          data-testid="textarea-insight"
-                        />
-                      </div>
-
-                      {/* Emotion Selection */}
-                      <div>
-                        <label className="block text-sm text-white/70 mb-2">
-                          나의 해석 감정
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {EMOTION_CONFIG.map((emotion) => (
-                            <button
-                              key={emotion.type}
-                              onClick={() => setSelectedEmotion(emotion.type)}
-                              className={`px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${selectedEmotion === emotion.type
-                                ? 'ring-2 ring-offset-2 ring-offset-gray-900 opacity-100'
-                                : 'opacity-70'
-                                }`}
-                              style={{
-                                backgroundColor: `${emotion.color}30`,
-                                color: emotion.color,
-                                ...(selectedEmotion === emotion.type && { ringColor: emotion.color }),
-                              }}
-                              data-testid={`emotion-stamp-${emotion.type}`}
-                            >
-                              {selectedEmotion === emotion.type && <Check className="w-3 h-3" />}
-                              {emotion.labelKo}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="p-4 border-t border-white/10">
-                      <Button
-                        onClick={handleSaveInsight}
-                        className="w-full"
-                        style={{
-                          backgroundColor: EMOTION_CONFIG.find(e => e.type === selectedEmotion)?.color || color,
-                          color: '#ffffff',
-                        }}
-                        data-testid="button-save-insight"
-                      >
-                        <Check className="w-4 h-4" />
-                        인사이트 저장
-                      </Button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
+
+            {/* Insight Editor Overlay */}
+            <AnimatePresence>
+              {showInsightEditor && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                  className="absolute inset-0 z-20 flex flex-col rounded-2xl overflow-visible"
+                  style={{
+                    backgroundColor: 'rgba(20, 20, 25, 0.95)',
+                    backdropFilter: 'blur(24px)',
+                  }}
+                >
+                  <div className="flex items-center justify-between p-4 border-b border-white/10">
+                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                      <Lightbulb className="w-5 h-5" style={{ color }} />
+                      인사이트 추가
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowInsightEditor(false)}
+                      className="bg-white/10 text-white/80"
+                      data-testid="button-close-insight"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+
+                  <div className="flex-1 p-4 overflow-y-auto">
+                    {/* Original Article Context */}
+                    <div className="mb-4 p-3 rounded-lg bg-white/5 border border-white/10">
+                      <p className="text-xs text-white/50 mb-1">원본 기사</p>
+                      <p className="text-sm text-white/80 font-medium line-clamp-2">{article?.title}</p>
+                    </div>
+
+                    {/* User Input */}
+                    <div className="mb-4">
+                      <label className="block text-sm text-white/70 mb-2">
+                        나의 생각 ({insightText.length}/{MAX_INSIGHT_LENGTH})
+                      </label>
+                      <textarea
+                        value={insightText}
+                        onChange={(e) => setInsightText(e.target.value.slice(0, MAX_INSIGHT_LENGTH))}
+                        placeholder="이 기사에 대한 당신의 생각, 감정, 요약을 적어주세요..."
+                        rows={5}
+                        className="w-full px-4 py-3 rounded-lg border border-white/20 bg-white/5 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
+                        data-testid="textarea-insight"
+                      />
+                    </div>
+
+                    {/* Emotion Selection */}
+                    <div>
+                      <label className="block text-sm text-white/70 mb-2">
+                        나의 해석 감정
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {EMOTION_CONFIG.map((emotion) => (
+                          <button
+                            key={emotion.type}
+                            onClick={() => setSelectedEmotion(emotion.type)}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${selectedEmotion === emotion.type
+                              ? 'ring-2 ring-offset-2 ring-offset-gray-900 opacity-100'
+                              : 'opacity-70'
+                              }`}
+                            style={{
+                              backgroundColor: `${emotion.color}30`,
+                              color: emotion.color,
+                              ...(selectedEmotion === emotion.type && { ringColor: emotion.color }),
+                            }}
+                            data-testid={`emotion-stamp-${emotion.type}`}
+                          >
+                            {selectedEmotion === emotion.type && <Check className="w-3 h-3" />}
+                            {emotion.labelKo}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 border-t border-white/10">
+                    <Button
+                      onClick={handleSaveInsight}
+                      className="w-full"
+                      style={{
+                        backgroundColor: EMOTION_CONFIG.find(e => e.type === selectedEmotion)?.color || color,
+                        color: '#ffffff',
+                      }}
+                      data-testid="button-save-insight"
+                    >
+                      <Check className="w-4 h-4" />
+                      인사이트 저장
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         </motion.div>
-      )}
-    </AnimatePresence>
+      )
+      }
+    </AnimatePresence >
   );
 }

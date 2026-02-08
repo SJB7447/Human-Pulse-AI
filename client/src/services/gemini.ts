@@ -99,9 +99,13 @@ export const GeminiService = {
             return {
                 joy: 20, anger: 20, sadness: 20, fear: 20, calm: 20,
                 dominantEmotion: 'neutral',
-                feedback: '기사 내용을 작성해주세요.'
+                feedback: '기사 내용을 입력해주세요.'
             };
         }
         return callApi('/api/ai/analyze-sentiment', { content });
+    },
+
+    async translateText(text: string, targetLang: string = 'ko'): Promise<{ translatedText: string }> {
+        return callApi('/api/ai/translate', { text, targetLang });
     }
 };

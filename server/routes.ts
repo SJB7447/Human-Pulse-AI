@@ -18,8 +18,9 @@ export async function registerRoutes(
     res.json(emotions);
   });
 
-  app.get("/api/news", async (_req, res) => {
-    const news = await storage.getAllNews();
+  app.get("/api/news", async (req, res) => {
+    const includeHidden = req.query.all === 'true';
+    const news = await storage.getAllNews(includeHidden);
     res.json(news);
   });
 
@@ -175,28 +176,75 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/ai/translate", async (req, res) => {
+    try {
+      const { text, targetLang = "ko" } = req.body;
+      const prompt = `
+            Translate the following text to fluent, professional, and journalistic ${targetLang === "ko" ? "Korean" : "English"}.
+            Maintain the original tone and intent.
+            
+            [Target Text]:
+            "${text.substring(0, 3000)}"
+            
+            Return JSON only: { "translatedText": "Translated content here..." }
+        `;
+      const result = await generateJSON("gemini-3-flash-preview", prompt);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // 2. Image Generation Endpoint
   app.post("/api/ai/generate-image", async (req, res) => {
     try {
       const { articleContent, count = 4 } = req.body;
       const genAI = getGenAI();
 
-      // 1. Generate Description Prompt
-      const descModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
-      const descPrompt = `
-            Analyze for AI Image Generation:
-            "${articleContent.substring(0, 1000)}"
-            Return JSON: { "subject", "action", "setting", "lighting", "mood", "composition", "style" }
-        `;
-      const descResult = await descModel.generateContent(descPrompt);
-      const descJson = JSON.parse(descResult.response.text().replace(/```json|```/g, '').trim());
+      let imagePrompt = "";
+      let descJson: any = {
+        subject: "News event",
+        action: "happening",
+        setting: "realistic setting",
+        lighting: "natural lighting",
+        mood: "neutral",
+        composition: "wide shot",
+        style: "photojournalism"
+      };
 
-      // 2. Construct Prompt
-      const imagePrompt = `
-            Subject: ${descJson.subject}. Action: ${descJson.action}. Setting: ${descJson.setting}.
-            Lighting: ${descJson.lighting}. Mood: ${descJson.mood}. Composition: ${descJson.composition}. Style: ${descJson.style}.
-            Quality: High resolution, photorealistic, cinematic lighting, 8k.
-        `.trim();
+      try {
+        // 1. Generate Description Prompt
+        const descModel = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+        const descPrompt = `
+              Analyze for AI Image Generation:
+              "${articleContent.substring(0, 1000)}"
+              Return JSON: { "subject", "action", "setting", "lighting", "mood", "composition", "style" }
+          `;
+
+        try {
+          const descResult = await descModel.generateContent(descPrompt);
+          const text = descResult.response.text();
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            descJson = JSON.parse(jsonMatch[0]);
+          }
+        } catch (parseError) {
+          console.warn("JSON Parse Error (using default):", parseError);
+          // Keep default descJson
+        }
+
+        // 2. Construct Prompt
+        imagePrompt = `
+              Subject: ${descJson.subject}. Action: ${descJson.action}. Setting: ${descJson.setting}.
+              Lighting: ${descJson.lighting}. Mood: ${descJson.mood}. Composition: ${descJson.composition}. Style: ${descJson.style}.
+              Quality: High resolution, photorealistic, cinematic lighting, 8k.
+          `.trim();
+
+      } catch (promptGenError) {
+        console.error("Prompt Generation Failed (using fallback):", promptGenError);
+        // Fallback: Create simple prompt from content
+        imagePrompt = `News image depicting: ${articleContent.substring(0, 300)}. High quality, photorealistic, 8k resolution, cinematic lighting, news photography style.`;
+      }
 
       // 3. Generate Images
       const imageModel = genAI.getGenerativeModel({ model: "gemini-3-pro-image-preview" });
@@ -399,6 +447,52 @@ export async function registerRoutes(
       console.error("Cron Error:", e);
       res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
+  });
+
+  // 4. Article Management
+  app.post("/api/articles", async (req, res) => {
+    try {
+      const articleData = req.body;
+      const newItem = await storage.createNewsItem(articleData);
+      res.status(201).json(newItem);
+    } catch (e: any) {
+      console.error("Article Creation Error:", e);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.put("/api/articles/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updates = req.body;
+      const updatedItem = await storage.updateNewsItem(id, updates);
+      if (!updatedItem) {
+        return res.status(404).json({ error: "Article not found" });
+      }
+      res.json(updatedItem);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/articles/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const success = await storage.deleteNewsItem(id);
+      if (!success) {
+        return res.status(404).json({ error: "Article not found or could not be deleted" });
+      }
+      res.sendStatus(204);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/articles", async (req, res) => {
+    // Alias for /api/news but maybe with more filters later
+    const includeHidden = req.query.all === 'true';
+    const news = await storage.getAllNews(includeHidden);
+    res.json(news);
   });
 
   // User Interaction API
