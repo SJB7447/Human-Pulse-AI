@@ -9,7 +9,8 @@ export type EmotionType = typeof emotionTypes[number];
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  password: text("password"),
+  googleId: text("google_id").unique(),
 });
 
 export const newsItems = pgTable("news_items", {
@@ -43,6 +44,7 @@ export const reports = pgTable("reports", {
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
+  googleId: true,
 });
 
 export const insertNewsItemSchema = createInsertSchema(newsItems).omit({

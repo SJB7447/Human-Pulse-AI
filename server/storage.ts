@@ -12,6 +12,7 @@ export interface AdminStats {
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByGoogleId(googleId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   getNewsByEmotion(emotion: EmotionType): Promise<NewsItem[]>;
   getAllNews(includeHidden?: boolean): Promise<NewsItem[]>;
@@ -113,9 +114,20 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async getUserByGoogleId(googleId: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.googleId === googleId,
+    );
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { ...insertUser, id };
+    const user: User = {
+      ...insertUser,
+      id,
+      password: insertUser.password || null, // Ensure password is null if undefined
+      googleId: insertUser.googleId || null
+    };
     this.users.set(id, user);
     return user;
   }
@@ -244,18 +256,53 @@ import { supabase } from "./supabase";
 export class SupabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const { data } = await supabase.from('users').select('*').eq('id', id).single();
-    return data || undefined;
+    if (data) {
+      return {
+        ...data,
+        googleId: data.google_id
+      } as User;
+    }
+    return undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
     const { data } = await supabase.from('users').select('*').eq('username', username).single();
-    return data || undefined;
+    if (data) {
+      return {
+        ...data,
+        googleId: data.google_id
+      } as User;
+    }
+    return undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const { data, error } = await supabase.from('users').insert(insertUser).select().single();
+    // Manually map camelCase to snake_case for Supabase
+    const supabaseUser = {
+      username: insertUser.username,
+      password: insertUser.password,
+      google_id: insertUser.googleId
+    };
+
+    const { data, error } = await supabase.from('users').insert(supabaseUser).select().single();
     if (error) throw error;
-    return data;
+
+    // Map back snake_case to camelCase
+    return {
+      ...data,
+      googleId: data.google_id
+    } as User;
+  }
+
+  async getUserByGoogleId(googleId: string): Promise<User | undefined> {
+    const { data } = await supabase.from('users').select('*').eq('google_id', googleId).single();
+    if (data) {
+      return {
+        ...data,
+        googleId: data.google_id
+      } as User;
+    }
+    return undefined;
   }
 
   async getNewsByEmotion(emotion: EmotionType): Promise<NewsItem[]> {
