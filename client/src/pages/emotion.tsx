@@ -141,7 +141,7 @@ export default function EmotionPage() {
     } catch (e) {
       console.error("News Generation Failed:", e);
       const errorMessage = e instanceof Error ? e.message : "Unknown error";
-      alert(`뉴스 생성 실패: ${errorMessage}\n\n(API Key: ${import.meta.env.VITE_GEMINI_API_KEY ? 'Env Loaded' : 'Fallback Used'})`);
+      alert(`뉴스 생성 실패: ${errorMessage}`);
     } finally {
       setIsGenerating(false);
     }
