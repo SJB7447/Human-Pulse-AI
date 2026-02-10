@@ -432,7 +432,7 @@ export default function LoginPage() {
                                     title: '데모 로그인 성공',
                                     description: '테스트 계정으로 접속했습니다.',
                                 });
-                                setLocation('/');
+                                setLocation('/admin');
                                 setIsLoading(false);
                             }, 800);
                         }}

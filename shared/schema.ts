@@ -3,7 +3,7 @@ import { pgTable, text, varchar, integer, timestamp, boolean } from "drizzle-orm
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const emotionTypes = ['joy', 'anger', 'sadness', 'fear', 'calm'] as const;
+export const emotionTypes = ['vibrance', 'immersion', 'clarity', 'gravity', 'serenity', 'spectrum'] as const;
 export type EmotionType = typeof emotionTypes[number];
 
 export const users = pgTable("users", {

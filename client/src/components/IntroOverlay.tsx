@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useEmotionStore } from '@/lib/store';
 
 export function IntroOverlay() {
-  const { showIntro, setShowIntro, setAnimationPhase } = useEmotionStore();
+  const { showIntro, setShowIntro, setAnimationPhase, setIsSplit } = useEmotionStore();
   const [textPhase, setTextPhase] = useState<'hidden' | 'visible' | 'fading'>('hidden');
 
   useEffect(() => {
@@ -19,7 +19,9 @@ export function IntroOverlay() {
 
     const hideTimer = setTimeout(() => {
       setShowIntro(false);
-      setAnimationPhase('initial');
+      // Skip 'initial' phase (gray sphere) - go directly to split spheres
+      setIsSplit(true);
+      setAnimationPhase('idle');
     }, 3500);
 
     return () => {
@@ -43,14 +45,14 @@ export function IntroOverlay() {
         >
           <motion.div
             initial={{ opacity: 0, y: 20 }}
-            animate={{ 
+            animate={{
               opacity: textPhase === 'visible' ? 1 : textPhase === 'fading' ? 0 : 0,
               y: textPhase === 'visible' ? 0 : textPhase === 'fading' ? -20 : 20,
             }}
             transition={{ duration: 0.8, ease: 'easeOut' }}
             className="text-center px-6"
           >
-            <h1 
+            <h1
               className="text-2xl md:text-4xl lg:text-5xl font-light text-gray-700 tracking-wide"
               style={{
                 fontFamily: "'Noto Sans KR', sans-serif",
@@ -61,7 +63,7 @@ export function IntroOverlay() {
             </h1>
             <motion.p
               initial={{ opacity: 0 }}
-              animate={{ 
+              animate={{
                 opacity: textPhase === 'visible' ? 0.6 : 0,
               }}
               transition={{ duration: 0.6, delay: 0.3 }}

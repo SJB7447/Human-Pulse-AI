@@ -53,8 +53,8 @@ export const DBService = {
         if (!user) throw new Error("로그인이 필요합니다.");
 
         // Emotion Validation
-        const validEmotions = ['joy', 'anger', 'sadness', 'fear', 'calm'];
-        const emotion = validEmotions.includes(emotionLabel) ? emotionLabel : 'calm';
+        const validEmotions = ['vibrance', 'immersion', 'clarity', 'gravity', 'serenity', 'spectrum'];
+        const emotion = validEmotions.includes(emotionLabel) ? emotionLabel : 'serenity';
 
         // 기사 저장 (/api/articles API 호출 - RLS 우회)
         const response = await fetch('/api/articles', {

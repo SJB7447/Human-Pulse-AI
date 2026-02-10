@@ -3,8 +3,8 @@ import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { Environment, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { useLocation } from 'wouter';
-import { MainSphere } from './MainSphere';
 import { EmotionSphere } from './EmotionSphere';
+import { NeutralSphere } from './NeutralSphere';
 import { Particles } from './Particles';
 import { EMOTION_CONFIG, useEmotionStore, EmotionType } from '@/lib/store';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -87,26 +87,19 @@ function SceneContent({ isMobile }: { isMobile: boolean }) {
   const handleEmotionClick = (emotionType: EmotionType) => {
     if (!isSplit) return;
 
-    // 1st Click: Zoom/Focus
-    if (activeEmotion !== emotionType) {
-      console.log("First click - Focusing on:", emotionType);
-      setActiveEmotion(emotionType);
-      setAnimationPhase('focusing');
-    }
-    // 2nd Click (Same Sphere): Navigate
-    else if (activeEmotion === emotionType) {
+    // Start focusing animation
+    setActiveEmotion(emotionType);
+    setAnimationPhase('focusing');
+
+    // Navigate after 1 second delay to show particle animation
+    setTimeout(() => {
       console.log(`🚀 Navigating to /emotion/${emotionType}`);
       setLocation(`/emotion/${emotionType}`);
-    }
+    }, 1000);
   };
 
   const handleBackgroundClick = () => {
-    // Background Click: Reset to Idle
-    if (activeEmotion) {
-      goBackToSplit(); // Resets activeEmotion to null and phase to idle
-    } else if (isSplit && animationPhase === 'idle') {
-      goBackToInitial();
-    }
+    // Background click now does nothing - spheres always stay visible
   };
 
   return (
@@ -127,11 +120,11 @@ function SceneContent({ isMobile }: { isMobile: boolean }) {
       <pointLight position={[0, 10, -5]} intensity={0.5} color="#FFD700" />
       <spotLight position={[0, 15, 0]} angle={0.3} penumbra={1} intensity={0.8} color="#ffffff" />
 
-      <MainSphere />
-
       <Particles />
 
-      {EMOTION_CONFIG.map((config, index) => (
+      <NeutralSphere />
+
+      {EMOTION_CONFIG.filter(config => config.type !== 'spectrum').map((config, index) => (
         <EmotionSphere
           key={config.type}
           config={config}
@@ -171,7 +164,7 @@ function checkWebGLSupport(): boolean {
 }
 
 export function Scene() {
-  const { activeEmotion, animationPhase } = useEmotionStore();
+  const { activeEmotion, animationPhase, isSplit } = useEmotionStore();
   const activeConfig = EMOTION_CONFIG.find(e => e.type === activeEmotion);
   const [webglSupported, setWebglSupported] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -198,6 +191,27 @@ export function Scene() {
 
   return (
     <div className="fixed inset-0 w-full h-full" style={{ backgroundColor: '#f8f9fa', zIndex: 0 }}>
+      {/* Background text - behind canvas */}
+      {isSplit && (
+        <div
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          style={{ zIndex: 1 }}
+        >
+          <h1
+            className="font-serif tracking-tight select-none"
+            style={{
+              fontFamily: '"Playfair Display", serif',
+              fontWeight: 900,
+              fontStyle: 'italic',
+              fontSize: 'clamp(80px, 20vw, 300px)',
+              color: '#eeeeee',
+            }}
+          >
+            Hue Brief
+          </h1>
+        </div>
+      )}
+
       <div
         className="absolute inset-0 transition-opacity duration-500"
         style={{
@@ -210,7 +224,7 @@ export function Scene() {
         <ErrorBoundary fallback={<FallbackScene />}>
           <Canvas
             gl={{ antialias: true, alpha: true }}
-            style={{ background: 'transparent', zIndex: 1 }}
+            style={{ background: 'transparent', zIndex: 5, position: 'relative' }}
           >
             <Suspense fallback={null}>
               <SceneContent isMobile={isMobile} />

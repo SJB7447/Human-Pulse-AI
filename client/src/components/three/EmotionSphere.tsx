@@ -28,7 +28,31 @@ export function EmotionSphere({ config, onClick, index }: EmotionSphereProps) {
   const shouldShow = isSplit || animationPhase === 'splitting' || isMerging;
 
   const position = isMobile ? config.positionMobile : config.positionDesktop;
-  const baseScale = isMobile ? config.scaleMobile : config.scaleDesktop;
+
+  // Dynamic scale based on viewport - smooth transition between mobile and desktop
+  const [viewportScale, setViewportScale] = useState(1);
+  useEffect(() => {
+    const updateScale = () => {
+      const width = window.innerWidth;
+      // Scale smoothly: 768px = 0.45, 1200px = 0.75, 1600px+ = 0.95
+      if (width < 768) {
+        setViewportScale(0.45);
+      } else if (width < 1200) {
+        // Linear interpolation between 0.45 and 0.75
+        setViewportScale(0.45 + ((width - 768) / (1200 - 768)) * 0.3);
+      } else if (width < 1600) {
+        // Linear interpolation between 0.75 and 0.95
+        setViewportScale(0.75 + ((width - 1200) / (1600 - 1200)) * 0.2);
+      } else {
+        setViewportScale(0.95);
+      }
+    };
+    updateScale();
+    window.addEventListener('resize', updateScale);
+    return () => window.removeEventListener('resize', updateScale);
+  }, []);
+
+  const baseScale = viewportScale;
 
   // Staggered appearance delay
   useEffect(() => {
@@ -44,13 +68,17 @@ export function EmotionSphere({ config, onClick, index }: EmotionSphereProps) {
   const isFocusing = animationPhase === 'focusing' || animationPhase === 'focused';
   const activeScale = isFocusing && isActive ? baseScale * 1.5 : isActive ? baseScale * 1.8 : baseScale;
 
+  // Use different spring configs: fast for appearing, very slow for focusing animation
+  const focusingConfig = { mass: 8, tension: 8, friction: 35 }; // Very slow and smooth for click transition
+  const normalConfig = { mass: 2, tension: 80, friction: 18 }; // Normal speed for appearing
+
   const { scale, positionX, positionY, positionZ, opacity } = useSpring({
     scale: isMerging ? 0 : (!shouldShow || !isReady ? 0 : isActive ? activeScale : isHovered ? baseScale * 1.15 : baseScale),
     positionX: isMerging ? 0 : (shouldShow ? position[0] : 0),
     positionY: isMerging ? 0 : (shouldShow ? position[1] : 0),
     positionZ: isMerging ? 0 : (shouldShow ? position[2] : 0),
     opacity: isMerging ? 0 : (!shouldShow || !isReady ? 0 : (isOtherActive && !isActive ? 0.25 : 0.95)),
-    config: { mass: 2, tension: 80, friction: 18 },
+    config: isFocusing ? focusingConfig : normalConfig,
   });
 
   useFrame((state) => {
@@ -60,7 +88,8 @@ export function EmotionSphere({ config, onClick, index }: EmotionSphereProps) {
       groupRef.current.scale.setScalar(pulseScale);
 
       const mouse = state.pointer;
-      const targetDistort = isHovered ? 0.7 + Math.abs(mouse.x) * 0.3 + Math.abs(mouse.y) * 0.3 : 0.5;
+      // Smoother, rounder base shape with distortion only on hover
+      const targetDistort = isHovered ? 0.4 + Math.abs(mouse.x) * 0.15 + Math.abs(mouse.y) * 0.15 : 0.2;
       const easingSpeed = targetDistort > distortRef.current ? 0.08 : 0.015;
       distortRef.current += (targetDistort - distortRef.current) * easingSpeed;
       materialRef.current.distort = distortRef.current;
@@ -110,8 +139,8 @@ export function EmotionSphere({ config, onClick, index }: EmotionSphereProps) {
           ref={materialRef}
           color={config.color}
           attach="material"
-          distort={0.5}
-          speed={isHovered ? 5 : 2.5}
+          distort={0.2}
+          speed={isHovered ? 4 : 2}
           roughness={0.15}
           metalness={0.25}
           transparent
@@ -122,7 +151,7 @@ export function EmotionSphere({ config, onClick, index }: EmotionSphereProps) {
 
       {isHovered && animationPhase === 'idle' && isSplit && (
         <Html
-          position={[0, 3.5, 0]}
+          position={[0, 0, 0]}
           center
           style={{
             pointerEvents: 'none',
@@ -130,7 +159,7 @@ export function EmotionSphere({ config, onClick, index }: EmotionSphereProps) {
           }}
         >
           <div
-            className="px-4 py-2 rounded-xl text-center whitespace-nowrap"
+            className="px-4 py-3 rounded-xl text-center whitespace-nowrap"
             style={{
               backgroundColor: 'rgba(255, 255, 255, 0.2)',
               backdropFilter: 'blur(16px)',
@@ -140,10 +169,10 @@ export function EmotionSphere({ config, onClick, index }: EmotionSphereProps) {
             }}
           >
             <div className="text-base font-semibold text-white" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
-              {config.labelKo}
-            </div>
-            <div className="text-xs text-white/70 mt-0.5">
               {config.label}
+            </div>
+            <div className="text-xs text-white/80 mt-0.5">
+              {config.labelKo}
             </div>
           </div>
         </Html>

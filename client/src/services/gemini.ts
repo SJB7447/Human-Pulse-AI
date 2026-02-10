@@ -92,13 +92,13 @@ export const GeminiService = {
     },
 
     async analyzeSentiment(content: string): Promise<{
-        joy: number; anger: number; sadness: number; fear: number; calm: number;
+        vibrance: number; immersion: number; clarity: number; gravity: number; serenity: number;
         dominantEmotion: string; feedback: string;
     }> {
         if (!content.trim()) {
             return {
-                joy: 20, anger: 20, sadness: 20, fear: 20, calm: 20,
-                dominantEmotion: 'neutral',
+                vibrance: 20, immersion: 20, clarity: 20, gravity: 20, serenity: 20,
+                dominantEmotion: 'spectrum',
                 feedback: '기사 내용을 입력해주세요.'
             };
         }

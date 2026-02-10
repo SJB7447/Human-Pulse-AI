@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useLocation } from 'wouter';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, ArrowUp } from 'lucide-react';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { NewsDetailModal } from '@/components/NewsDetailModal';
@@ -11,11 +11,12 @@ import { Header } from '@/components/Header';
 import { EmotionTag } from '@/components/ui/EmotionTag';
 
 const EMOTION_ICONS: Record<EmotionType, typeof Heart> = {
-  joy: Sparkles,
-  anger: AlertCircle,
-  sadness: CloudRain,
-  fear: Shield,
-  calm: Heart,
+  vibrance: Sparkles,
+  immersion: AlertCircle,
+  clarity: CloudRain,
+  gravity: Shield,
+  serenity: Heart,
+  spectrum: HelpCircle,
 };
 
 const MOCK_AUTHORS = [
@@ -59,6 +60,19 @@ export default function EmotionPage() {
   const [, setLocation] = useLocation();
   const { user } = useEmotionStore();
   const { toast } = useToast();
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const handleRestrictedNavigation = (path: string) => {
     if (!user) {
@@ -179,11 +193,32 @@ export default function EmotionPage() {
               </Button>
             </Link>
           </div>
-          <h1 className="font-serif text-4xl md:text-5xl font-bold text-human-main mb-3" data-testid="text-emotion-title">
-            {emotionConfig.labelKo}
+          <h1 className="font-serif text-4xl md:text-5xl font-bold text-human-main mb-2" data-testid="text-emotion-title">
+            {emotionConfig.label}
           </h1>
-          <p className="text-human-sub text-lg" data-testid="text-story-count">
-            {emotionConfig.label} · {news.length}개의 이야기
+          <p className="text-xl text-human-main/80 font-medium mb-2">
+            {emotionConfig.labelKo}
+          </p>
+          <p className="text-human-sub text-lg mb-4" data-testid="text-story-count">
+            {emotionConfig.subLabel}
+          </p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {emotionConfig.recommendedNews.map((news, idx) => (
+              <span
+                key={idx}
+                className="px-3 py-1 rounded-full text-sm"
+                style={{
+                  backgroundColor: `${emotionConfig.color}20`,
+                  color: emotionConfig.color,
+                  border: `1px solid ${emotionConfig.color}40`,
+                }}
+              >
+                {news}
+              </span>
+            ))}
+          </div>
+          <p className="text-human-sub text-sm">
+            {news.length}개의 이야기
           </p>
           <div className="mt-4">
             <Button
@@ -246,175 +281,115 @@ export default function EmotionPage() {
             <p className="text-xs text-gray-400 mt-4">DB 연결은 성공했으나 데이터가 없습니다.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-            {heroArticle && (
-              <motion.article
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: mounted ? 1 : 0, y: mounted ? 0 : 30 }}
-                transition={{ duration: 0.6, delay: 0.2 }}
-                onClick={() => setSelectedArticle(heroArticle)}
-                className="col-span-12 group cursor-pointer"
-                data-testid={`card-hero-${heroArticle.id}`}
-              >
-                <div
-                  className="rounded-xl overflow-visible hover-elevate"
-                  style={{
-                    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-                    backdropFilter: 'blur(20px)',
-                    border: '1px solid rgba(255, 255, 255, 0.4)',
-                    borderTop: `4px solid ${emotionConfig.color}`,
-                  }}
-                >
-                  <div className="grid md:grid-cols-2 gap-0">
-                    <div className="aspect-[3/2] md:aspect-auto overflow-hidden">
-                      {heroArticle.image ? (
-                        <img
-                          src={heroArticle.image}
-                          alt={heroArticle.title}
-                          className="w-full h-full object-cover"
-                          data-testid={`img-hero-${heroArticle.id}`}
-                          onError={(e) => {
-                            e.currentTarget.onerror = null;
-                            e.currentTarget.src = `https://placehold.co/800x600/e2e8f0/64748b?text=${encodeURIComponent(heroArticle.category || 'HueBrief')}`;
-                          }}
-                        />
-                      ) : (
+          <div className="mt-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
+              {news.map((item, index) => {
+                // Pick color based on index for variety (cycling through variations)
+                const colorIndex = index % emotionConfig.colorVariations.length;
+                const cardBgColor = emotionConfig.colorVariations[colorIndex];
+                // Determine if text should be light or dark based on color intensity
+                const isLightBg = colorIndex < 2;
+                const textColor = isLightBg ? '#232221' : '#ffffff';
+                const subTextColor = isLightBg ? '#666666' : 'rgba(255,255,255,0.8)';
+
+                return (
+                  <motion.article
+                    key={item.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: mounted ? 1 : 0, y: mounted ? 0 : 20 }}
+                    transition={{ duration: 0.4, delay: index * 0.1 }}
+                    onClick={() => setSelectedArticle(item)}
+                    className="w-full group cursor-pointer"
+                    data-testid={`card-news-${item.id}`}
+                  >
+                    <div
+                      className="h-full rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col"
+                      style={{ backgroundColor: cardBgColor }}
+                    >
+                      {/* Header with category tag and read time */}
+                      <div className="p-5 pb-0">
+                        <div className="flex items-center justify-between mb-3">
+                          <span
+                            className="text-xs font-semibold px-3 py-1 rounded-full"
+                            style={{
+                              backgroundColor: isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)',
+                              color: textColor,
+                            }}
+                          >
+                            {emotionConfig.recommendedNews[index % emotionConfig.recommendedNews.length]?.split(' ')[0] || emotionConfig.labelKo}
+                          </span>
+                          <span className="text-xs" style={{ color: subTextColor }}>
+                            {Math.floor(Math.random() * 15 + 3)}-{Math.floor(Math.random() * 10 + 15)} min
+                          </span>
+                        </div>
+
+                        {/* Title */}
+                        <h3
+                          className="font-serif text-xl font-bold leading-tight mb-2 line-clamp-3"
+                          style={{ color: textColor }}
+                          data-testid={`text-title-${item.id}`}
+                        >
+                          {item.title}
+                        </h3>
+
+                        {/* Author */}
+                        <div className="flex items-center gap-2 mb-4">
+                          <div
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium"
+                            style={{
+                              backgroundColor: isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)',
+                              color: textColor,
+                            }}
+                          >
+                            {getRandomAuthor(item.id).name.charAt(0)}
+                          </div>
+                          <span className="text-sm" style={{ color: textColor }}>
+                            {getRandomAuthor(item.id).name}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Image or Icon area */}
+                      <div className="flex-grow px-5 pb-5">
+                        {item.image ? (
+                          <div className="rounded-xl overflow-hidden aspect-[4/3]">
+                            <img
+                              src={item.image}
+                              alt={item.title}
+                              className="w-full h-full object-cover"
+                              data-testid={`img-news-${item.id}`}
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = `https://placehold.co/400x300/${cardBgColor.replace('#', '')}/${textColor.replace('#', '')}?text=${encodeURIComponent(item.category || 'HueBrief')}`;
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div
+                            className="rounded-xl aspect-[4/3] flex items-center justify-center"
+                            style={{ backgroundColor: isLightBg ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)' }}
+                          >
+                            <Icon className="w-16 h-16" style={{ color: textColor, opacity: 0.6 }} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Audio/Read indicator */}
+                      <div className="px-5 pb-5 mt-auto">
                         <div
-                          className="w-full h-full flex items-center justify-center"
-                          style={{ backgroundColor: `${emotionConfig.color}15` }}
+                          className="w-10 h-10 rounded-full flex items-center justify-center ml-auto"
+                          style={{
+                            backgroundColor: isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)',
+                          }}
                         >
-                          <Icon className="w-16 h-16" style={{ color: emotionConfig.color }} />
+                          <ArrowRight className="w-5 h-5" style={{ color: textColor }} />
                         </div>
-                      )}
-                    </div>
-                    <div className="p-8 flex flex-col justify-center">
-                      <div className="flex items-center gap-3 mb-4">
-                        <EmotionTag emotion={emotionConfig.type} />
-                        <span className="text-xs text-human-sub flex items-center gap-1" data-testid={`text-time-${heroArticle.id}`}>
-                          <Clock className="w-3 h-3" />
-                          {formatTimeAgo(heroArticle.created_at)}
-                        </span>
-                      </div>
-
-                      <h2 className="font-serif text-2xl md:text-3xl font-bold text-human-main mb-4 leading-tight" data-testid={`text-title-${heroArticle.id}`}>
-                        {heroArticle.title}
-                      </h2>
-
-                      <p className="text-human-sub leading-relaxed mb-6 line-clamp-3" data-testid={`text-summary-${heroArticle.id}`}>
-                        {heroArticle.summary}
-                      </p>
-
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center" data-testid={`avatar-author-${heroArticle.id}`}>
-                            <User className="w-5 h-5 text-gray-500" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-human-main" data-testid={`text-author-${heroArticle.id}`}>{getRandomAuthor(heroArticle.id).name}</p>
-                            <p className="text-xs text-human-sub truncate max-w-[200px]" data-testid={`text-source-${heroArticle.id}`}>
-                              {heroArticle.source?.startsWith('http') ? new URL(heroArticle.source).hostname.replace('www.', '') : heroArticle.source}
-                            </p>
-                          </div>
-                        </div>
-                        <span
-                          className="flex items-center gap-1 text-sm font-medium"
-                          style={{ color: emotionConfig.color }}
-                          data-testid={`link-read-more-${heroArticle.id}`}
-                        >
-                          자세히 보기 <ArrowRight className="w-4 h-4" />
-                        </span>
                       </div>
                     </div>
-                  </div>
-                </div>
-              </motion.article>
-            )}
-
-            {subArticles.map((item, index) => (
-              <motion.article
-                key={item.id}
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: mounted ? 1 : 0, y: mounted ? 0 : 30 }}
-                transition={{ duration: 0.5, delay: 0.3 + index * 0.1 }}
-                onClick={() => setSelectedArticle(item)}
-                className="col-span-12 md:col-span-6 lg:col-span-4 group cursor-pointer"
-                data-testid={`card-news-${item.id}`}
-              >
-                <div
-                  className="h-full rounded-xl overflow-visible hover-elevate"
-                  style={{
-                    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-                    backdropFilter: 'blur(16px)',
-                    border: '1px solid rgba(255, 255, 255, 0.3)',
-                    borderTop: `3px solid ${emotionConfig.color}`,
-                  }}
-                >
-                  <div className="aspect-[3/2] overflow-hidden">
-                    {item.image ? (
-                      <img
-                        src={item.image}
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                        data-testid={`img-news-${item.id}`}
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          e.currentTarget.src = `https://placehold.co/600x400/e2e8f0/64748b?text=${encodeURIComponent(item.category || 'HueBrief')}`;
-                        }}
-                      />
-                    ) : (
-                      <div
-                        className="w-full h-full flex items-center justify-center"
-                        style={{ backgroundColor: `${emotionConfig.color}10` }}
-                      >
-                        <Icon className="w-10 h-10" style={{ color: emotionConfig.color }} />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="p-6">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span
-                        className="text-xs font-medium px-2 py-0.5 rounded-full truncate max-w-[150px]"
-                        style={{
-                          backgroundColor: `${emotionConfig.color}15`,
-                          color: emotionConfig.color,
-                        }}
-                        data-testid={`badge-source-${item.id}`}
-                      >
-                        {item.source?.startsWith('http') ? new URL(item.source).hostname.replace('www.', '') : item.source}
-                      </span>
-                      <span className="text-xs text-human-sub shrink-0" data-testid={`text-time-${item.id}`}>
-                        {formatTimeAgo(item.created_at)}
-                      </span>
-                    </div>
-
-                    <h3 className="font-serif text-lg font-bold text-human-main mb-2 leading-snug line-clamp-2" data-testid={`text-title-${item.id}`}>
-                      {item.title}
-                    </h3>
-
-                    <p className="text-sm text-human-sub leading-relaxed line-clamp-2 mb-4" data-testid={`text-summary-${item.id}`}>
-                      {item.summary}
-                    </p>
-
-                    <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center" data-testid={`avatar-author-${item.id}`}>
-                          <User className="w-3.5 h-3.5 text-gray-500" />
-                        </div>
-                        <span className="text-xs text-human-sub" data-testid={`text-author-${item.id}`}>{getRandomAuthor(item.id).name}</span>
-                      </div>
-                      <span
-                        className="text-xs font-medium flex items-center gap-0.5"
-                        style={{ color: emotionConfig.color }}
-                        data-testid={`link-read-${item.id}`}
-                      >
-                        읽기 <ArrowRight className="w-3 h-3" />
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </motion.article>
-            ))}
+                  </motion.article>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -426,7 +401,7 @@ export default function EmotionPage() {
         >
           <p className="text-sm text-human-sub mb-6 text-center" data-testid="text-explore-other">다른 감정 탐색하기</p>
           <div className="flex justify-center gap-3 flex-wrap">
-            {EMOTION_CONFIG.filter(e => e.type !== type).map((emotion) => {
+            {EMOTION_CONFIG.filter(e => e.type !== type && e.type !== 'spectrum').map((emotion) => {
               const EmotionIcon = EMOTION_ICONS[emotion.type];
               return (
                 <Link key={emotion.type} href={`/emotion/${emotion.type}`}>
@@ -451,9 +426,24 @@ export default function EmotionPage() {
         </motion.div>
       </main>
 
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.button
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            onClick={scrollToTop}
+            className="fixed bottom-24 right-6 z-[90] w-14 h-14 rounded-full bg-white/80 backdrop-blur-sm border border-gray-200 shadow-xl flex items-center justify-center hover:bg-white transition-all duration-300 hover:scale-105 group"
+            style={{ marginBottom: '1rem' }}
+          >
+            <ArrowUp className="w-6 h-6 text-gray-600 group-hover:text-human-main" />
+          </motion.button>
+        )}
+      </AnimatePresence>
+
       <NewsDetailModal
         article={selectedArticle}
-        emotionType={type || 'calm'}
+        emotionType={type || 'serenity'}
         onClose={() => setSelectedArticle(null)}
       />
     </div>

@@ -17,36 +17,25 @@ export function Overlay() {
           transition={{ duration: 0.3 }}
           className="fixed inset-0 pointer-events-none z-20"
         >
-          {/* Use Shared Header with transparent prop since this is an overlay */}
+          {/* Header */}
           <div className="pointer-events-auto">
             <Header transparent={true} />
           </div>
 
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
+          {/* Footer tagline - fixed at bottom */}
+          <div className="absolute bottom-8 left-0 right-0 flex justify-center pointer-events-none">
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.2 }}
-              className="text-center"
+              transition={{ duration: 0.6, delay: 0.6 }}
+              className="text-lg text-gray-500 tracking-wide"
+              style={{
+                fontFamily: '"Playfair Display", serif',
+                fontWeight: 400,
+              }}
             >
-              <h1
-                className="text-6xl md:text-8xl font-bold tracking-tight text-gray-800"
-                style={{
-                  textShadow: '0 4px 24px rgba(0, 0, 0, 0.08)',
-                }}
-                data-testid="text-title"
-              >
-                HUEBRIEF
-              </h1>
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.6, delay: 0.6 }}
-                className="mt-4 text-lg text-gray-500 font-light tracking-wide"
-              >
-                Experience news through emotion
-              </motion.p>
-            </motion.div>
+              Experience news through emotion
+            </motion.p>
           </div>
         </motion.div>
       )}

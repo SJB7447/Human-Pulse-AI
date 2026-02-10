@@ -18,7 +18,7 @@ interface Particle {
   absorbStartTime: number | null;
 }
 
-const PARTICLE_COUNT = 150;
+const PARTICLE_COUNT = 450;
 
 export function Particles() {
   const groupRef = useRef<THREE.Group>(null);
@@ -163,37 +163,49 @@ export function Particles() {
       }
 
       if (particle.phase === 'floating') {
-        // Organic floating movement (reduced intensity)
-        particle.position.x += Math.sin(time * 0.5 + particle.floatOffset) * 0.001;
-        particle.position.y += Math.cos(time * 0.3 + particle.floatOffset) * 0.001;
-        particle.position.z += Math.sin(time * 0.4 + particle.floatOffset) * 0.001;
+        // Organic floating movement - continuous gentle wandering
+        const wanderSpeed = 0.3 + (i % 10) * 0.05;
+        const wanderScale = 0.003 + (i % 5) * 0.001;
+        particle.position.x += Math.sin(time * wanderSpeed + particle.floatOffset) * wanderScale;
+        particle.position.y += Math.cos(time * wanderSpeed * 0.7 + particle.floatOffset * 1.3) * wanderScale;
+        particle.position.z += Math.sin(time * wanderSpeed * 0.5 + particle.floatOffset * 0.8) * wanderScale * 0.5;
 
-        // Mouse Attraction Logic - Only active if hovering
+        // Add subtle random drift for more organic feel
+        particle.velocity.x += (Math.random() - 0.5) * 0.0003;
+        particle.velocity.y += (Math.random() - 0.5) * 0.0003;
+
+        // Mouse Attraction Logic - Only active if hovering AND only for particles near the mouse
         if (isHovering) {
           // Convert normalized mouse coordinates (-1 to 1) to world coordinates
-          // Using viewport width/height to approximate world bounds at z=0
           const viewport = state.viewport;
           const targetX = (state.pointer.x * viewport.width) / 2;
           const targetY = (state.pointer.y * viewport.height) / 2;
 
-          // Calculate vector to mouse
+          // Calculate distance to mouse
           const dx = targetX - particle.position.x;
           const dy = targetY - particle.position.y;
+          const distanceToMouse = Math.sqrt(dx * dx + dy * dy);
 
-          // Apply attraction force (stronger when closer, but clamped)
-          // We add to velocity to create momentum
-          const force = 0.02;
+          // Only attract particles within influence radius
+          const influenceRadius = 5; // Reduced radius
+          const minInfluenceRadius = 2;
 
-          // Give each particle a slightly different reaction speed based on index/random
-          const randomness = 0.8 + (i % 5) * 0.1;
+          if (distanceToMouse < influenceRadius) {
+            // Much weaker attraction
+            const distanceFactor = distanceToMouse < minInfluenceRadius
+              ? 1
+              : 1 - (distanceToMouse - minInfluenceRadius) / (influenceRadius - minInfluenceRadius);
 
-          particle.velocity.x += dx * force * randomness * 0.03;
-          particle.velocity.y += dy * force * randomness * 0.03;
+            // Very soft attraction force
+            const force = 0.002 * distanceFactor;
+
+            particle.velocity.x += dx * force;
+            particle.velocity.y += dy * force;
+          }
         }
 
-        // Add friction/damping to prevent infinite acceleration
-        // This also helps them "stop" floating in place when mouse leaves
-        particle.velocity.multiplyScalar(0.95);
+        // Lower friction for more natural spreading when mouse leaves
+        particle.velocity.multiplyScalar(0.98);
 
         particle.position.add(particle.velocity);
 

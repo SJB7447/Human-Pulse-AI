@@ -177,21 +177,21 @@ export default function JournalistPage() {
 
   // Sentiment analysis state
   const [sentimentData, setSentimentData] = useState<{
-    joy: number;
-    anger: number;
-    sadness: number;
-    fear: number;
-    calm: number;
+    vibrance: number;
+    immersion: number;
+    clarity: number;
+    gravity: number;
+    serenity: number;
     dominantEmotion: string;
     feedback: string;
   }>({
-    joy: 20, anger: 20, sadness: 20, fear: 20, calm: 20,
-    dominantEmotion: 'neutral',
+    vibrance: 20, immersion: 20, clarity: 20, gravity: 20, serenity: 20,
+    dominantEmotion: 'spectrum',
     feedback: '기사 내용을 작성하면 감정 분석이 시작됩니다.'
   });
   const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false);
 
-  const hasAngerWarning = sentimentData.anger > 40;
+  const hasAngerWarning = sentimentData.immersion > 40;
 
   // Debounced sentiment analysis
   const analysisTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -207,8 +207,8 @@ export default function JournalistPage() {
       console.error('Sentiment analysis failed:', error);
       // Fallback to neutral if analysis fails
       setSentimentData({
-        joy: 20, anger: 20, sadness: 20, fear: 20, calm: 20,
-        dominantEmotion: 'calm',
+        vibrance: 20, immersion: 20, clarity: 20, gravity: 20, serenity: 20,
+        dominantEmotion: 'serenity',
         feedback: '감정 분석 서비스가 일시적으로 지연되고 있습니다. (기본값 적용)'
       });
       toast({
@@ -293,8 +293,8 @@ export default function JournalistPage() {
     setGeneratedHashtags([]);
     setOptimizedTitles([]);
     setSentimentData({
-      joy: 20, anger: 20, sadness: 20, fear: 20, calm: 20,
-      dominantEmotion: 'neutral',
+      vibrance: 20, immersion: 20, clarity: 20, gravity: 20, serenity: 20,
+      dominantEmotion: 'spectrum',
       feedback: '기사 내용을 작성하면 감정 분석이 시작됩니다.'
     });
   };
@@ -618,8 +618,8 @@ export default function JournalistPage() {
             : searchKeyword;
 
           // Map dominant emotion to Korean label for DB lookup (or just use key)
-          // The DBService now expects the English keys: 'joy', 'anger', etc.
-          const emotionLabel = sentimentData.dominantEmotion || 'calm';
+          // The DBService now expects the English keys: 'vibrance', 'immersion', etc.
+          const emotionLabel = sentimentData.dominantEmotion || 'serenity';
 
           let data;
           if (editingArticleId) {
@@ -1327,7 +1327,7 @@ export default function JournalistPage() {
                   )}
                 </h2>
                 <div className="space-y-2">
-                  {(['joy', 'anger', 'sadness', 'fear', 'calm'] as const).map((emotion) => {
+                  {(['vibrance', 'immersion', 'clarity', 'gravity', 'serenity'] as const).map((emotion) => {
                     const value = sentimentData[emotion];
                     const config = EMOTION_CONFIG.find(e => e.type === emotion);
                     const isDominant = sentimentData.dominantEmotion === emotion;

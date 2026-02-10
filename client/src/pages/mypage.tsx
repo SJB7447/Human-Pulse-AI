@@ -30,9 +30,9 @@ interface CuratedArticle {
 }
 
 const MOCK_SAVED_ARTICLES: SavedArticle[] = [
-  { id: 1, title: "글로벌 경제 전망: 희망의 신호들", emotion: 'joy', savedAt: '2024-01-15' },
-  { id: 2, title: "환경 보호를 위한 청년들의 움직임", emotion: 'calm', savedAt: '2024-01-14' },
-  { id: 3, title: "예술계의 새로운 바람", emotion: 'joy', savedAt: '2024-01-13' },
+  { id: 1, title: "글로벌 경제 전망: 희망의 신호들", emotion: 'vibrance', savedAt: '2024-01-15' },
+  { id: 2, title: "환경 보호를 위한 청년들의 움직임", emotion: 'serenity', savedAt: '2024-01-14' },
+  { id: 3, title: "예술계의 새로운 바람", emotion: 'vibrance', savedAt: '2024-01-13' },
 ];
 
 const MOCK_CUSTOM_ARTICLES: CustomArticle[] = [
@@ -45,14 +45,14 @@ const MOCK_CURATED_ARTICLES: CuratedArticle[] = [
     id: 1,
     originalTitle: "글로벌 경제 전망: 희망의 신호들",
     userComment: "이 기사를 읽고 경제에 대한 새로운 희망을 갖게 되었습니다. 특히 청년 창업 지원 정책이 인상적이었어요.",
-    userEmotion: 'joy',
+    userEmotion: 'vibrance',
     createdAt: '2024-01-16'
   },
   {
     id: 2,
     originalTitle: "환경 보호를 위한 청년들의 움직임",
     userComment: "우리 모두가 환경 보호에 동참해야 한다고 생각합니다. 작은 실천부터 시작해볼게요.",
-    userEmotion: 'calm',
+    userEmotion: 'serenity',
     createdAt: '2024-01-15'
   },
 ];
@@ -113,8 +113,8 @@ export default function MyPage() {
               key={key}
               onClick={() => setActiveTab(key as typeof activeTab)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${activeTab === key
-                  ? 'bg-gray-900 text-white'
-                  : 'bg-white text-gray-600 hover-elevate'
+                ? 'bg-gray-900 text-white'
+                : 'bg-white text-gray-600 hover-elevate'
                 }`}
               data-testid={`tab-${key}`}
             >
@@ -240,8 +240,8 @@ export default function MyPage() {
                         <p className="text-xs text-gray-400">{article.createdAt}</p>
                         <span
                           className={`text-xs px-2 py-0.5 rounded-full ${article.status === 'published'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-100 text-gray-500'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-500'
                             }`}
                         >
                           {article.status === 'published' ? '공개' : '임시저장'}

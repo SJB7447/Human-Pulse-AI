@@ -14,11 +14,12 @@ interface Article {
 }
 
 const emotionColors = {
-    joy: 'border-yellow-400/50 text-yellow-100 bg-yellow-900/20',
-    anger: 'border-red-500/50 text-red-100 bg-red-900/20',
-    calm: 'border-green-400/50 text-green-100 bg-green-900/20',
-    sadness: 'border-blue-500/50 text-blue-100 bg-blue-900/20',
-    fear: 'border-gray-400/50 text-gray-100 bg-gray-800/40',
+    vibrance: 'border-yellow-400/50 text-yellow-100 bg-yellow-900/20',
+    immersion: 'border-red-500/50 text-red-100 bg-red-900/20',
+    serenity: 'border-green-400/50 text-green-100 bg-green-900/20',
+    clarity: 'border-blue-500/50 text-blue-100 bg-blue-900/20',
+    gravity: 'border-gray-400/50 text-gray-100 bg-gray-800/40',
+    spectrum: 'border-teal-400/50 text-teal-100 bg-teal-900/20',
 };
 
 export default function NewsList() {
@@ -36,7 +37,7 @@ export default function NewsList() {
 
             try {
                 // 1. 카테고리 소문자 변환 (DB는 소문자로 저장됨)
-                const targetCategory = category ? category.toLowerCase() : 'joy';
+                const targetCategory = category ? category.toLowerCase() : 'vibrance';
                 console.log(`📡 [요청 시작] 감정: ${targetCategory}`);
 
                 // 2. Supabase 쿼리 실행
@@ -75,7 +76,7 @@ export default function NewsList() {
         fetchArticles();
     }, [category]);
 
-    const themeClass = emotionColors[(category?.toLowerCase() || 'joy') as keyof typeof emotionColors] || emotionColors.joy;
+    const themeClass = emotionColors[(category?.toLowerCase() || 'vibrance') as keyof typeof emotionColors] || emotionColors.vibrance;
 
     return (
         <div className="w-full min-h-screen bg-black text-white p-8 pt-24 overflow-y-auto">
@@ -100,7 +101,7 @@ export default function NewsList() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-20">
                     {articles.map((article) => {
                         // Determine the glow color based on the current category (since list is filtered) or fallback
-                        const currentConfig = EMOTION_CONFIG.find(e => e.type === (category?.toLowerCase() || 'joy')) || EMOTION_CONFIG[0];
+                        const currentConfig = EMOTION_CONFIG.find(e => e.type === (category?.toLowerCase() || 'vibrance')) || EMOTION_CONFIG[0];
                         const glowColor = currentConfig?.color || '#ffffff';
 
                         return (

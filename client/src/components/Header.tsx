@@ -38,13 +38,16 @@ export function Header({ transparent = false }: HeaderProps) {
     return (
         <header
             className={`fixed top-0 left-0 right-0 z-50 px-6 py-4 flex items-center justify-between transition-all duration-300 ${transparent
-                    ? 'bg-transparent'
-                    : 'bg-white/80 backdrop-blur-xl border-b border-gray-100'
+                ? 'bg-transparent'
+                : 'bg-white/80 backdrop-blur-xl border-b border-gray-100'
                 }`}
         >
             <div className="flex items-center gap-8">
                 <Link href="/">
-                    <span className="text-xl font-serif font-bold text-gray-800 cursor-pointer hover:text-gray-600 transition-colors">
+                    <span
+                        className="text-xl font-serif font-bold cursor-pointer transition-colors"
+                        style={{ color: '#1bbca8' }}
+                    >
                         HueBrief
                     </span>
                 </Link>
@@ -60,15 +63,16 @@ export function Header({ transparent = false }: HeaderProps) {
                         <Users className="w-4 h-4" />
                         Journalist
                     </Button>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRestrictedAccess('/admin', '관리자')}
-                        className="text-gray-600 hover:text-gray-900 hover:bg-black/5 gap-2"
-                    >
-                        <Shield className="w-4 h-4" />
-                        Admin
-                    </Button>
+                    <Link href="/admin">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-gray-600 hover:text-gray-900 hover:bg-black/5 gap-2"
+                        >
+                            <Shield className="w-4 h-4" />
+                            Admin
+                        </Button>
+                    </Link>
                 </nav>
             </div>
 

@@ -77,8 +77,8 @@ export async function registerRoutes(
       const prompt = `
             You are "Pulse Bot", a Color Psychology Counselor.
             User message: "${message}"
-            Respond in Korean. Be empathetic. Recommend ONE emotion color (joy, anger, sadness, fear, calm) if appropriate.
-            Return ONLY JSON: { "text": "...", "recommendation": "joy" | null }
+            Respond in Korean. Be empathetic. Recommend ONE emotion color (vibrance, immersion, clarity, gravity, serenity) if appropriate.
+            Return ONLY JSON: { "text": "...", "recommendation": "vibrance" | null }
         `;
       const result = await generateJSON("gemini-3-flash-preview", prompt);
       res.json(result);
@@ -167,7 +167,8 @@ export async function registerRoutes(
       const { content } = req.body;
       const prompt = `
             Analyze sentiment distribution: "${content.substring(0, 500)}".
-            Return JSON: { "joy": number, "anger": number, "sadness": number, "fear": number, "calm": number, "dominantEmotion": string, "feedback": string }
+            Return JSON: { "vibrance": number, "immersion": number, "clarity": number, "gravity": number, "serenity": number, "dominantEmotion": string, "feedback": string }
+            dominantEmotion must be one of: vibrance, immersion, clarity, gravity, serenity, spectrum
         `;
       const result = await generateJSON("gemini-3-flash-preview", prompt);
       res.json(result);
@@ -520,11 +521,12 @@ export async function registerRoutes(
 
 function getEmotionColor(emotion: EmotionType): string {
   const colors: Record<EmotionType, string> = {
-    joy: '#FFD700',
-    anger: '#FF4D4D',
-    sadness: '#4D96FF',
-    fear: '#8E44AD',
-    calm: '#2ECC71',
+    vibrance: '#ffd150',
+    immersion: '#f4606b',
+    clarity: '#3f65ef',
+    gravity: '#999898',
+    serenity: '#88d84a',
+    spectrum: '#1bbca8',
   };
   return colors[emotion];
 }
