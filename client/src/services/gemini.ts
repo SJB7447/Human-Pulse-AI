@@ -71,9 +71,8 @@ export const GeminiService = {
         // 1. Get Script via AI endpoint
         const scriptJson = await callApi('/api/ai/generate-video-script', { articleContent, imageDescription });
 
-        // 2. Generate Video via Veo endpoint
-        // Note: '/api/generate-video' is the existing Veo endpoint
-        const videoRes = await fetch('/api/generate-video', {
+        // 2. Generate Video via AI boundary endpoint
+        const videoRes = await fetch('/api/ai/generate-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

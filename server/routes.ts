@@ -311,7 +311,7 @@ export async function registerRoutes(
 
   // ... (Existing Routes) ...
 
-  app.post("/api/generate-video", async (req, res) => {
+  app.post("/api/ai/generate-video", async (req, res) => {
     try {
       const { prompt, image } = req.body;
 
