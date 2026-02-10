@@ -61,7 +61,6 @@ export default function AdminPage() {
   useEffect(() => {
     fetchData();
   }, []);
-
   const handleDeploy = async (genId: number, currentText: string) => {
     if (!confirm("이 내용을 배포(Deployed) 상태로 변경하시겠습니까?")) return;
     try {
@@ -468,11 +467,12 @@ function StatCard({ title, value, icon, bgColor }: any) {
 
 function getEmotionColor(emotion: string): string {
   const colors: Record<string, string> = {
-    joy: '#FFD700',      // Gold/Yellow
-    anger: '#FF4D4D',    // Red
-    sadness: '#4D96FF',  // Blue
-    fear: '#8E44AD',     // Purple
-    calm: '#2ECC71',     // Green
+    vibrance: '#ffd150',
+    immersion: '#f4606b',
+    clarity: '#3f65ef',
+    gravity: '#999898',
+    serenity: '#88d84a',
+    spectrum: '#1bbca8',
     default: '#95A5A6'
   };
   return colors[emotion?.toLowerCase()] || colors.default;
