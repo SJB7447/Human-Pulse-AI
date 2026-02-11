@@ -56,6 +56,14 @@ function getRandomAuthor(id: number | string) {
   return MOCK_AUTHORS[numericId % MOCK_AUTHORS.length];
 }
 
+function stableSeedFromText(value: string): number {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash % 1000000;
+}
+
 import { GeminiService } from '@/services/gemini';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -118,6 +126,12 @@ export default function EmotionPage() {
   };
 
   const { data: news = [], isLoading, error } = useNews(type);
+  const { data: spectrumNews = [] } = useNews('spectrum');
+
+  const recommendationPool = (type === 'spectrum'
+    ? news
+    : [...news, ...spectrumNews.filter((item) => !news.some((current) => current.id === item.id))]
+  );
 
   const handleGenerateNews = async () => {
     if (!type) return;
@@ -140,7 +154,7 @@ export default function EmotionPage() {
               content: item.content,
               source: item.source,
               emotion: type,
-              image: `https://image.pollinations.ai/prompt/${encodeURIComponent(item.imagePrompt)}?nologo=true&private=true&enhance=true`,
+              image: `https://image.pollinations.ai/prompt/${encodeURIComponent(item.imagePrompt)}?nologo=true&private=true&enhance=true&seed=${stableSeedFromText(`${type}-${item.title}-${item.imagePrompt}`)}`,
               category: 'AI Generated',
               intensity: 50,
             }),
@@ -477,7 +491,7 @@ export default function EmotionPage() {
         emotionType={type || 'serenity'}
         cardBackground={selectedCardBg}
         layoutId={selectedArticle ? `news-card-${selectedArticle.id}` : undefined}
-        relatedArticles={news}
+        relatedArticles={recommendationPool}
         onSelectArticle={(nextArticle) => {
           const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
           const cardEmotionColor = getEmotionColor(nextArticle.emotion);

@@ -78,15 +78,13 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       .slice(0, 2);
 
     const selectedIds = new Set(sameCategory.map((item) => item.id));
-    const differentCategory = candidates
-      .filter((item) => {
-        if (selectedIds.has(item.id)) return false;
-        if (!normalizedCurrentCategory || !item.category) return true;
-        return item.category.trim().toLowerCase() !== normalizedCurrentCategory;
-      })
-      .slice(0, 1);
+    const differentEmotion = candidates.find(
+      (item) => !selectedIds.has(item.id) && item.emotion !== article.emotion
+    );
 
-    const recommendations = [...sameCategory, ...differentCategory];
+    const recommendations = differentEmotion
+      ? [...sameCategory, differentEmotion]
+      : [...sameCategory];
 
     // gravity 카테고리에서는 vibrance 또는 serenity 기사 최소 1개 노출 보장
     if (normalizedCurrentCategory === 'gravity' || article.emotion === 'gravity') {
@@ -97,7 +95,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
         );
 
         if (requiredFallback) {
-          if (differentCategory.length > 0) {
+          if (recommendations.length >= 3) {
             recommendations[recommendations.length - 1] = requiredFallback;
           } else {
             recommendations.push(requiredFallback);
@@ -106,7 +104,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       }
     }
 
-    return recommendations;
+    return recommendations.slice(0, 3);
   }, [article, relatedArticles]);
 
   const handleSave = () => {
@@ -321,23 +319,19 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
             {/* Image Section (Fixed at top) */}
             {article.image && (
-              <div className="relative h-48 shrink-0 overflow-hidden z-10">
-                <img
-                  src={article.image}
-                  alt={article.title}
-                  className="w-full h-full object-cover"
-                />
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: 'linear-gradient(to top, rgba(20, 20, 25, 1) 0%, rgba(20, 20, 25, 0) 100%)',
-                  }}
-                />
+              <div className="shrink-0 z-10 px-6 pt-6">
+                <div className="rounded-2xl border border-white/70 bg-white/65 overflow-hidden shadow-sm">
+                  <img
+                    src={article.image}
+                    alt={article.title}
+                    className="w-full max-h-[38vh] object-contain bg-white"
+                  />
+                </div>
               </div>
             )}
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-6 z-10">
+            <div className="flex-1 overflow-y-auto px-6 pb-6 pt-5 z-10">
               <div className="flex items-center gap-3 mb-4">
                 {article.category && (
                   <EmotionTag emotion={article.category.toLowerCase() as EmotionType} showIcon={true} />
@@ -358,7 +352,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 </span>
               </p>
 
-              <div className="text-gray-900 text-xl leading-9 font-light mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide">
+              <div className="text-gray-900 text-[18px] leading-8 font-normal mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide max-w-4xl">
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
@@ -377,7 +371,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                     <StoryRenderer article={interactiveArticle} />
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-4 rounded-2xl bg-white/55 border border-white/70 p-5">
                     {interactiveError && (
                       <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100 space-y-3">
                         <div className="flex items-start gap-2">
