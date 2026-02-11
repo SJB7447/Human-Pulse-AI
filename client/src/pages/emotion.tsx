@@ -304,7 +304,9 @@ export default function EmotionPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
               {news.map((item, index) => {
                 const depth = Math.max(0, Math.min(100, item.intensity ?? 50));
-                const cardBgColor = `linear-gradient(165deg, ${hexToRgba(emotionConfig.color, 0.14 + depth / 220)} 0%, ${hexToRgba(emotionConfig.color, 0.10 + depth / 300)} 100%)`;
+                const cardBgStart = hexToRgba(emotionConfig.color, 0.14 + depth / 220);
+                const cardBgEnd = hexToRgba(emotionConfig.color, 0.10 + depth / 300);
+                const cardBgColor = `linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`;
                 const isLightBg = true;
                 const textColor = isLightBg ? '#232221' : '#ffffff';
                 const subTextColor = isLightBg ? '#666666' : 'rgba(255,255,255,0.8)';
@@ -327,7 +329,7 @@ export default function EmotionPage() {
                   >
                     <div
                       className="h-full rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col"
-                      style={{ backgroundColor: cardBgColor }}
+                      style={{ background: cardBgColor }}
                     >
                       {/* Header with category and update time */}
                       <div className="p-5 pb-0">
@@ -383,7 +385,7 @@ export default function EmotionPage() {
                               data-testid={`img-news-${item.id}`}
                               onError={(e) => {
                                 e.currentTarget.onerror = null;
-                                e.currentTarget.src = `https://placehold.co/400x300/${cardBgColor.replace('#', '')}/${textColor.replace('#', '')}?text=${encodeURIComponent(item.category || 'HueBrief')}`;
+                                e.currentTarget.src = `https://placehold.co/400x300/${emotionConfig.color.replace('#', '')}/1f1f1f?text=${encodeURIComponent(item.category || 'HueBrief')}`;
                               }}
                             />
                           </div>
