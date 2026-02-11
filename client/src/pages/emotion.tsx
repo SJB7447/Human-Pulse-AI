@@ -46,7 +46,6 @@ function getRandomAuthor(id: number | string) {
 }
 
 import { GeminiService } from '@/services/gemini';
-import { getSupabase } from '@/services/supabaseClient';
 import { useQueryClient } from '@tanstack/react-query';
 
 // ... (existing imports)
@@ -112,31 +111,39 @@ export default function EmotionPage() {
       const generatedItems = await GeminiService.generateNewsForEmotion(type);
       console.log("Generated Items:", generatedItems);
 
-      const supabase = getSupabase();
+      // Save through server API to avoid client-side Supabase RLS insert failure.
+      const saveResults = await Promise.all(
+        generatedItems.map(async (item) => {
+          const response = await fetch('/api/articles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: item.title,
+              summary: item.summary,
+              content: item.content,
+              source: item.source,
+              emotion: type,
+              image: `https://image.pollinations.ai/prompt/${encodeURIComponent(item.imagePrompt)}?nologo=true&private=true&enhance=true`,
+              category: 'AI Generated',
+              intensity: 50,
+            }),
+          });
 
-      // Insert into Supabase
-      const { error: insertError } = await supabase
-        .from('news_items')
-        .insert(generatedItems.map(item => ({
-          title: item.title,
-          summary: item.summary,
-          content: item.content,
-          source: item.source,
-          emotion: type,
-          image: `https://image.pollinations.ai/prompt/${encodeURIComponent(item.imagePrompt)}?nologo=true&private=true&enhance=true`,
-          category: "AI Generated",
-          views: 0,
-          saves: 0
-        })));
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.error || `Failed to save article (${response.status})`);
+          }
 
-      if (insertError) {
-        console.error("Supabase Save Error:", insertError);
-        alert("뉴스 저장 실패: " + insertError.message);
-      } else {
-        // Invalidate query to refetch
-        await queryClient.invalidateQueries({ queryKey: ['news', type] });
-        alert("✨ AI가 3개의 새로운 뉴스를 도착시켰습니다!");
+          return response.json();
+        })
+      );
+
+      if (!saveResults.length) {
+        throw new Error("No generated articles were saved.");
       }
+
+      await queryClient.invalidateQueries({ queryKey: ['news', type] });
+      alert("✨ AI가 3개의 새로운 뉴스를 도착시켰습니다!");
 
     } catch (e) {
       console.error("News Generation Failed:", e);

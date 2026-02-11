@@ -3,6 +3,12 @@ import { createServer, type Server } from "http";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { storage } from "./storage";
 import { emotionTypes, type EmotionType } from "../shared/schema";
+import {
+  type InteractiveArticle,
+  type InteractiveGenerationInput,
+  type StoryBlockIntent,
+  validateInteractiveArticle,
+} from "../shared/interactiveArticle";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -55,6 +61,175 @@ export async function registerRoutes(
     return JSON.parse(text);
   }
 
+  const REQUIRED_INTENTS: StoryBlockIntent[] = [
+    "intro",
+    "context",
+    "tension",
+    "interpretation",
+    "closure",
+  ];
+
+  const normalizeInteractiveArticle = (
+    article: any,
+    input: InteractiveGenerationInput
+  ): InteractiveArticle => {
+    const blocks = Array.isArray(article?.storyBlocks) ? article.storyBlocks : [];
+    const normalizedBlocks = blocks.map((b: any, idx: number) => ({
+      id: typeof b?.id === "string" && b.id.trim() ? b.id.trim() : `b${idx + 1}`,
+      intent: REQUIRED_INTENTS.includes(b?.intent) ? b.intent : REQUIRED_INTENTS[Math.min(idx, REQUIRED_INTENTS.length - 1)],
+      text: typeof b?.text === "string" ? b.text.trim() : "",
+    }));
+
+    const fallbackBlocks =
+      normalizedBlocks.length >= 5
+        ? normalizedBlocks
+        : REQUIRED_INTENTS.map((intent, idx) => ({
+            id: `b${idx + 1}`,
+            intent,
+            text: normalizedBlocks[idx]?.text || `${input.keywords[0] || "주요 이슈"} - ${intent} 정보 블록`,
+          }));
+
+    const buildEvenScrollMap = () =>
+      fallbackBlocks.map((b: any, idx: number) => {
+        const size = 100 / Math.max(fallbackBlocks.length, 1);
+        return {
+          blockId: b.id,
+          start: Math.round(idx * size),
+          end: Math.round((idx + 1) * size),
+        };
+      });
+
+    const candidateScrollMap = Array.isArray(article?.scrollMap) ? article.scrollMap : [];
+    const blockIds = new Set(fallbackBlocks.map((b: any) => b.id));
+    const hasValidCandidateScrollMap =
+      candidateScrollMap.length === fallbackBlocks.length &&
+      candidateScrollMap.every((m: any) =>
+        blockIds.has(m?.blockId) &&
+        typeof m?.start === "number" &&
+        typeof m?.end === "number" &&
+        m.start >= 0 &&
+        m.end <= 100 &&
+        m.start < m.end
+      );
+
+    const safeScrollMap = hasValidCandidateScrollMap ? candidateScrollMap : buildEvenScrollMap();
+
+    const intentCoverage = REQUIRED_INTENTS.reduce((acc, intent) => {
+      acc[intent] = fallbackBlocks.some((b: any) => b.intent === intent);
+      return acc;
+    }, {} as Record<StoryBlockIntent, boolean>);
+
+    const topic = Array.isArray(input.keywords) ? input.keywords.join(", ") : "";
+
+    return {
+      specVersion: "interactive-generation.v1",
+      articleMeta: {
+        title: article?.articleMeta?.title || `${topic} 인터랙티브 기사`,
+        subtitle: article?.articleMeta?.subtitle,
+        topic,
+        tone: input.tone,
+        targetAudience: input.targetAudience,
+        platform: input.platform,
+        interactionIntensity: input.interactionIntensity,
+      },
+      storyBlocks: fallbackBlocks,
+      scrollMap: safeScrollMap,
+      highlights:
+        Array.isArray(article?.highlights) && article.highlights.length > 0
+          ? article.highlights
+          : [
+              {
+                id: "h1",
+                blockId: fallbackBlocks[0]?.id || "b1",
+                type: "issue",
+                label: "핵심 이슈",
+                anchorText: input.keywords[0] || "핵심",
+                payload: { summary: `${input.keywords[0] || "주요 주제"} 관련 핵심 맥락` },
+              },
+            ],
+      interactionHints: Array.isArray(article?.interactionHints) ? article.interactionHints : [],
+      qualityMeta: {
+        intentCoverage,
+        readabilitySafe: article?.qualityMeta?.readabilitySafe !== false,
+        immersionSafe: article?.qualityMeta?.immersionSafe !== false,
+        highlightDensity:
+          typeof article?.qualityMeta?.highlightDensity === "number"
+            ? article.qualityMeta.highlightDensity
+            : Number((Array.isArray(article?.highlights) ? article.highlights.length : 1) / Math.max(fallbackBlocks.length, 1)),
+        validationPassed: false,
+        notes:
+          typeof article?.qualityMeta?.notes === "string"
+            ? article.qualityMeta.notes
+            : "Normalized by server",
+      },
+    };
+  };
+
+  const buildInteractivePrompt = (input: InteractiveGenerationInput) => {
+    const minBlocks = Math.max(input.constraints?.minBlocks || 5, 5);
+    const maxCharsPerBlock = input.constraints?.maxCharsPerBlock || 280;
+
+    return `
+You are generating an Interactive Article JSON, NOT plain text and NOT HTML.
+Return ONLY valid JSON, no markdown.
+
+[Input]
+- Keywords: ${input.keywords.join(", ")}
+- Tone: ${input.tone}
+- Target Audience: ${input.targetAudience}
+- Platform: ${input.platform}
+- Interaction Intensity: ${input.interactionIntensity}
+- Language: ${input.language || "ko-KR"}
+- Min story blocks: ${minBlocks}
+- Max chars per block text: ${maxCharsPerBlock}
+
+[Mandatory UX Rules]
+1) storyBlocks must be scene units and include intents:
+   intro, context, tension, interpretation, closure (all required at least once).
+2) Total storyBlocks >= ${minBlocks}.
+3) Every block must have clear information purpose by intent.
+4) highlights must not block core comprehension (supplemental only).
+5) interactions must not break immersion.
+6) scrollMap must cover 0~100 continuously and map each story block.
+7) 3D points are declarative through interactionHints action: cameraMove3d or objectPulse3d.
+8) Keep article render-ready for frontend Experience.
+
+[Output JSON Schema]
+{
+  "specVersion": "interactive-generation.v1",
+  "articleMeta": {
+    "title": "string",
+    "subtitle": "string(optional)",
+    "topic": "string",
+    "tone": "${input.tone}",
+    "targetAudience": "${input.targetAudience}",
+    "platform": "${input.platform}",
+    "interactionIntensity": "${input.interactionIntensity}"
+  },
+  "storyBlocks": [
+    { "id": "b1", "intent": "intro|context|tension|interpretation|closure", "text": "string <= ${maxCharsPerBlock} chars" }
+  ],
+  "scrollMap": [
+    { "blockId": "b1", "start": 0, "end": 20 }
+  ],
+  "highlights": [
+    { "id": "h1", "blockId": "b1", "type": "issue|emotion", "label": "string", "anchorText": "string", "payload": { "summary": "string" } }
+  ],
+  "interactionHints": [
+    { "id": "i1", "blockId": "b1", "trigger": "scroll|click|hover", "action": "reveal|focus|annotate|cameraMove3d|objectPulse3d", "target": "string", "params": { "at": 20 } }
+  ],
+  "qualityMeta": {
+    "intentCoverage": { "intro": true, "context": true, "tension": true, "interpretation": true, "closure": true },
+    "readabilitySafe": true,
+    "immersionSafe": true,
+    "highlightDensity": 0.0,
+    "validationPassed": true,
+    "notes": "string"
+  }
+}
+`;
+  };
+
   // 1. Text Analysis & Generation Endpoints
 
   app.post("/api/ai/generate-news", async (req, res) => {
@@ -66,6 +241,58 @@ export async function registerRoutes(
         `;
       const result = await generateJSON("gemini-3-flash-preview", prompt);
       res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/ai/generate/interactive-article", async (req, res) => {
+    try {
+      const {
+        keywords,
+        tone = "analytical",
+        targetAudience = "general readers",
+        platform = "web",
+        interactionIntensity = "medium",
+        language = "ko-KR",
+        constraints,
+      } = req.body || {};
+
+      if (!Array.isArray(keywords) || keywords.length === 0) {
+        return res.status(400).json({ error: "keywords must be a non-empty string array." });
+      }
+
+      const sanitizedKeywords = keywords.filter((k: unknown) => typeof k === "string" && k.trim());
+      if (sanitizedKeywords.length === 0) {
+        return res.status(400).json({ error: "keywords must include at least one non-empty string." });
+      }
+
+      const input: InteractiveGenerationInput = {
+        keywords: sanitizedKeywords,
+        tone,
+        targetAudience,
+        platform,
+        interactionIntensity,
+        language,
+        constraints,
+      };
+
+      const prompt = buildInteractivePrompt(input);
+      let generated: any;
+      try {
+        generated = await generateJSON("gemini-3-flash-preview", prompt);
+      } catch (_firstError) {
+        generated = await generateJSON("gemini-3-flash-preview", prompt);
+      }
+      const normalized = normalizeInteractiveArticle(generated, input);
+      const validation = validateInteractiveArticle(normalized);
+
+      normalized.qualityMeta.validationPassed = validation.valid;
+      if (!validation.valid) {
+        normalized.qualityMeta.notes = `Validation issues: ${validation.errors.join("; ")}`;
+      }
+
+      res.json(normalized);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

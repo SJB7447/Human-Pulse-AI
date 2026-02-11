@@ -1,9 +1,10 @@
 export const EMOTION_THEME = {
-    joy: 'yellow-400',     // 기쁨 (희망)
-    sadness: 'blue-500',   // 슬픔 (우울)
-    anger: 'red-500',      // 분노 (강렬)
-    fear: 'purple-600',    // 공포 (신비/공포)
-    calm: 'gray-400',      // 평온 (중립)
+    vibrance: 'yellow-400',
+    immersion: 'red-500',
+    clarity: 'blue-500',
+    gravity: 'purple-600',
+    serenity: 'gray-400',
+    spectrum: 'emerald-500',
 } as const;
 
 export type EmotionThemeKey = keyof typeof EMOTION_THEME;

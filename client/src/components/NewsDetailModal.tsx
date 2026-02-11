@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Tag, Lightbulb, Check } from 'lucide-react';
+import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { type NewsItem } from '@/hooks/useNews';
-import { EMOTION_CONFIG, EmotionType } from '@/lib/store';
-import { TypewriterText } from '@/components/ui/TypewriterText';
+import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
+import { GeminiService } from '@/services/gemini';
+import type { InteractiveArticle } from '@shared/interactiveArticle';
+import { StoryRenderer } from '@/components/StoryRenderer';
 import { EmotionTag } from '@/components/ui/EmotionTag';
-
-import { useEmotionStore } from '@/lib/store';
 
 interface CuratedArticle {
   id: number;
@@ -32,11 +32,19 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
   const [showInsightEditor, setShowInsightEditor] = useState(false);
   const [insightText, setInsightText] = useState('');
   const [selectedEmotion, setSelectedEmotion] = useState<EmotionType>(emotionType);
-  const [rewrittenContent, setRewrittenContent] = useState<string | null>(null);
+  const [interactiveArticle, setInteractiveArticle] = useState<InteractiveArticle | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
   const color = emotionConfig?.color || '#888888';
+
+  useEffect(() => {
+    setInteractiveArticle(null);
+  }, [article?.id]);
+
+  useEffect(() => {
+    setSelectedEmotion(emotionType);
+  }, [emotionType]);
 
   const handleSave = () => {
     toast({
@@ -70,17 +78,40 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
     }
   };
 
-  const handleMyArticle = () => {
+  const handleMyArticle = async () => {
+    if (!article) return;
     setIsTransforming(true);
-    setTimeout(() => {
-      setIsTransforming(false);
-      const aiContent = `[AI Rewritten Article]\n\n${article?.title}에 대한 새로운 시각의 분석입니다.\n\n이 기사는 현재 ${emotionConfig?.labelKo}의 감정 흐름을 타고 있습니다. AI가 분석한 결과, 이 사건은 우리에게 중요한 메세지를 던지고 있습니다.\n\n${article?.summary}\n\n우리는 이 변화 속에서 어떤 준비를 해야 할까요? 더 깊은 통찰과 함께, 앞으로의 변화를 주의 깊게 지켜봐야 할 것입니다.`;
-      setRewrittenContent(aiContent);
-      toast({
-        title: "AI 변환 완료",
-        description: "나만의 기사가 준비되었습니다!",
+    try {
+      const keywords = [article.title, article.summary, article.category || article.emotion || 'interactive']
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value));
+
+      const generated = await GeminiService.generateInteractiveArticle({
+        keywords,
+        tone: 'analytical',
+        targetAudience: 'digital news readers',
+        platform: 'web',
+        interactionIntensity: 'medium',
+        language: 'ko-KR',
+        constraints: {
+          minBlocks: 5,
+          maxCharsPerBlock: 280,
+        },
       });
-    }, 2500);
+      setInteractiveArticle(generated);
+      toast({
+        title: "인터랙티브 기사 생성 완료",
+        description: "스토리 블록 기반 렌더링으로 전환되었습니다.",
+      });
+    } catch (e: any) {
+      toast({
+        title: "생성 실패",
+        description: e.message || "인터랙티브 기사 생성 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsTransforming(false);
+    }
   };
 
   const handleSaveInsight = () => {
@@ -250,22 +281,22 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
               </p>
 
               <div className="text-white/90 text-lg leading-8 font-light mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide">
-                {rewrittenContent ? (
+                {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
                       <span className="text-xs font-bold text-purple-400 flex items-center gap-2 bg-purple-500/10 px-2 py-1 rounded">
-                        <Sparkles className="w-3 h-3" /> AI GENERATED
+                        <Sparkles className="w-3 h-3" /> INTERACTIVE JSON
                       </span>
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 text-xs text-white/40 hover:text-white hover:bg-white/10"
-                        onClick={() => setRewrittenContent(null)}
+                        onClick={() => setInteractiveArticle(null)}
                       >
                         원본 보기
                       </Button>
                     </div>
-                    <TypewriterText text={rewrittenContent} speed={0.015} />
+                    <StoryRenderer article={interactiveArticle} />
                   </div>
                 ) : (
                   <div className="space-y-4">

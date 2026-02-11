@@ -1,3 +1,8 @@
+import type {
+    InteractiveArticle as SharedInteractiveArticle,
+    InteractiveGenerationInput as SharedInteractiveGenerationInput,
+} from '@shared/interactiveArticle';
+
 export interface GeneratedNews {
     title: string;
     summary: string;
@@ -6,6 +11,9 @@ export interface GeneratedNews {
     emotion: string;
     imagePrompt: string;
 }
+
+export type InteractiveArticle = SharedInteractiveArticle;
+export type InteractiveGenerationInput = Partial<Omit<SharedInteractiveGenerationInput, 'keywords'>> & Pick<SharedInteractiveGenerationInput, 'keywords'>;
 
 // Helper for API calls
 async function callApi(endpoint: string, body: any) {
@@ -106,5 +114,13 @@ export const GeminiService = {
 
     async translateText(text: string, targetLang: string = 'ko'): Promise<{ translatedText: string }> {
         return callApi('/api/ai/translate', { text, targetLang });
+    },
+
+    async generateInteractiveArticle(input: InteractiveGenerationInput): Promise<InteractiveArticle> {
+        try {
+            return await callApi('/api/ai/generate/interactive-article', input);
+        } catch (_firstError) {
+            return callApi('/api/ai/generate/interactive-article', input);
+        }
     }
 };

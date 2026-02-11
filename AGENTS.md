@@ -1,125 +1,125 @@
-# AGENTS.md — Human Pulse AI
+# AGENTS.md ? Human Pulse AI
 (Vite + React + Express + Supabase/Drizzle + R3F(Three.js) + Gemini)
 
 ---
 
-## 0) 프로젝트 한 줄 요약
-Human Pulse AI는 뉴스를 단순 텍스트가 아니라
-**감정 · 인터랙션 · 3D · 스크롤리텔링**으로 경험하게 만드는 인터랙티브 뉴스 플랫폼이다.
+## 0) ?�로?�트 ??�??�약
+Human Pulse AI???�스�??�순 ?�스?��? ?�니??
+**감정 · ?�터?�션 · 3D · ?�크롤리?�링**?�로 경험?�게 만드???�터?�티�??�스 ?�랫?�이??
 
 ---
 
-## 1) 아키텍처 고정 원칙 (중요)
+## 1) ?�키?�처 고정 ?�칙 (중요)
 - Backend 메인: **Express (server/)**
-- Frontend: **Vite + React (정적 빌드 → Vercel 배포)**
-- api/(Vercel serverless)는 임시/보조 축이며,
-  server/와 동일한 기능을 중복 구현하지 않는다.
-- 클라이언트는 **Gemini API를 직접 호출하지 않는다.**
-  → AI 호출은 오직 `/server/routes.ts` 의 `/api/ai/*`에서만 수행한다.
+- Frontend: **Vite + React (?�적 빌드 ??Vercel 배포)**
+- api/(Vercel serverless)???�시/보조 축이�?
+  server/?� ?�일??기능??중복 구현?��? ?�는??
+- ?�라?�언?�는 **Gemini API�?직접 ?�출?��? ?�는??**
+  ??AI ?�출?� ?�직 `/server/routes.ts` ??`/api/ai/*`?�서�??�행?�다.
 
 ---
 
-## 2) 절대 규칙 (코드 꼬임 방지)
-- ❌ 전체 리라이트(갈아엎기) 금지
-- ✅ 항상 **최소 변경(patch)** 단위로 작업
-- 한 번에 **하나의 목표만** 처리한다  
-  (기능 추가 / UI·UX 개선 / 버그 수정 / 리팩토링 / 성능 개선 중 1개)
-- 모든 작업은 다음 포맷을 따른다:
-  1. Plan (3줄)
-  2. What changed (3줄)
-  3. 실행/검증 방법 (1~3줄)
+## 2) ?��? 규칙 (코드 꼬임 방�?)
+- ???�체 리라?�트(갈아?�기) 금�?
+- ????�� **최소 변�?patch)** ?�위�??�업
+- ??번에 **?�나??목표�?* 처리?�다  
+  (기능 추�? / UI·UX 개선 / 버그 ?�정 / 리팩?�링 / ?�능 개선 �?1�?
+- 모든 ?�업?� ?�음 ?�맷???�른??
+  1. Plan (3�?
+  2. What changed (3�?
+  3. ?�행/검�?방법 (1~3�?
 
 ---
 
-## 3) 역할(Role) 정의 — Codex 에이전트 운영 기준
+## 3) ??��(Role) ?�의 ??Codex ?�이?�트 ?�영 기�?
 
-### 🧠 ROLE: PM (Product Manager)
-- 기능 범위 정의, 우선순위 결정, 작업 목표를 “1개”로 쪼갠다.
-- 수용 기준(Acceptance Criteria)을 명확히 정의한다.
-- 코드 작성은 하지 않는다.
-
----
-
-### 🎨 ROLE: UX (UI/UX Designer)  ⭐️ 중요
-> ⚠️ UX 에이전트는 **절대 코드를 수정하지 않는다**
-
-UX 역할의 책임:
-- 사용자 플로우 정의 (스크롤 / 클릭 / 모달 / 3D 전환 포함)
-- 화면 구성 제안 (컴포넌트 단위)
-- 마이크로 인터랙션 정의
-  - hover / active / loading / empty / error 상태
-- 스크롤리텔링 규칙 정의
-  - scroll progress → 어떤 변화가 일어나는지
-- 접근성 / 가독성 / 인지 부하 관점의 개선 제안
-
-UX 산출물 형식:
-- 체크리스트 또는 구조화된 목록
-- “무엇을 어떻게 느끼게 할지” 중심
-- ❌ HTML / CSS / JS 코드 작성 금지
+### ?�� ROLE: PM (Product Manager)
+- 기능 범위 ?�의, ?�선?�위 결정, ?�업 목표�???개”로 쪼갠??
+- ?�용 기�?(Acceptance Criteria)??명확???�의?�다.
+- 코드 ?�성?� ?��? ?�는??
 
 ---
 
-### 🧑‍💻 ROLE: BUILDER (Developer)
-- PM + UX 산출물을 기반으로 **구현만 담당**
-- 전체 리라이트 금지, patch만 허용
-- 기존 데이터 흐름을 절대 깨지 않는다:
-  RSS → newsCron → DB → useNews → 3D / 페이지 / 모달
-- Gemini 출력은 반드시 **JSON 기반 Story Spec**을 사용한다.
-  (HTML 문자열 직접 생성 금지)
+### ?�� ROLE: UX (UI/UX Designer)  ⭐️ 중요
+> ?�️ UX ?�이?�트??**?��? 코드�??�정?��? ?�는??*
+
+UX ??��??책임:
+- ?�용???�로???�의 (?�크�?/ ?�릭 / 모달 / 3D ?�환 ?�함)
+- ?�면 구성 ?�안 (컴포?�트 ?�위)
+- 마이?�로 ?�터?�션 ?�의
+  - hover / active / loading / empty / error ?�태
+- ?�크롤리?�링 규칙 ?�의
+  - scroll progress ???�떤 변?��? ?�어?�는지
+- ?�근??/ 가?�성 / ?��? 부??관?�의 개선 ?�안
+
+UX ?�출�??�식:
+- 체크리스???�는 구조?�된 목록
+- ?�무?�을 ?�떻�??�끼�??��???중심
+- ??HTML / CSS / JS 코드 ?�성 금�?
 
 ---
 
-### 🧪 ROLE: QA (Quality & Stability)
-- 기능 회귀 테스트
-- UX 체크리스트 검증 (UX 산출물 기준)
-- Three.js 관련 성능/메모리(dispose, render loop) 위험 점검
-- 에러 재현 → 원인 후보 → 최소 수정 제안
-- 필요 시 **patch 제안까지만** 가능 (대규모 수정 금지)
+### ?��?��?ROLE: BUILDER (Developer)
+- PM + UX ?�출물을 기반?�로 **구현�??�당**
+- ?�체 리라?�트 금�?, patch�??�용
+- 기존 ?�이???�름???��? 깨�? ?�는??
+  RSS ??newsCron ??DB ??useNews ??3D / ?�이지 / 모달
+- Gemini 출력?� 반드??**JSON 기반 Story Spec**???�용?�다.
+  (HTML 문자??직접 ?�성 금�?)
 
 ---
 
-## 4) 인터랙티브 뉴스 생성 규칙 (핵심)
-- Gemini는 **뉴스 HTML을 직접 생성하지 않는다.**
-- Gemini의 출력은 항상 **Story Spec (JSON Schema)** 이다.
-- Story Spec은 버전 관리한다.
-  - 예: `schemas/story_spec_v1.json`
-- React는 StoryRenderer를 통해
-  스크롤리텔링 / 클릭 이슈 / 미디어 / 3D 연동을 렌더링한다.
-- 모든 생성물에는 가능한 경우:
+### ?�� ROLE: QA (Quality & Stability)
+- 기능 ?��? ?�스??
+- UX 체크리스??검�?(UX ?�출�?기�?)
+- Three.js 관???�능/메모�?dispose, render loop) ?�험 ?��?
+- ?�러 ?�현 ???�인 ?�보 ??최소 ?�정 ?�안
+- ?�요 ??**patch ?�안까�?�?* 가??(?�규모 ?�정 금�?)
+
+---
+
+## 4) ?�터?�티�??�스 ?�성 규칙 (?�심)
+- Gemini??**?�스 HTML??직접 ?�성?��? ?�는??**
+- Gemini??출력?� ??�� **Story Spec (JSON Schema)** ?�다.
+- Story Spec?� 버전 관리한??
+  - ?? `schemas/story_spec_v1.json`
+- React??StoryRenderer�??�해
+  ?�크롤리?�링 / ?�릭 ?�슈 / 미디??/ 3D ?�동???�더링한??
+- 모든 ?�성물에??가?�한 경우:
   - 출처
-  - 저작권
-  - 생성/분석 메타데이터
-  를 포함한다.
+  - ?�?�권
+  - ?�성/분석 메�??�이??
+  �??�함?�다.
 
 ---
 
 ## 5) Three.js (React Three Fiber) 규칙
-- `Scene.tsx`는 3D의 단일 진입점이다.
-- render loop / camera / controls 구조를 깨지 않는다.
-- dispose 누락 여부를 항상 점검한다.
-- 성능 변경 시:
-  - 어디서 느려지는지
-  - 어떻게 확인하는지
-  를 함께 설명한다.
+- `Scene.tsx`??3D???�일 진입?�이??
+- render loop / camera / controls 구조�?깨�? ?�는??
+- dispose ?�락 ?��?�???�� ?��??�다.
+- ?�능 변�???
+  - ?�디???�려지?��?
+  - ?�떻�??�인?�는지
+  �??�께 ?�명?�다.
 
 ---
 
-## 6) 데이터 & 스키마 규칙
-- `shared/schema.ts`는 프론트/백의 단일 기준이다.
-- 타입 충돌 발생 시 shared를 우선 수정한다.
-- DB 스키마 변경은 migrations + drizzle 설정을 함께 고려한다.
+## 6) ?�이??& ?�키�?규칙
+- `shared/schema.ts`???�론??백의 ?�일 기�??�다.
+- ?�??충돌 발생 ??shared�??�선 ?�정?�다.
+- DB ?�키�?변경�? migrations + drizzle ?�정???�께 고려?�다.
 
 ---
 
-## 7) 실행 / 검증 규칙
-- 모든 변경 후 반드시 다음 중 해당하는 것을 안내:
+## 7) ?�행 / 검�?규칙
+- 모든 변�???반드???�음 �??�당?�는 것을 ?�내:
   - `npm run dev`
   - `npm run lint`
   - `npm test`
-- “어느 화면에서 무엇을 확인해야 하는지”를 명확히 쓴다.
+- ?�어???�면?�서 무엇???�인?�야 ?�는지?��? 명확???�다.
 
 ---
 
-## 8) 안전 규칙
-- API 키는 클라이언트 번들에 포함하지 않는다.
-- 위험한 명령(rm, system 변경 등)은 실행하지 말고 설명 후 확인을 받는다.
+## 8) ?�전 규칙
+- API ?�는 ?�라?�언??번들???�함?��? ?�는??
+- ?�험??명령(rm, system 변�????� ?�행?��? 말고 ?�명 ???�인??받는??
