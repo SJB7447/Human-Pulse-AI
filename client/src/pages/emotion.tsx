@@ -64,7 +64,7 @@ function stableSeedFromText(value: string): number {
   return hash % 1000000;
 }
 
-import { GeminiService } from '@/services/gemini';
+import { AIServiceError, GeminiService } from '@/services/gemini';
 import { useQueryClient } from '@tanstack/react-query';
 
 // ... (existing imports)
@@ -114,7 +114,8 @@ export default function EmotionPage() {
       });
       return;
     }
-    handleGenerateNews();
+
+    await handleGenerateNews();
   };
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === type);
@@ -142,6 +143,15 @@ export default function EmotionPage() {
 
   const handleGenerateNews = async () => {
     if (!type) return;
+
+    if (!user) {
+      toast({
+        title: "로그인 필요",
+        description: "AI 뉴스 생성은 로그인 후 이용 가능합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsGenerating(true);
     try {
@@ -185,8 +195,24 @@ export default function EmotionPage() {
 
     } catch (e) {
       console.error("News Generation Failed:", e);
-      const errorMessage = e instanceof Error ? e.message : "Unknown error";
-      alert(`뉴스 생성 실패: ${errorMessage}`);
+      const aiError = e as AIServiceError;
+      const rawMessage = e instanceof Error ? e.message : "Unknown error";
+      const looksLikeHtmlResponse = rawMessage.includes('non-JSON response') || rawMessage.includes('<!doctype') || rawMessage.includes('<html');
+      const isAuthError = aiError.status === 401 || aiError.status === 403;
+
+      if (isAuthError || (!user && looksLikeHtmlResponse)) {
+        toast({
+          title: "로그인 필요",
+          description: "AI 뉴스 생성은 로그인 후 이용 가능합니다.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "뉴스 생성 실패",
+          description: rawMessage,
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsGenerating(false);
     }
@@ -267,7 +293,7 @@ export default function EmotionPage() {
           </p>
           <div className="mt-4">
             <Button
-              onClick={handleGenerateNews}
+              onClick={handleGenerateNewsWithAuth}
               disabled={isGenerating}
               className="bg-white/50 backdrop-blur-sm border border-human-main/10 hover:bg-white/80 text-human-main shadow-sm transition-all duration-200"
               size="sm"
@@ -307,7 +333,7 @@ export default function EmotionPage() {
           <div className="text-center py-20">
             <p className="text-human-sub mb-4" data-testid="text-empty">이 감정에 해당하는 이야기가 없습니다. (데이터: 0개)</p>
             <Button
-              onClick={handleGenerateNews}
+              onClick={handleGenerateNewsWithAuth}
               disabled={isGenerating}
               className="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-lg transform hover:scale-105 transition-all duration-200"
             >
