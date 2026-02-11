@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check } from 'lucide-react';
+import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check, RefreshCcw, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { type NewsItem } from '@/hooks/useNews';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
-import { GeminiService } from '@/services/gemini';
+import { AIServiceError, GeminiService } from '@/services/gemini';
 import type { InteractiveArticle } from '@shared/interactiveArticle';
 import { StoryRenderer } from '@/components/StoryRenderer';
 import { EmotionTag } from '@/components/ui/EmotionTag';
@@ -23,9 +23,13 @@ interface NewsDetailModalProps {
   emotionType: EmotionType;
   onClose: () => void;
   onSaveCuration?: (curation: CuratedArticle) => void;
+  cardBackground?: string;
+  layoutId?: string;
+  relatedArticles?: NewsItem[];
+  onSelectArticle?: (article: NewsItem) => void;
 }
 
-export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration }: NewsDetailModalProps) {
+export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration, cardBackground, layoutId, relatedArticles = [], onSelectArticle }: NewsDetailModalProps) {
   const { toast } = useToast();
   const { user } = useEmotionStore();
   const [isTransforming, setIsTransforming] = useState(false);
@@ -33,18 +37,82 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
   const [insightText, setInsightText] = useState('');
   const [selectedEmotion, setSelectedEmotion] = useState<EmotionType>(emotionType);
   const [interactiveArticle, setInteractiveArticle] = useState<InteractiveArticle | null>(null);
+  const [interactiveError, setInteractiveError] = useState<{ message: string; retryAfterSeconds?: number } | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
-  const color = emotionConfig?.color || '#888888';
+  const articleEmotionConfig = EMOTION_CONFIG.find((entry) => entry.type === article?.emotion) || emotionConfig;
+  const color = articleEmotionConfig?.color || '#888888';
 
   useEffect(() => {
     setInteractiveArticle(null);
+    setInteractiveError(null);
   }, [article?.id]);
 
   useEffect(() => {
     setSelectedEmotion(emotionType);
   }, [emotionType]);
+
+  useEffect(() => {
+    if (!article) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.touchAction = previousTouchAction;
+    };
+  }, [article]);
+
+  const recommendationGroups = useMemo(() => {
+    if (!article) {
+      return { sameCategory: [] as NewsItem[], balance: [] as NewsItem[] };
+    }
+
+    const candidates = relatedArticles.filter((item) => item.id !== article.id);
+    const normalizedCurrentCategory = article.category?.trim().toLowerCase();
+
+    const sameCategory = candidates
+      .filter((item) => {
+        if (!normalizedCurrentCategory || !item.category) return false;
+        return item.category.trim().toLowerCase() === normalizedCurrentCategory;
+      })
+      .slice(0, 2);
+
+    const selectedIds = new Set(sameCategory.map((item) => item.id));
+
+    let balanceCandidate = candidates.find(
+      (item) => !selectedIds.has(item.id) && item.emotion !== article.emotion
+    ) || null;
+
+    // gravity 카테고리에서는 vibrance 또는 serenity 기사 최소 1개 노출 보장
+    if (normalizedCurrentCategory === 'gravity' || article.emotion === 'gravity') {
+      const needsGravityBalance = !balanceCandidate || (balanceCandidate.emotion !== 'vibrance' && balanceCandidate.emotion !== 'serenity');
+      if (needsGravityBalance) {
+        const gravityFallback = candidates.find(
+          (item) => !selectedIds.has(item.id) && (item.emotion === 'vibrance' || item.emotion === 'serenity')
+        );
+        if (gravityFallback) {
+          balanceCandidate = gravityFallback;
+        }
+      }
+    }
+
+    if (!balanceCandidate) {
+      balanceCandidate = candidates.find(
+        (item) => !selectedIds.has(item.id) && item.category?.trim().toLowerCase() !== normalizedCurrentCategory
+      ) || null;
+    }
+
+    return {
+      sameCategory,
+      balance: balanceCandidate ? [balanceCandidate] : [],
+    };
+  }, [article, relatedArticles]);
+
+  const hasRecommendations = recommendationGroups.sameCategory.length > 0 || recommendationGroups.balance.length > 0;
+  const isBrightEmotion = article?.emotion === 'vibrance' || article?.emotion === 'serenity';
 
   const handleSave = () => {
     toast({
@@ -80,6 +148,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
 
   const handleMyArticle = async () => {
     if (!article) return;
+    setInteractiveError(null);
     setIsTransforming(true);
     try {
       const keywords = [article.title, article.summary, article.category || article.emotion || 'interactive']
@@ -104,9 +173,21 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
         description: "스토리 블록 기반 렌더링으로 전환되었습니다.",
       });
     } catch (e: any) {
+      const aiError = e as AIServiceError;
+      const isOverloaded = aiError.retryable || aiError.status === 503 || aiError.status === 504;
+      const retryAfterSeconds = aiError.retryAfterSeconds;
+      const friendlyMessage = isOverloaded
+        ? `AI 요청이 몰려 잠시 지연되고 있어요.${typeof retryAfterSeconds === 'number' ? ` 약 ${retryAfterSeconds}초 후` : ' 잠시 후'} 다시 시도해 주세요.`
+        : (aiError.message || "인터랙티브 기사 생성 중 오류가 발생했습니다.");
+
+      setInteractiveError({
+        message: friendlyMessage,
+        retryAfterSeconds,
+      });
+
       toast({
         title: "생성 실패",
-        description: e.message || "인터랙티브 기사 생성 중 오류가 발생했습니다.",
+        description: friendlyMessage,
         variant: "destructive",
       });
     } finally {
@@ -159,6 +240,14 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
     return `${diffDays}d ago`;
   };
 
+  const getEmotionMeta = (emotion: EmotionType) => {
+    const matched = EMOTION_CONFIG.find((entry) => entry.type === emotion);
+    return {
+      color: matched?.color || '#888888',
+      label: matched?.labelKo || emotion,
+    };
+  };
+
   const glowCore = `0 0 20px ${color}60`;
   const glowMid = `0 0 60px ${color}30`;
   const glowAmbient = `0 0 120px ${color}10`;
@@ -180,13 +269,15 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
             animate={{ opacity: 1, backdropFilter: 'blur(12px)' }}
             exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
             transition={{ duration: 0.4 }}
-            className="absolute inset-0 bg-black/60"
+            className="absolute inset-0"
             style={{
               WebkitBackdropFilter: 'blur(12px)',
+              background: `radial-gradient(circle at 30% 20%, ${color}26 0%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.92) 100%)`,
             }}
           />
 
           <motion.div
+            layoutId={layoutId}
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{
               opacity: 1,
@@ -201,12 +292,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
               damping: 25
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-lg h-[85vh] flex flex-col overflow-hidden rounded-2xl"
+            className="relative w-[94vw] h-[88vh] max-w-[1080px] flex flex-col overflow-hidden rounded-3xl"
             style={{
-              backgroundColor: 'rgba(20, 20, 25, 0.85)',
+              background: cardBackground || 'rgba(255,255,255,0.96)',
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.45)',
             }}
           >
             <div className="absolute inset-0 rounded-2xl pointer-events-none z-0">
@@ -214,18 +305,18 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                 className="absolute inset-0 rounded-2xl"
                 initial={{ opacity: 0, boxShadow: 'none' }}
                 animate={{
-                  opacity: [0, 1, 0.7, 1, 0.7],
+                  opacity: isBrightEmotion ? [0.35, 0.95, 0.55, 1, 0.6] : [0, 1, 0.7, 1, 0.7],
                   boxShadow: [
                     'none',
-                    fullGlow,
+                    isBrightEmotion ? `0 0 26px ${color}80, 0 0 90px ${color}4d, 0 0 180px ${color}2e` : fullGlow,
                     `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
-                    fullGlow,
+                    isBrightEmotion ? `0 0 26px ${color}80, 0 0 90px ${color}4d, 0 0 180px ${color}2e` : fullGlow,
                     `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
                   ],
                 }}
                 transition={{
-                  opacity: { duration: 0.5, repeat: Infinity, repeatDelay: 2 },
-                  boxShadow: { duration: 4, repeat: Infinity, ease: "easeInOut" },
+                  opacity: { duration: isBrightEmotion ? 0.8 : 0.5, repeat: Infinity, repeatDelay: isBrightEmotion ? 1 : 2 },
+                  boxShadow: { duration: isBrightEmotion ? 3 : 4, repeat: Infinity, ease: "easeInOut" },
                 }}
               />
             </div>
@@ -235,7 +326,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
               variant="ghost"
               size="icon"
               onClick={onClose}
-              className="absolute top-4 right-4 z-50 bg-black/20 text-white/90 hover:bg-black/40 backdrop-blur-sm"
+              className="absolute top-4 right-4 z-50 bg-white/50 text-gray-700 hover:bg-white/80 backdrop-blur-sm"
               data-testid="button-close-modal"
             >
               <X className="w-5 h-5" />
@@ -243,44 +334,40 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
 
             {/* Image Section (Fixed at top) */}
             {article.image && (
-              <div className="relative h-48 shrink-0 overflow-hidden z-10">
-                <img
-                  src={article.image}
-                  alt={article.title}
-                  className="w-full h-full object-cover"
-                />
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: 'linear-gradient(to top, rgba(20, 20, 25, 1) 0%, rgba(20, 20, 25, 0) 100%)',
-                  }}
-                />
+              <div className="shrink-0 z-10 px-6 pt-6">
+                <div className="rounded-2xl border border-white/70 bg-white/65 overflow-hidden shadow-sm">
+                  <img
+                    src={article.image}
+                    alt={article.title}
+                    className="w-full max-h-[38vh] object-contain bg-white"
+                  />
+                </div>
               </div>
             )}
 
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-6 z-10">
+            <div className="flex-1 overflow-y-auto px-6 pb-6 pt-5 z-10">
               <div className="flex items-center gap-3 mb-4">
                 {article.category && (
                   <EmotionTag emotion={article.category.toLowerCase() as EmotionType} showIcon={true} />
                 )}
-                <span className="text-xs text-white/50 flex items-center gap-1">
+                <span className="text-xs text-gray-600 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {formatTimeAgo(article.created_at)}
                 </span>
               </div>
 
-              <h2 className="text-2xl font-bold text-white mb-3 leading-tight">
+              <h2 className="text-3xl font-bold text-gray-900 mb-3 leading-tight">
                 {article.title}
               </h2>
 
-              <p className="text-sm text-white/60 mb-6 flex items-center gap-2">
-                <span className="bg-white/10 px-2 py-0.5 rounded text-xs text-white/70">
+              <p className="text-sm text-gray-700 mb-6 flex items-center gap-2">
+                <span className="bg-white/60 px-2 py-0.5 rounded text-xs text-gray-700">
                   {article.source?.startsWith('http') ? new URL(article.source).hostname.replace('www.', '') : article.source}
                 </span>
               </p>
 
-              <div className="text-white/90 text-lg leading-8 font-light mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide">
+              <div className="text-gray-900 text-[18px] leading-8 font-normal mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide max-w-3xl">
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
@@ -299,17 +386,106 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                     <StoryRenderer article={interactiveArticle} />
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-4 rounded-2xl bg-white/55 border border-white/70 p-5">
+                    {interactiveError && (
+                      <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100 space-y-3">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                          <p>{interactiveError.message}</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          onClick={handleMyArticle}
+                          disabled={isTransforming}
+                          className="h-8 border-amber-300/50 bg-transparent text-amber-100 hover:bg-amber-300/10"
+                        >
+                          <RefreshCcw className="w-3 h-3" />
+                          다시 시도
+                        </Button>
+                      </div>
+                    )}
                     {(article.content || article.summary).split('\n\n').map((paragraph, idx) => (
                       <p key={idx} className="text-justify opacity-95">{paragraph}</p>
                     ))}
                   </div>
                 )}
               </div>
+
+              {hasRecommendations && !interactiveArticle && (
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
+                    <span className="text-[11px] text-gray-500">감정 균형을 고려해 제안합니다</span>
+                  </div>
+
+                  {recommendationGroups.sameCategory.length > 0 && (
+                    <div className="rounded-2xl border border-white/70 bg-white/55 p-3">
+                      <p className="text-xs font-semibold text-gray-700 mb-2">같은 카테고리 이어보기</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {recommendationGroups.sameCategory.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => onSelectArticle?.(item)}
+                            className="text-left rounded-xl border border-white/70 bg-white/70 hover:bg-white/90 transition-colors overflow-hidden"
+                          >
+                            {item.image && (
+                              <img src={item.image} alt={item.title} className="w-full h-24 object-cover" />
+                            )}
+                            <div className="p-3">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <p className="text-[11px] text-gray-500">{item.category || '일반 뉴스'}</p>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">동일 카테고리</span>
+                              </div>
+                              <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {recommendationGroups.balance.length > 0 && (
+                    <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-3">
+                      <p className="text-xs font-semibold text-emerald-800 mb-2">감정 균형 추천 · 다른 카테고리</p>
+                      <div className="grid grid-cols-1 gap-3">
+                        {recommendationGroups.balance.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => onSelectArticle?.(item)}
+                            className="text-left rounded-xl border border-emerald-200/80 bg-white/80 hover:bg-white transition-colors overflow-hidden"
+                          >
+                            {item.image && (
+                              <img src={item.image} alt={item.title} className="w-full h-28 object-cover" />
+                            )}
+                            <div className="p-3">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <p className="text-[11px] text-emerald-700">균형 제안 · {item.category || '일반 뉴스'}</p>
+                                <span
+                                  className="text-[10px] px-2 py-0.5 rounded-full border"
+                                  style={{
+                                    color: getEmotionMeta(item.emotion).color,
+                                    borderColor: `${getEmotionMeta(item.emotion).color}66`,
+                                    backgroundColor: `${getEmotionMeta(item.emotion).color}18`,
+                                  }}
+                                >
+                                  {getEmotionMeta(item.emotion).label}
+                                </span>
+                              </div>
+                              <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Fixed Footer Buttons */}
-            <div className="p-4 border-t border-white/10 bg-[#141419]/95 backdrop-blur z-20 shrink-0">
+            <div className="p-4 border-t border-white/40 bg-white/50 backdrop-blur z-20 shrink-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   variant="ghost"
@@ -320,7 +496,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                     }
                     handleSave();
                   }}
-                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20 hover:bg-white/20"
+                  className="flex-1 min-w-[80px] text-gray-700 bg-white/60 border-white/70 hover:bg-white/85"
                   data-testid="button-save-article"
                 >
                   <Bookmark className="w-4 h-4" />
@@ -330,7 +506,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                 <Button
                   variant="ghost"
                   onClick={handleShare}
-                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20 hover:bg-white/20"
+                  className="flex-1 min-w-[80px] text-gray-700 bg-white/60 border-white/70 hover:bg-white/85"
                   data-testid="button-share-article"
                 >
                   <Share2 className="w-4 h-4" />
@@ -346,7 +522,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                     }
                     setShowInsightEditor(true);
                   }}
-                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20 hover:bg-white/20"
+                  className="flex-1 min-w-[80px] text-gray-700 bg-white/60 border-white/70 hover:bg-white/85"
                   data-testid="button-add-insight"
                 >
                   <Lightbulb className="w-4 h-4" />
@@ -362,11 +538,11 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                     handleMyArticle();
                   }}
                   disabled={isTransforming}
-                  className="flex-1 min-w-[100px] border-0 hover:brightness-110 transition-all font-semibold"
+                  className="flex-1 min-w-[100px] border border-white/70 bg-white/60 text-gray-800 hover:bg-white/85 transition-all font-semibold"
                   variant="flowing"
                   style={{
                     backgroundColor: undefined, // Let variant handle bg
-                    color: '#ffffff',
+                    color: '#1f2937',
                     boxShadow: `0 4px 20px ${color}50`,
                   }}
                   data-testid="button-my-article"
@@ -472,7 +648,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                       className="w-full"
                       style={{
                         backgroundColor: EMOTION_CONFIG.find(e => e.type === selectedEmotion)?.color || color,
-                        color: '#ffffff',
+                        color: '#1f2937',
                       }}
                       data-testid="button-save-insight"
                     >
