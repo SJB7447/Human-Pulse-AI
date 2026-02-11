@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check, RefreshCcw, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -25,9 +25,11 @@ interface NewsDetailModalProps {
   onSaveCuration?: (curation: CuratedArticle) => void;
   cardBackground?: string;
   layoutId?: string;
+  relatedArticles?: NewsItem[];
+  onSelectArticle?: (article: NewsItem) => void;
 }
 
-export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration, cardBackground, layoutId }: NewsDetailModalProps) {
+export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration, cardBackground, layoutId, relatedArticles = [], onSelectArticle }: NewsDetailModalProps) {
   const { toast } = useToast();
   const { user } = useEmotionStore();
   const [isTransforming, setIsTransforming] = useState(false);
@@ -49,6 +51,27 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   useEffect(() => {
     setSelectedEmotion(emotionType);
   }, [emotionType]);
+
+  useEffect(() => {
+    if (!article) return;
+    const previousOverflow = document.body.style.overflow;
+    const previousTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.touchAction = previousTouchAction;
+    };
+  }, [article]);
+
+  const recommendedArticles = useMemo(() => {
+    if (!article) return [];
+    const candidates = relatedArticles.filter((item) => item.id !== article.id);
+    const sameCategory = candidates.filter((item) => item.category && article.category && item.category === article.category).slice(0, 2);
+    const sameIds = new Set(sameCategory.map((item) => item.id));
+    const differentCategory = candidates.filter((item) => !sameIds.has(item.id) && item.category !== article.category).slice(0, 1);
+    return [...sameCategory, ...differentCategory];
+  }, [article, relatedArticles]);
 
   const handleSave = () => {
     toast({
@@ -342,10 +365,34 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   </div>
                 )}
               </div>
+
+              {recommendedArticles.length > 0 && !interactiveArticle && (
+                <div className="mt-6">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">다른 뉴스 추천</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {recommendedArticles.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => onSelectArticle?.(item)}
+                        className="text-left rounded-xl border border-white/60 bg-white/60 hover:bg-white/80 transition-colors overflow-hidden"
+                      >
+                        {item.image && (
+                          <img src={item.image} alt={item.title} className="w-full h-24 object-cover" />
+                        )}
+                        <div className="p-3">
+                          <p className="text-[11px] text-gray-500 mb-1">{item.category || '일반 뉴스'}</p>
+                          <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Fixed Footer Buttons */}
-            <div className="p-4 border-t border-white/10 bg-[#141419]/95 backdrop-blur z-20 shrink-0">
+            <div className="p-4 border-t border-white/40 bg-white/50 backdrop-blur z-20 shrink-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   variant="ghost"
@@ -356,7 +403,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                     }
                     handleSave();
                   }}
-                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20 hover:bg-white/20"
+                  className="flex-1 min-w-[80px] text-gray-700 bg-white/60 border-white/70 hover:bg-white/85"
                   data-testid="button-save-article"
                 >
                   <Bookmark className="w-4 h-4" />
@@ -366,7 +413,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 <Button
                   variant="ghost"
                   onClick={handleShare}
-                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20 hover:bg-white/20"
+                  className="flex-1 min-w-[80px] text-gray-700 bg-white/60 border-white/70 hover:bg-white/85"
                   data-testid="button-share-article"
                 >
                   <Share2 className="w-4 h-4" />
@@ -382,7 +429,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                     }
                     setShowInsightEditor(true);
                   }}
-                  className="flex-1 min-w-[80px] text-white/80 bg-white/10 border-white/20 hover:bg-white/20"
+                  className="flex-1 min-w-[80px] text-gray-700 bg-white/60 border-white/70 hover:bg-white/85"
                   data-testid="button-add-insight"
                 >
                   <Lightbulb className="w-4 h-4" />
@@ -398,11 +445,11 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                     handleMyArticle();
                   }}
                   disabled={isTransforming}
-                  className="flex-1 min-w-[100px] border-0 hover:brightness-110 transition-all font-semibold"
+                  className="flex-1 min-w-[100px] border border-white/70 bg-white/60 text-gray-800 hover:bg-white/85 transition-all font-semibold"
                   variant="flowing"
                   style={{
                     backgroundColor: undefined, // Let variant handle bg
-                    color: '#ffffff',
+                    color: '#1f2937',
                     boxShadow: `0 4px 20px ${color}50`,
                   }}
                   data-testid="button-my-article"
@@ -508,7 +555,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                       className="w-full"
                       style={{
                         backgroundColor: EMOTION_CONFIG.find(e => e.type === selectedEmotion)?.color || color,
-                        color: '#ffffff',
+                        color: '#1f2937',
                       }}
                       data-testid="button-save-insight"
                     >

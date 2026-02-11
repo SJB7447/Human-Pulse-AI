@@ -471,6 +471,14 @@ export default function EmotionPage() {
         emotionType={type || 'serenity'}
         cardBackground={selectedCardBg}
         layoutId={selectedArticle ? `news-card-${selectedArticle.id}` : undefined}
+        relatedArticles={news}
+        onSelectArticle={(nextArticle) => {
+          const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
+          const cardBgStart = hexToRgba(emotionConfig?.color || '#888888', 0.14 + depth / 220);
+          const cardBgEnd = hexToRgba(emotionConfig?.color || '#888888', 0.10 + depth / 300);
+          setSelectedCardBg(`linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`);
+          setSelectedArticle(nextArticle);
+        }}
         onClose={() => setSelectedArticle(null)}
       />
     </div>
