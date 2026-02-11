@@ -524,7 +524,7 @@ export default function EmotionPage() {
 
       <NewsDetailModal
         article={selectedArticle}
-        emotionType={selectedArticle?.emotion || type || 'serenity'}
+        emotionType={type || 'serenity'}
         cardBackground={selectedCardBg}
         layoutId={selectedArticle ? `news-card-${selectedArticle.id}` : undefined}
         relatedArticles={recommendationPool}
