@@ -40,6 +40,17 @@ function formatTimeAgo(date: Date | string | null | undefined): string {
   return `${diffDays}일 전`;
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const normalized = hex.replace('#', '');
+  const bigint = parseInt(normalized.length === 3
+    ? normalized.split('').map((c) => c + c).join('')
+    : normalized, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function getRandomAuthor(id: number | string) {
   const numericId = typeof id === 'string' ? parseInt(id, 10) || 0 : id;
   return MOCK_AUTHORS[numericId % MOCK_AUTHORS.length];
@@ -60,6 +71,7 @@ export default function EmotionPage() {
   const { user } = useEmotionStore();
   const { toast } = useToast();
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [selectedCardBg, setSelectedCardBg] = useState<string>('rgba(255,255,255,0.96)');
 
   useEffect(() => {
     const handleScroll = () => {
@@ -291,29 +303,35 @@ export default function EmotionPage() {
           <div className="mt-8">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
               {news.map((item, index) => {
-                // Pick color based on index for variety (cycling through variations)
-                const colorIndex = index % emotionConfig.colorVariations.length;
-                const cardBgColor = emotionConfig.colorVariations[colorIndex];
-                // Determine if text should be light or dark based on color intensity
-                const isLightBg = colorIndex < 2;
+                const depth = Math.max(0, Math.min(100, item.intensity ?? 50));
+                const cardBgStart = hexToRgba(emotionConfig.color, 0.14 + depth / 220);
+                const cardBgEnd = hexToRgba(emotionConfig.color, 0.10 + depth / 300);
+                const cardBgColor = `linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`;
+                const isLightBg = true;
                 const textColor = isLightBg ? '#232221' : '#ffffff';
                 const subTextColor = isLightBg ? '#666666' : 'rgba(255,255,255,0.8)';
+                const updatedAtLabel = formatTimeAgo(item.created_at);
+                const detailCategory = item.category || emotionConfig.labelKo;
 
                 return (
                   <motion.article
                     key={item.id}
+                    layoutId={`news-card-${item.id}`}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: mounted ? 1 : 0, y: mounted ? 0 : 20 }}
                     transition={{ duration: 0.4, delay: index * 0.1 }}
-                    onClick={() => setSelectedArticle(item)}
+                    onClick={() => {
+                      setSelectedCardBg(cardBgColor);
+                      setSelectedArticle(item);
+                    }}
                     className="w-full group cursor-pointer"
                     data-testid={`card-news-${item.id}`}
                   >
                     <div
                       className="h-full rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col"
-                      style={{ backgroundColor: cardBgColor }}
+                      style={{ background: cardBgColor }}
                     >
-                      {/* Header with category tag and read time */}
+                      {/* Header with category and update time */}
                       <div className="p-5 pb-0">
                         <div className="flex items-center justify-between mb-3">
                           <span
@@ -323,37 +341,37 @@ export default function EmotionPage() {
                               color: textColor,
                             }}
                           >
-                            {emotionConfig.recommendedNews[index % emotionConfig.recommendedNews.length]?.split(' ')[0] || emotionConfig.labelKo}
+                            {detailCategory}
                           </span>
                           <span className="text-xs" style={{ color: subTextColor }}>
-                            {Math.floor(Math.random() * 15 + 3)}-{Math.floor(Math.random() * 10 + 15)} min
+                            업데이트 {updatedAtLabel}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 mb-3">
+                          <span
+                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                            style={{
+                              backgroundColor: hexToRgba(emotionConfig.color, 0.22),
+                              color: textColor,
+                            }}
+                          >
+                            감정 깊이 {depth}
                           </span>
                         </div>
 
                         {/* Title */}
                         <h3
-                          className="font-serif text-xl font-bold leading-tight mb-2 line-clamp-3"
+                          className="font-serif text-xl font-bold leading-tight mb-3 line-clamp-3"
                           style={{ color: textColor }}
                           data-testid={`text-title-${item.id}`}
                         >
                           {item.title}
                         </h3>
 
-                        {/* Author */}
-                        <div className="flex items-center gap-2 mb-4">
-                          <div
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium"
-                            style={{
-                              backgroundColor: isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)',
-                              color: textColor,
-                            }}
-                          >
-                            {getRandomAuthor(item.id).name.charAt(0)}
-                          </div>
-                          <span className="text-sm" style={{ color: textColor }}>
-                            {getRandomAuthor(item.id).name}
-                          </span>
-                        </div>
+                        <p className="text-sm leading-relaxed line-clamp-3 mb-4" style={{ color: subTextColor }}>
+                          {item.summary}
+                        </p>
                       </div>
 
                       {/* Image or Icon area */}
@@ -367,7 +385,7 @@ export default function EmotionPage() {
                               data-testid={`img-news-${item.id}`}
                               onError={(e) => {
                                 e.currentTarget.onerror = null;
-                                e.currentTarget.src = `https://placehold.co/400x300/${cardBgColor.replace('#', '')}/${textColor.replace('#', '')}?text=${encodeURIComponent(item.category || 'HueBrief')}`;
+                                e.currentTarget.src = `https://placehold.co/400x300/${emotionConfig.color.replace('#', '')}/1f1f1f?text=${encodeURIComponent(item.category || 'HueBrief')}`;
                               }}
                             />
                           </div>
@@ -451,6 +469,16 @@ export default function EmotionPage() {
       <NewsDetailModal
         article={selectedArticle}
         emotionType={type || 'serenity'}
+        cardBackground={selectedCardBg}
+        layoutId={selectedArticle ? `news-card-${selectedArticle.id}` : undefined}
+        relatedArticles={news}
+        onSelectArticle={(nextArticle) => {
+          const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
+          const cardBgStart = hexToRgba(emotionConfig?.color || '#888888', 0.14 + depth / 220);
+          const cardBgEnd = hexToRgba(emotionConfig?.color || '#888888', 0.10 + depth / 300);
+          setSelectedCardBg(`linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`);
+          setSelectedArticle(nextArticle);
+        }}
         onClose={() => setSelectedArticle(null)}
       />
     </div>
