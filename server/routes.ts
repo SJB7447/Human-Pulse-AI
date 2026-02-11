@@ -505,6 +505,7 @@ Return ONLY valid JSON, no markdown.
       const { content } = req.body;
       const prompt = `
             Analyze sentiment distribution: "${content.substring(0, 500)}".
+            feedback must be written in Korean.
             Return JSON: { "vibrance": number, "immersion": number, "clarity": number, "gravity": number, "serenity": number, "dominantEmotion": string, "feedback": string }
             dominantEmotion must be one of: vibrance, immersion, clarity, gravity, serenity, spectrum
         `;

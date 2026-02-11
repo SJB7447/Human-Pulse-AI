@@ -197,6 +197,7 @@ export default function JournalistPage() {
   const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false);
 
   const hasAngerWarning = sentimentData.immersion > 40;
+  const hasPublishErrors = Object.values(publishingStatus).includes('error');
 
   // Debounced sentiment analysis
   const analysisTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -207,7 +208,13 @@ export default function JournalistPage() {
     setIsAnalyzingSentiment(true);
     try {
       const result = await GeminiService.analyzeSentiment(articleContent);
+      const koreanFeedback = /[가-힣]/.test(result.feedback || '')
+        ? result.feedback
+        : '감정 분석 결과가 영문으로 반환되어 한국어 요약 안내로 대체했습니다.';
       setSentimentData(result);
+      if (koreanFeedback !== result.feedback) {
+        setSentimentData(prev => ({ ...prev, feedback: koreanFeedback }));
+      }
     } catch (error) {
       console.error('Sentiment analysis failed:', error);
       // Fallback to neutral if analysis fails
@@ -983,7 +990,7 @@ export default function JournalistPage() {
                 {/* Generated Video Display */}
                 {(generatedVideoUrl || generatedVideoScript) && (
                   <div className="mt-4 p-4 bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg border border-purple-200">
-                    <p className="text-sm font-medium text-purple-800 mb-3">🎬 숏폼 영상 (9:16, 8초)</p>
+                    <p className="text-sm font-medium text-indigo-800 mb-3">🎬 숏폼 영상 (9:16, 8초)</p>
 
                     {generatedVideoUrl && (
                       <video
@@ -1198,6 +1205,26 @@ export default function JournalistPage() {
                           {selectedPublishEmotion || 'spectrum'}
                         </span>
                       </div>
+
+                      <div className="mt-4">
+                        <p className="text-xs text-slate-500 mb-2">발행 감정 직접 선택</p>
+                        <div className="flex flex-wrap justify-center gap-2">
+                          {EMOTION_CONFIG.map((emotion) => (
+                            <button
+                              key={`publish-modal-${emotion.type}`}
+                              type="button"
+                              onClick={() => {
+                                setSelectedPublishEmotion(emotion.type as EmotionOption);
+                                setIsEmotionManuallySelected(true);
+                              }}
+                              className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${selectedPublishEmotion === emotion.type ? 'text-white border-transparent' : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'}`}
+                              style={selectedPublishEmotion === emotion.type ? { backgroundColor: emotion.color } : {}}
+                            >
+                              {emotion.labelKo}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="space-y-4 mb-6">
@@ -1223,6 +1250,11 @@ export default function JournalistPage() {
                                   {status === 'success' && '배포 성공'}
                                   {status === 'error' && '배포 실패'}
                                 </p>
+                                {status === 'error' && resultUrl && (
+                                  <p className="text-[11px] text-red-500 mt-1 max-w-[210px] truncate" title={resultUrl}>
+                                    {resultUrl}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             <div>
@@ -1260,13 +1292,25 @@ export default function JournalistPage() {
                           </GlassButton>
                         </>
                       ) : (
-                        <GlassButton
-                          variant="primary"
-                          className="w-full"
-                          onClick={() => setShowPublishModal(false)}
-                        >
-                          닫기
-                        </GlassButton>
+                        <div className="w-full flex gap-2">
+                          {hasPublishErrors && (
+                            <GlassButton
+                              variant="outline"
+                              className="flex-1"
+                              onClick={confirmPublish}
+                              disabled={isPublishingInProgress}
+                            >
+                              실패 항목 재시도
+                            </GlassButton>
+                          )}
+                          <GlassButton
+                            variant="primary"
+                            className="flex-1"
+                            onClick={() => setShowPublishModal(false)}
+                          >
+                            닫기
+                          </GlassButton>
+                        </div>
                       )}
                     </div>
                   </motion.div>
