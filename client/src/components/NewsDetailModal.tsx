@@ -113,7 +113,6 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
   const hasRecommendations = recommendationGroups.sameCategory.length > 0 || recommendationGroups.balance.length > 0;
   const isBrightEmotion = article?.emotion === 'vibrance' || article?.emotion === 'serenity';
-  const currentEmotionMeta = article?.emotion ? getEmotionMeta(article.emotion) : null;
 
   const handleSave = () => {
     toast({
@@ -253,6 +252,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const glowMid = `0 0 60px ${color}30`;
   const glowAmbient = `0 0 120px ${color}10`;
   const fullGlow = `${glowCore}, ${glowMid}, ${glowAmbient}`;
+  const currentEmotionMeta = article?.emotion ? getEmotionMeta(article.emotion) : null;
 
   return (
     <AnimatePresence>
