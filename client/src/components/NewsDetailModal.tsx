@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check } from 'lucide-react';
+import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check, RefreshCcw, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { type NewsItem } from '@/hooks/useNews';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
-import { GeminiService } from '@/services/gemini';
+import { AIServiceError, GeminiService } from '@/services/gemini';
 import type { InteractiveArticle } from '@shared/interactiveArticle';
 import { StoryRenderer } from '@/components/StoryRenderer';
 import { EmotionTag } from '@/components/ui/EmotionTag';
@@ -33,6 +33,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
   const [insightText, setInsightText] = useState('');
   const [selectedEmotion, setSelectedEmotion] = useState<EmotionType>(emotionType);
   const [interactiveArticle, setInteractiveArticle] = useState<InteractiveArticle | null>(null);
+  const [interactiveError, setInteractiveError] = useState<{ message: string; retryAfterSeconds?: number } | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
@@ -40,6 +41,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
 
   useEffect(() => {
     setInteractiveArticle(null);
+    setInteractiveError(null);
   }, [article?.id]);
 
   useEffect(() => {
@@ -80,6 +82,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
 
   const handleMyArticle = async () => {
     if (!article) return;
+    setInteractiveError(null);
     setIsTransforming(true);
     try {
       const keywords = [article.title, article.summary, article.category || article.emotion || 'interactive']
@@ -104,9 +107,21 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
         description: "스토리 블록 기반 렌더링으로 전환되었습니다.",
       });
     } catch (e: any) {
+      const aiError = e as AIServiceError;
+      const isOverloaded = aiError.retryable || aiError.status === 503 || aiError.status === 504;
+      const retryAfterSeconds = aiError.retryAfterSeconds;
+      const friendlyMessage = isOverloaded
+        ? `AI 요청이 몰려 잠시 지연되고 있어요.${typeof retryAfterSeconds === 'number' ? ` 약 ${retryAfterSeconds}초 후` : ' 잠시 후'} 다시 시도해 주세요.`
+        : (aiError.message || "인터랙티브 기사 생성 중 오류가 발생했습니다.");
+
+      setInteractiveError({
+        message: friendlyMessage,
+        retryAfterSeconds,
+      });
+
       toast({
         title: "생성 실패",
-        description: e.message || "인터랙티브 기사 생성 중 오류가 발생했습니다.",
+        description: friendlyMessage,
         variant: "destructive",
       });
     } finally {
@@ -300,6 +315,23 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                   </div>
                 ) : (
                   <div className="space-y-4">
+                    {interactiveError && (
+                      <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100 space-y-3">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                          <p>{interactiveError.message}</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          onClick={handleMyArticle}
+                          disabled={isTransforming}
+                          className="h-8 border-amber-300/50 bg-transparent text-amber-100 hover:bg-amber-300/10"
+                        >
+                          <RefreshCcw className="w-3 h-3" />
+                          다시 시도
+                        </Button>
+                      </div>
+                    )}
                     {(article.content || article.summary).split('\n\n').map((paragraph, idx) => (
                       <p key={idx} className="text-justify opacity-95">{paragraph}</p>
                     ))}

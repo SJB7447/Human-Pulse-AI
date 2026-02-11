@@ -15,6 +15,23 @@ export interface GeneratedNews {
 export type InteractiveArticle = SharedInteractiveArticle;
 export type InteractiveGenerationInput = Partial<Omit<SharedInteractiveGenerationInput, 'keywords'>> & Pick<SharedInteractiveGenerationInput, 'keywords'>;
 
+
+export class AIServiceError extends Error {
+    status?: number;
+    code?: string;
+    retryable?: boolean;
+    retryAfterSeconds?: number;
+
+    constructor(message: string, options?: { status?: number; code?: string; retryable?: boolean; retryAfterSeconds?: number }) {
+        super(message);
+        this.name = 'AIServiceError';
+        this.status = options?.status;
+        this.code = options?.code;
+        this.retryable = options?.retryable;
+        this.retryAfterSeconds = options?.retryAfterSeconds;
+    }
+}
+
 // Helper for API calls
 async function callApi(endpoint: string, body: any) {
     const res = await fetch(endpoint, {
@@ -32,7 +49,12 @@ async function callApi(endpoint: string, body: any) {
     }
 
     if (!res.ok) {
-        throw new Error(data.error || 'AI Service Error');
+        throw new AIServiceError(data.error || 'AI Service Error', {
+            status: res.status,
+            code: data.code,
+            retryable: data.retryable,
+            retryAfterSeconds: data.retryAfterSeconds
+        });
     }
 
     return data;
@@ -117,10 +139,6 @@ export const GeminiService = {
     },
 
     async generateInteractiveArticle(input: InteractiveGenerationInput): Promise<InteractiveArticle> {
-        try {
-            return await callApi('/api/ai/generate/interactive-article', input);
-        } catch (_firstError) {
-            return callApi('/api/ai/generate/interactive-article', input);
-        }
+        return callApi('/api/ai/generate/interactive-article', input);
     }
 };
