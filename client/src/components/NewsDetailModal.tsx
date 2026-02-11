@@ -41,7 +41,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const MAX_INSIGHT_LENGTH = 300;
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
-  const color = emotionConfig?.color || '#888888';
+  const articleEmotionConfig = EMOTION_CONFIG.find((entry) => entry.type === article?.emotion) || emotionConfig;
+  const color = articleEmotionConfig?.color || '#888888';
 
   useEffect(() => {
     setInteractiveArticle(null);
@@ -64,8 +65,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     };
   }, [article]);
 
-  const recommendedArticles = useMemo(() => {
-    if (!article) return [];
+  const recommendationGroups = useMemo(() => {
+    if (!article) {
+      return { sameCategory: [] as NewsItem[], balance: [] as NewsItem[] };
+    }
 
     const candidates = relatedArticles.filter((item) => item.id !== article.id);
     const normalizedCurrentCategory = article.category?.trim().toLowerCase();
@@ -78,34 +81,38 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       .slice(0, 2);
 
     const selectedIds = new Set(sameCategory.map((item) => item.id));
-    const differentEmotion = candidates.find(
-      (item) => !selectedIds.has(item.id) && item.emotion !== article.emotion
-    );
 
-    const recommendations = differentEmotion
-      ? [...sameCategory, differentEmotion]
-      : [...sameCategory];
+    let balanceCandidate = candidates.find(
+      (item) => !selectedIds.has(item.id) && item.emotion !== article.emotion
+    ) || null;
 
     // gravity 카테고리에서는 vibrance 또는 serenity 기사 최소 1개 노출 보장
     if (normalizedCurrentCategory === 'gravity' || article.emotion === 'gravity') {
-      const hasRequiredEmotion = recommendations.some((item) => item.emotion === 'vibrance' || item.emotion === 'serenity');
-      if (!hasRequiredEmotion) {
-        const requiredFallback = candidates.find(
+      const needsGravityBalance = !balanceCandidate || (balanceCandidate.emotion !== 'vibrance' && balanceCandidate.emotion !== 'serenity');
+      if (needsGravityBalance) {
+        const gravityFallback = candidates.find(
           (item) => !selectedIds.has(item.id) && (item.emotion === 'vibrance' || item.emotion === 'serenity')
         );
-
-        if (requiredFallback) {
-          if (recommendations.length >= 3) {
-            recommendations[recommendations.length - 1] = requiredFallback;
-          } else {
-            recommendations.push(requiredFallback);
-          }
+        if (gravityFallback) {
+          balanceCandidate = gravityFallback;
         }
       }
     }
 
-    return recommendations.slice(0, 3);
+    if (!balanceCandidate) {
+      balanceCandidate = candidates.find(
+        (item) => !selectedIds.has(item.id) && item.category?.trim().toLowerCase() !== normalizedCurrentCategory
+      ) || null;
+    }
+
+    return {
+      sameCategory,
+      balance: balanceCandidate ? [balanceCandidate] : [],
+    };
   }, [article, relatedArticles]);
+
+  const hasRecommendations = recommendationGroups.sameCategory.length > 0 || recommendationGroups.balance.length > 0;
+  const isBrightEmotion = article?.emotion === 'vibrance' || article?.emotion === 'serenity';
 
   const handleSave = () => {
     toast({
@@ -277,7 +284,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               damping: 25
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-[90vw] h-[88vh] max-w-[1400px] flex flex-col overflow-hidden rounded-3xl"
+            className="relative w-[94vw] h-[88vh] max-w-[1080px] flex flex-col overflow-hidden rounded-3xl"
             style={{
               background: cardBackground || 'rgba(255,255,255,0.96)',
               backdropFilter: 'blur(24px)',
@@ -290,18 +297,18 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 className="absolute inset-0 rounded-2xl"
                 initial={{ opacity: 0, boxShadow: 'none' }}
                 animate={{
-                  opacity: [0, 1, 0.7, 1, 0.7],
+                  opacity: isBrightEmotion ? [0.35, 0.95, 0.55, 1, 0.6] : [0, 1, 0.7, 1, 0.7],
                   boxShadow: [
                     'none',
-                    fullGlow,
+                    isBrightEmotion ? `0 0 26px ${color}80, 0 0 90px ${color}4d, 0 0 180px ${color}2e` : fullGlow,
                     `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
-                    fullGlow,
+                    isBrightEmotion ? `0 0 26px ${color}80, 0 0 90px ${color}4d, 0 0 180px ${color}2e` : fullGlow,
                     `0 0 15px ${color}50, 0 0 45px ${color}25, 0 0 100px ${color}08`,
                   ],
                 }}
                 transition={{
-                  opacity: { duration: 0.5, repeat: Infinity, repeatDelay: 2 },
-                  boxShadow: { duration: 4, repeat: Infinity, ease: "easeInOut" },
+                  opacity: { duration: isBrightEmotion ? 0.8 : 0.5, repeat: Infinity, repeatDelay: isBrightEmotion ? 1 : 2 },
+                  boxShadow: { duration: isBrightEmotion ? 3 : 4, repeat: Infinity, ease: "easeInOut" },
                 }}
               />
             </div>
@@ -352,7 +359,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 </span>
               </p>
 
-              <div className="text-gray-900 text-[18px] leading-8 font-normal mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide max-w-4xl">
+              <div className="text-gray-900 text-[18px] leading-8 font-normal mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide max-w-3xl">
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
@@ -396,27 +403,60 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 )}
               </div>
 
-              {recommendedArticles.length > 0 && !interactiveArticle && (
-                <div className="mt-6">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">다른 뉴스 추천</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {recommendedArticles.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => onSelectArticle?.(item)}
-                        className="text-left rounded-xl border border-white/60 bg-white/60 hover:bg-white/80 transition-colors overflow-hidden"
-                      >
-                        {item.image && (
-                          <img src={item.image} alt={item.title} className="w-full h-24 object-cover" />
-                        )}
-                        <div className="p-3">
-                          <p className="text-[11px] text-gray-500 mb-1">{item.category || '일반 뉴스'}</p>
-                          <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
-                        </div>
-                      </button>
-                    ))}
+              {hasRecommendations && !interactiveArticle && (
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
+                    <span className="text-[11px] text-gray-500">감정 균형을 고려해 제안합니다</span>
                   </div>
+
+                  {recommendationGroups.sameCategory.length > 0 && (
+                    <div className="rounded-2xl border border-white/70 bg-white/55 p-3">
+                      <p className="text-xs font-semibold text-gray-700 mb-2">같은 카테고리 이어보기</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {recommendationGroups.sameCategory.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => onSelectArticle?.(item)}
+                            className="text-left rounded-xl border border-white/70 bg-white/70 hover:bg-white/90 transition-colors overflow-hidden"
+                          >
+                            {item.image && (
+                              <img src={item.image} alt={item.title} className="w-full h-24 object-cover" />
+                            )}
+                            <div className="p-3">
+                              <p className="text-[11px] text-gray-500 mb-1">{item.category || '일반 뉴스'}</p>
+                              <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {recommendationGroups.balance.length > 0 && (
+                    <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-3">
+                      <p className="text-xs font-semibold text-emerald-800 mb-2">감정 균형 추천 · 다른 카테고리</p>
+                      <div className="grid grid-cols-1 gap-3">
+                        {recommendationGroups.balance.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => onSelectArticle?.(item)}
+                            className="text-left rounded-xl border border-emerald-200/80 bg-white/80 hover:bg-white transition-colors overflow-hidden"
+                          >
+                            {item.image && (
+                              <img src={item.image} alt={item.title} className="w-full h-28 object-cover" />
+                            )}
+                            <div className="p-3">
+                              <p className="text-[11px] text-emerald-700 mb-1">균형 제안 · {item.category || '일반 뉴스'}</p>
+                              <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
