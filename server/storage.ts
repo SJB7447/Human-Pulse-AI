@@ -326,13 +326,24 @@ export class SupabaseStorage implements IStorage {
   }
 
   async createNewsItem(item: InsertNewsItem): Promise<NewsItem> {
+    const payload = {
+      title: item.title,
+      summary: item.summary,
+      content: item.content ?? null,
+      source: item.source,
+      image: item.image ?? null,
+      category: item.category ?? null,
+      emotion: item.emotion,
+      intensity: item.intensity ?? 50,
+      author_id: item.authorId ?? null,
+      author_name: item.authorName ?? null,
+      platforms: ['interactive'],
+      is_published: true,
+    };
+
     const { data, error } = await supabase
       .from('news_items')
-      .insert({
-        ...item,
-        platforms: ['interactive'],
-        is_published: true // Default
-      })
+      .insert(payload)
       .select()
       .single();
     if (error) throw error;
@@ -340,9 +351,24 @@ export class SupabaseStorage implements IStorage {
   }
 
   async updateNewsItem(id: string, updates: Partial<NewsItem>): Promise<NewsItem | null> {
+    const payload = {
+      ...(updates.title !== undefined ? { title: updates.title } : {}),
+      ...(updates.summary !== undefined ? { summary: updates.summary } : {}),
+      ...(updates.content !== undefined ? { content: updates.content } : {}),
+      ...(updates.source !== undefined ? { source: updates.source } : {}),
+      ...(updates.image !== undefined ? { image: updates.image } : {}),
+      ...(updates.category !== undefined ? { category: updates.category } : {}),
+      ...(updates.emotion !== undefined ? { emotion: updates.emotion } : {}),
+      ...(updates.intensity !== undefined ? { intensity: updates.intensity } : {}),
+      ...(updates.authorId !== undefined ? { author_id: updates.authorId } : {}),
+      ...(updates.authorName !== undefined ? { author_name: updates.authorName } : {}),
+      ...(updates.platforms !== undefined ? { platforms: updates.platforms } : {}),
+      ...(updates.isPublished !== undefined ? { is_published: updates.isPublished } : {}),
+    };
+
     const { data, error } = await supabase
       .from('news_items')
-      .update(updates)
+      .update(payload)
       .eq('id', id)
       .select()
       .single();
