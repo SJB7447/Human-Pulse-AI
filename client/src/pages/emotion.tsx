@@ -112,6 +112,11 @@ export default function EmotionPage() {
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === type);
   const Icon = type ? EMOTION_ICONS[type] : Heart;
 
+  const getEmotionColor = (emotionType?: EmotionType | null) => {
+    const config = EMOTION_CONFIG.find((entry) => entry.type === emotionType);
+    return config?.color || emotionConfig?.color || '#888888';
+  };
+
   const { data: news = [], isLoading, error } = useNews(type);
 
   const handleGenerateNews = async () => {
@@ -304,14 +309,15 @@ export default function EmotionPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-6">
               {news.map((item, index) => {
                 const depth = Math.max(0, Math.min(100, item.intensity ?? 50));
-                const cardBgStart = hexToRgba(emotionConfig.color, 0.14 + depth / 220);
-                const cardBgEnd = hexToRgba(emotionConfig.color, 0.10 + depth / 300);
+                const cardEmotionColor = getEmotionColor(item.emotion);
+                const cardBgStart = hexToRgba(cardEmotionColor, 0.14 + depth / 220);
+                const cardBgEnd = hexToRgba(cardEmotionColor, 0.10 + depth / 300);
                 const cardBgColor = `linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`;
                 const isLightBg = true;
                 const textColor = isLightBg ? '#232221' : '#ffffff';
                 const subTextColor = isLightBg ? '#666666' : 'rgba(255,255,255,0.8)';
                 const updatedAtLabel = formatTimeAgo(item.created_at);
-                const detailCategory = item.category || emotionConfig.labelKo;
+                const detailCategory = item.category || EMOTION_CONFIG.find((e) => e.type === item.emotion)?.labelKo || emotionConfig.labelKo;
 
                 return (
                   <motion.article
@@ -352,7 +358,7 @@ export default function EmotionPage() {
                           <span
                             className="text-xs font-semibold px-2.5 py-1 rounded-full"
                             style={{
-                              backgroundColor: hexToRgba(emotionConfig.color, 0.22),
+                              backgroundColor: hexToRgba(cardEmotionColor, 0.22),
                               color: textColor,
                             }}
                           >
@@ -385,7 +391,7 @@ export default function EmotionPage() {
                               data-testid={`img-news-${item.id}`}
                               onError={(e) => {
                                 e.currentTarget.onerror = null;
-                                e.currentTarget.src = `https://placehold.co/400x300/${emotionConfig.color.replace('#', '')}/1f1f1f?text=${encodeURIComponent(item.category || 'HueBrief')}`;
+                                e.currentTarget.src = `https://placehold.co/400x300/${cardEmotionColor.replace('#', '')}/1f1f1f?text=${encodeURIComponent(item.category || 'HueBrief')}`;
                               }}
                             />
                           </div>
@@ -474,8 +480,9 @@ export default function EmotionPage() {
         relatedArticles={news}
         onSelectArticle={(nextArticle) => {
           const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
-          const cardBgStart = hexToRgba(emotionConfig?.color || '#888888', 0.14 + depth / 220);
-          const cardBgEnd = hexToRgba(emotionConfig?.color || '#888888', 0.10 + depth / 300);
+          const cardEmotionColor = getEmotionColor(nextArticle.emotion);
+          const cardBgStart = hexToRgba(cardEmotionColor, 0.14 + depth / 220);
+          const cardBgEnd = hexToRgba(cardEmotionColor, 0.10 + depth / 300);
           setSelectedCardBg(`linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`);
           setSelectedArticle(nextArticle);
         }}

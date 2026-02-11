@@ -66,11 +66,47 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
   const recommendedArticles = useMemo(() => {
     if (!article) return [];
+
     const candidates = relatedArticles.filter((item) => item.id !== article.id);
-    const sameCategory = candidates.filter((item) => item.category && article.category && item.category === article.category).slice(0, 2);
-    const sameIds = new Set(sameCategory.map((item) => item.id));
-    const differentCategory = candidates.filter((item) => !sameIds.has(item.id) && item.category !== article.category).slice(0, 1);
-    return [...sameCategory, ...differentCategory];
+    const normalizedCurrentCategory = article.category?.trim().toLowerCase();
+
+    const sameCategory = candidates
+      .filter((item) => {
+        if (!normalizedCurrentCategory || !item.category) return false;
+        return item.category.trim().toLowerCase() === normalizedCurrentCategory;
+      })
+      .slice(0, 2);
+
+    const selectedIds = new Set(sameCategory.map((item) => item.id));
+    const differentCategory = candidates
+      .filter((item) => {
+        if (selectedIds.has(item.id)) return false;
+        if (!normalizedCurrentCategory || !item.category) return true;
+        return item.category.trim().toLowerCase() !== normalizedCurrentCategory;
+      })
+      .slice(0, 1);
+
+    const recommendations = [...sameCategory, ...differentCategory];
+
+    // gravity 카테고리에서는 vibrance 또는 serenity 기사 최소 1개 노출 보장
+    if (normalizedCurrentCategory === 'gravity' || article.emotion === 'gravity') {
+      const hasRequiredEmotion = recommendations.some((item) => item.emotion === 'vibrance' || item.emotion === 'serenity');
+      if (!hasRequiredEmotion) {
+        const requiredFallback = candidates.find(
+          (item) => !selectedIds.has(item.id) && (item.emotion === 'vibrance' || item.emotion === 'serenity')
+        );
+
+        if (requiredFallback) {
+          if (differentCategory.length > 0) {
+            recommendations[recommendations.length - 1] = requiredFallback;
+          } else {
+            recommendations.push(requiredFallback);
+          }
+        }
+      }
+    }
+
+    return recommendations;
   }, [article, relatedArticles]);
 
   const handleSave = () => {
