@@ -905,34 +905,6 @@ export default function JournalistPage() {
                   </GlassButton>
                 </div>
 
-                {/* Title Optimization Results */}
-                {optimizedTitles.length > 0 && (
-                  <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-100">
-                    <p className="text-sm font-medium text-purple-800 mb-3">✨ AI 최적화 제목 (클릭하여 선택)</p>
-                    <div className="space-y-2">
-                      {optimizedTitles.map((item, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => setSelectedTitleIndex(idx)}
-                          className={`p-3 rounded-md cursor-pointer border transition-all ${selectedTitleIndex === idx
-                            ? 'bg-purple-100 border-purple-500 shadow-sm'
-                            : 'bg-white border-purple-100 hover:bg-white/80'
-                            }`}
-                        >
-                          <div className="flex justify-between items-start gap-2">
-                            <span className={`font-medium ${selectedTitleIndex === idx ? 'text-purple-900' : 'text-gray-700'}`}>
-                              {item.title}
-                            </span>
-                            <span className="text-xs px-2 py-0.5 bg-purple-200 text-purple-700 rounded-full shrink-0">
-                              {item.platform}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Generated Image Display (Grid) */}
                 {generatedImages.length > 0 && (
                   <div className="mt-4 p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
@@ -1085,12 +1057,20 @@ export default function JournalistPage() {
 
                     {optimizedTitles.length > 0 && (
                       <div className="space-y-2">
-                        <p className="text-xs text-gray-500 font-medium">플랫폼별 최적화 제목</p>
+                        <p className="text-xs text-gray-500 font-medium">플랫폼별 최적화 제목 (아래에서 선택)</p>
                         {optimizedTitles.map((item, i) => (
-                          <div key={i} className="bg-white rounded-lg p-3 border border-orange-100">
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setSelectedTitleIndex(i)}
+                            className={`w-full text-left rounded-lg p-3 border transition-all ${selectedTitleIndex === i
+                              ? 'bg-orange-100 border-orange-400 shadow-sm'
+                              : 'bg-white border-orange-100 hover:bg-orange-50'
+                              }`}
+                          >
                             <span className="text-xs font-medium text-orange-600 block mb-1">{item.platform}</span>
-                            <p className="text-sm text-gray-800">{item.title}</p>
-                          </div>
+                            <p className={`text-sm ${selectedTitleIndex === i ? 'text-orange-900 font-semibold' : 'text-gray-800'}`}>{item.title}</p>
+                          </button>
                         ))}
                       </div>
                     )}

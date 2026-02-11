@@ -427,8 +427,10 @@ Return ONLY valid JSON, no markdown.
     try {
       const { keyword } = req.body;
       const prompt = `
-            Keyword: "${keyword}". Analyze trending topics and context.
-            Return JSON: { "topics": string[], "context": string }
+            키워드: "${keyword}".
+            한국어 뉴스룸 기자가 바로 쓸 수 있게 트렌드 키워드와 배경을 분석하세요.
+            반드시 모든 텍스트를 자연스러운 한국어로 작성하세요. 영어 문장/영어 태그는 금지합니다.
+            Return JSON only: { "topics": string[], "context": string }
         `;
       const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       res.json(result);
