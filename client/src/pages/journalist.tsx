@@ -174,8 +174,13 @@ export default function JournalistPage() {
   const [publishingStatus, setPublishingStatus] = useState<Record<string, 'pending' | 'loading' | 'success' | 'error'>>({});
   const [publishResults, setPublishResults] = useState<Record<string, string>>({});
   const [isPublishingComplete, setIsPublishingComplete] = useState(false);
+  const [isPublishingInProgress, setIsPublishingInProgress] = useState(false);
 
   // Sentiment analysis state
+  type EmotionOption = 'vibrance' | 'immersion' | 'clarity' | 'gravity' | 'serenity' | 'spectrum';
+  const [selectedPublishEmotion, setSelectedPublishEmotion] = useState<EmotionOption>('spectrum');
+  const [isEmotionManuallySelected, setIsEmotionManuallySelected] = useState(false);
+
   const [sentimentData, setSentimentData] = useState<{
     vibrance: number;
     immersion: number;
@@ -240,6 +245,14 @@ export default function JournalistPage() {
     };
   }, [articleContent, handleAnalyzeSentiment]);
 
+  useEffect(() => {
+    const dominant = sentimentData.dominantEmotion as EmotionOption;
+    const valid = ['vibrance', 'immersion', 'clarity', 'gravity', 'serenity', 'spectrum'] as const;
+    if (!isEmotionManuallySelected && valid.includes(dominant)) {
+      setSelectedPublishEmotion(dominant);
+    }
+  }, [sentimentData.dominantEmotion, isEmotionManuallySelected]);
+
   // --- Start of My Articles Handlers ---
   const fetchMyArticles = useCallback(async () => {
     setIsLoadingArticles(true);
@@ -297,6 +310,8 @@ export default function JournalistPage() {
       dominantEmotion: 'spectrum',
       feedback: '기사 내용을 작성하면 감정 분석이 시작됩니다.'
     });
+    setSelectedPublishEmotion('spectrum');
+    setIsEmotionManuallySelected(false);
   };
   // --- End of My Articles Handlers ---
 
@@ -585,10 +600,13 @@ export default function JournalistPage() {
     setPublishingStatus(initialStatus);
     setPublishResults({});
     setIsPublishingComplete(false);
+    setIsPublishingInProgress(false);
     setShowPublishModal(true);
   };
 
   const confirmPublish = async () => {
+    if (isPublishingInProgress) return;
+    setIsPublishingInProgress(true);
     // Process each platform
     const promises = selectedPlatforms.map(async (platformId) => {
       setPublishingStatus(prev => ({ ...prev, [platformId]: 'loading' }));
@@ -619,7 +637,7 @@ export default function JournalistPage() {
 
           // Map dominant emotion to Korean label for DB lookup (or just use key)
           // The DBService now expects the English keys: 'vibrance', 'immersion', etc.
-          const emotionLabel = sentimentData.dominantEmotion || 'serenity';
+          const emotionLabel = selectedPublishEmotion || 'serenity';
 
           let data;
           if (editingArticleId) {
@@ -655,17 +673,13 @@ export default function JournalistPage() {
 
         } else {
           // Mock simulation for other platforms
-          const delay = 1000 + Math.random() * 2000;
+          const delay = 700 + Math.random() * 600;
           await new Promise(resolve => setTimeout(resolve, delay));
 
-          const isSuccess = Math.random() > 0.1;
-
-          setPublishingStatus(prev => ({ ...prev, [platformId]: isSuccess ? 'success' : 'error' }));
+          setPublishingStatus(prev => ({ ...prev, [platformId]: 'success' }));
           setPublishResults(prev => ({
             ...prev,
-            [platformId]: isSuccess
-              ? `https://${platformId}.com/article/${Date.now()}`
-              : '연동 오류: API 응답이 없습니다.'
+            [platformId]: `https://${platformId}.com/article/${Date.now()}`
           }));
         }
       } catch (error: any) {
@@ -680,6 +694,7 @@ export default function JournalistPage() {
 
     await Promise.all(promises);
     setIsPublishingComplete(true);
+    setIsPublishingInProgress(false);
   };
 
   const togglePlatform = (platformId: string) => {
@@ -905,34 +920,6 @@ export default function JournalistPage() {
                   </GlassButton>
                 </div>
 
-                {/* Title Optimization Results */}
-                {optimizedTitles.length > 0 && (
-                  <div className="mt-4 p-4 bg-purple-50 rounded-lg border border-purple-100">
-                    <p className="text-sm font-medium text-purple-800 mb-3">✨ AI 최적화 제목 (클릭하여 선택)</p>
-                    <div className="space-y-2">
-                      {optimizedTitles.map((item, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => setSelectedTitleIndex(idx)}
-                          className={`p-3 rounded-md cursor-pointer border transition-all ${selectedTitleIndex === idx
-                            ? 'bg-purple-100 border-purple-500 shadow-sm'
-                            : 'bg-white border-purple-100 hover:bg-white/80'
-                            }`}
-                        >
-                          <div className="flex justify-between items-start gap-2">
-                            <span className={`font-medium ${selectedTitleIndex === idx ? 'text-purple-900' : 'text-gray-700'}`}>
-                              {item.title}
-                            </span>
-                            <span className="text-xs px-2 py-0.5 bg-purple-200 text-purple-700 rounded-full shrink-0">
-                              {item.platform}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Generated Image Display (Grid) */}
                 {generatedImages.length > 0 && (
                   <div className="mt-4 p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
@@ -1085,12 +1072,20 @@ export default function JournalistPage() {
 
                     {optimizedTitles.length > 0 && (
                       <div className="space-y-2">
-                        <p className="text-xs text-gray-500 font-medium">플랫폼별 최적화 제목</p>
+                        <p className="text-xs text-gray-500 font-medium">플랫폼별 최적화 제목 (아래에서 선택)</p>
                         {optimizedTitles.map((item, i) => (
-                          <div key={i} className="bg-white rounded-lg p-3 border border-orange-100">
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setSelectedTitleIndex(i)}
+                            className={`w-full text-left rounded-lg p-3 border transition-all ${selectedTitleIndex === i
+                              ? 'bg-orange-100 border-orange-400 shadow-sm'
+                              : 'bg-white border-orange-100 hover:bg-orange-50'
+                              }`}
+                          >
                             <span className="text-xs font-medium text-orange-600 block mb-1">{item.platform}</span>
-                            <p className="text-sm text-gray-800">{item.title}</p>
-                          </div>
+                            <p className={`text-sm ${selectedTitleIndex === i ? 'text-orange-900 font-semibold' : 'text-gray-800'}`}>{item.title}</p>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -1178,7 +1173,7 @@ export default function JournalistPage() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-                  onClick={() => !isPublishingComplete && setShowPublishModal(false)}
+                  onClick={() => !isPublishingInProgress && !isPublishingComplete && setShowPublishModal(false)}
                 >
                   <motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
@@ -1198,9 +1193,9 @@ export default function JournalistPage() {
 
                       {/* Emotion Category Badge */}
                       <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200">
-                        <span className="text-xs text-slate-500">분석된 감정:</span>
+                        <span className="text-xs text-slate-500">발행 감정:</span>
                         <span className="text-sm font-bold text-slate-800 uppercase">
-                          {sentimentData.dominantEmotion || '분석 중...'}
+                          {selectedPublishEmotion || 'spectrum'}
                         </span>
                       </div>
                     </div>
@@ -1250,7 +1245,8 @@ export default function JournalistPage() {
                         <>
                           <button
                             onClick={() => setShowPublishModal(false)}
-                            className="flex-1 px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-xl"
+                            disabled={isPublishingInProgress}
+                            className="flex-1 px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-xl disabled:opacity-50"
                           >
                             취소
                           </button>
@@ -1258,8 +1254,9 @@ export default function JournalistPage() {
                             variant="primary"
                             className="flex-1"
                             onClick={confirmPublish}
+                            disabled={isPublishingInProgress}
                           >
-                            배포 시작
+                            {isPublishingInProgress ? '배포 중...' : '배포 시작'}
                           </GlassButton>
                         </>
                       ) : (
@@ -1365,6 +1362,26 @@ export default function JournalistPage() {
                     </p>
                   </div>
                 )}
+
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <p className="text-sm font-medium text-gray-700 mb-2">발행 감정 직접 선택</p>
+                  <div className="flex flex-wrap gap-2">
+                    {EMOTION_CONFIG.map((emotion) => (
+                      <button
+                        key={emotion.type}
+                        type="button"
+                        onClick={() => {
+                          setSelectedPublishEmotion(emotion.type as EmotionOption);
+                          setIsEmotionManuallySelected(true);
+                        }}
+                        className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${selectedPublishEmotion === emotion.type ? 'text-white border-transparent' : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'}`}
+                        style={selectedPublishEmotion === emotion.type ? { backgroundColor: emotion.color } : {}}
+                      >
+                        {emotion.labelKo}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </motion.div>
 
               <GlassButton
