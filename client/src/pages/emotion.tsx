@@ -481,6 +481,8 @@ export default function EmotionPage() {
           <div className="max-w-6xl mx-auto text-center">
             <p className="text-base md:text-lg text-human-sub mb-6 text-center font-medium" data-testid="text-explore-other">감정의 균형을 맞춰보세요</p>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 justify-items-stretch">
+          <p className="text-base md:text-lg text-human-sub mb-6 text-center font-medium" data-testid="text-explore-other">감정의 균형을 맞춰보세요</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {EMOTION_CONFIG.filter(e => e.type !== type).map((emotion) => {
               const EmotionIcon = EMOTION_ICONS[emotion.type];
               return (
@@ -527,6 +529,7 @@ export default function EmotionPage() {
       <NewsDetailModal
         article={selectedArticle}
         emotionType={selectedArticle?.emotion || type || 'serenity'}
+        emotionType={type || 'serenity'}
         cardBackground={selectedCardBg}
         layoutId={selectedArticle ? `news-card-${selectedArticle.id}` : undefined}
         relatedArticles={recommendationPool}
