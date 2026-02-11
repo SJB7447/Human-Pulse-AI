@@ -125,6 +125,13 @@ export default function EmotionPage() {
     return config?.color || emotionConfig?.color || '#888888';
   };
 
+  const getDepthTone = (depth: number) => {
+    if (depth >= 76) return { start: 0.42, end: 0.30, edge: 0.42 };
+    if (depth >= 51) return { start: 0.33, end: 0.22, edge: 0.35 };
+    if (depth >= 26) return { start: 0.24, end: 0.16, edge: 0.28 };
+    return { start: 0.16, end: 0.10, edge: 0.22 };
+  };
+
   const { data: news = [], isLoading, error } = useNews(type);
   const { data: spectrumNews = [] } = useNews('spectrum');
 
@@ -324,8 +331,9 @@ export default function EmotionPage() {
               {news.map((item, index) => {
                 const depth = Math.max(0, Math.min(100, item.intensity ?? 50));
                 const cardEmotionColor = getEmotionColor(item.emotion);
-                const cardBgStart = hexToRgba(cardEmotionColor, 0.14 + depth / 220);
-                const cardBgEnd = hexToRgba(cardEmotionColor, 0.10 + depth / 300);
+                const depthTone = getDepthTone(depth);
+                const cardBgStart = hexToRgba(cardEmotionColor, depthTone.start);
+                const cardBgEnd = hexToRgba(cardEmotionColor, depthTone.end);
                 const cardBgColor = `linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`;
                 const isLightBg = true;
                 const textColor = isLightBg ? '#232221' : '#ffffff';
@@ -372,7 +380,7 @@ export default function EmotionPage() {
                           <span
                             className="text-xs font-semibold px-2.5 py-1 rounded-full"
                             style={{
-                              backgroundColor: hexToRgba(cardEmotionColor, 0.22),
+                              backgroundColor: hexToRgba(cardEmotionColor, depthTone.edge),
                               color: textColor,
                             }}
                           >
@@ -444,26 +452,28 @@ export default function EmotionPage() {
           transition={{ duration: 0.6, delay: 0.8 }}
           className="mt-16 pt-12 border-t border-gray-100"
         >
-          <p className="text-sm text-human-sub mb-6 text-center" data-testid="text-explore-other">다른 감정 탐색하기</p>
-          <div className="flex justify-center gap-3 flex-wrap">
-            {EMOTION_CONFIG.filter(e => e.type !== type && e.type !== 'spectrum').map((emotion) => {
+          <p className="text-base md:text-lg text-human-sub mb-6 text-center font-medium" data-testid="text-explore-other">감정의 균형을 맞춰보세요</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {EMOTION_CONFIG.filter(e => e.type !== type).map((emotion) => {
               const EmotionIcon = EMOTION_ICONS[emotion.type];
               return (
                 <Link key={emotion.type} href={`/emotion/${emotion.type}`}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
+                  <button
+                    type="button"
+                    className="w-full rounded-2xl border p-4 md:p-5 min-h-[104px] text-left hover:shadow-lg hover:-translate-y-0.5 transition-all"
                     style={{
-                      backgroundColor: `${emotion.color}10`,
-                      borderColor: `${emotion.color}30`,
+                      backgroundColor: `${emotion.color}14`,
+                      borderColor: `${emotion.color}44`,
                       color: emotion.color,
                     }}
                     data-testid={`button-emotion-${emotion.type}`}
                   >
-                    <EmotionIcon className="w-4 h-4" />
-                    {emotion.labelKo}
-                  </Button>
+                    <span className="inline-flex w-9 h-9 rounded-xl items-center justify-center mb-3" style={{ backgroundColor: `${emotion.color}1f` }}>
+                      <EmotionIcon className="w-5 h-5" />
+                    </span>
+                    <p className="text-sm font-semibold leading-tight">{emotion.labelKo}</p>
+                    <p className="text-[11px] opacity-80 mt-1">{emotion.label}</p>
+                  </button>
                 </Link>
               );
             })}
@@ -495,8 +505,9 @@ export default function EmotionPage() {
         onSelectArticle={(nextArticle) => {
           const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
           const cardEmotionColor = getEmotionColor(nextArticle.emotion);
-          const cardBgStart = hexToRgba(cardEmotionColor, 0.14 + depth / 220);
-          const cardBgEnd = hexToRgba(cardEmotionColor, 0.10 + depth / 300);
+          const depthTone = getDepthTone(depth);
+          const cardBgStart = hexToRgba(cardEmotionColor, depthTone.start);
+          const cardBgEnd = hexToRgba(cardEmotionColor, depthTone.end);
           setSelectedCardBg(`linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`);
           setSelectedArticle(nextArticle);
         }}

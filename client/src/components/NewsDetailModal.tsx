@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check, RefreshCcw, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -38,6 +38,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const [selectedEmotion, setSelectedEmotion] = useState<EmotionType>(emotionType);
   const [interactiveArticle, setInteractiveArticle] = useState<InteractiveArticle | null>(null);
   const [interactiveError, setInteractiveError] = useState<{ message: string; retryAfterSeconds?: number } | null>(null);
+  const [showFooterActions, setShowFooterActions] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
@@ -47,6 +49,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   useEffect(() => {
     setInteractiveArticle(null);
     setInteractiveError(null);
+    setShowFooterActions(false);
   }, [article?.id]);
 
   useEffect(() => {
@@ -112,7 +115,15 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   }, [article, relatedArticles]);
 
   const hasRecommendations = recommendationGroups.sameCategory.length > 0 || recommendationGroups.balance.length > 0;
+  const flattenedRecommendations = [...recommendationGroups.sameCategory, ...recommendationGroups.balance].slice(0, 3);
   const isBrightEmotion = article?.emotion === 'vibrance' || article?.emotion === 'serenity';
+
+  const handleContentScroll = () => {
+    const node = scrollContainerRef.current;
+    if (!node) return;
+    const nearBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 80;
+    setShowFooterActions(nearBottom);
+  };
 
   const handleSave = () => {
     toast({
@@ -293,7 +304,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               damping: 25
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-[94vw] h-[88vh] max-w-[1080px] flex flex-col overflow-hidden rounded-3xl"
+            className="relative w-[95vw] h-[90vh] max-w-[1120px] flex flex-col overflow-hidden rounded-3xl"
             style={{
               background: cardBackground || 'rgba(255,255,255,0.96)',
               backdropFilter: 'blur(24px)',
@@ -327,27 +338,29 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               variant="ghost"
               size="icon"
               onClick={onClose}
-              className="absolute top-4 right-4 z-50 bg-white/50 text-gray-700 hover:bg-white/80 backdrop-blur-sm"
+              className="absolute top-5 right-5 z-50 bg-white/70 text-gray-700 hover:bg-white/95 backdrop-blur-sm border border-white/70 shadow-sm"
               data-testid="button-close-modal"
             >
               <X className="w-5 h-5" />
             </Button>
 
-            {/* Image Section (Fixed at top) */}
-            {article.image && (
-              <div className="shrink-0 z-10 px-6 pt-6">
-                <div className="rounded-2xl border border-white/70 bg-white/65 overflow-hidden shadow-sm">
-                  <img
-                    src={article.image}
-                    alt={article.title}
-                    className="w-full max-h-[38vh] object-contain bg-white"
-                  />
-                </div>
-              </div>
-            )}
-
             {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto px-6 pb-6 pt-5 z-10">
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleContentScroll}
+              className="flex-1 overflow-y-auto px-5 md:px-7 pb-28 pt-6 z-10"
+            >
+              {article.image && (
+                <div className="mb-5">
+                  <div className="rounded-2xl overflow-hidden bg-white/60 border border-white/70">
+                    <img
+                      src={article.image}
+                      alt={article.title}
+                      className="w-full max-h-[34vh] md:max-h-[42vh] object-contain bg-white"
+                    />
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-3 mb-4">
                 {article.category && (
                   <EmotionTag emotion={article.category.toLowerCase() as EmotionType} showIcon={true} />
@@ -368,7 +381,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 </span>
               </p>
 
-              <div className="text-gray-900 text-[18px] leading-8 font-normal mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide max-w-3xl">
+              <div className="text-gray-900 text-[17px] md:text-[18px] leading-8 font-normal mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide max-w-3xl">
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
@@ -387,7 +400,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                     <StoryRenderer article={interactiveArticle} />
                   </div>
                 ) : (
-                  <div className="space-y-4 rounded-2xl bg-white/55 border border-white/70 p-5">
+                  <div className="space-y-4">
                     {interactiveError && (
                       <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-4 text-sm text-amber-100 space-y-3">
                         <div className="flex items-start gap-2">
@@ -413,8 +426,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               </div>
 
               {hasRecommendations && !interactiveArticle && (
-                <div className="mt-6 space-y-4">
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="mt-8">
+                  <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                     <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
                     <div className="flex items-center gap-2 flex-wrap">
                       {currentEmotionMeta && (
@@ -432,75 +445,43 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                       <span className="text-[11px] text-gray-500">감정 균형을 고려해 제안합니다</span>
                     </div>
                   </div>
-
-                  {recommendationGroups.sameCategory.length > 0 && (
-                    <div className="rounded-2xl border border-white/70 bg-white/55 p-3">
-                      <p className="text-xs font-semibold text-gray-700 mb-2">같은 카테고리 이어보기 ({recommendationGroups.sameCategory.length})</p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {recommendationGroups.sameCategory.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => onSelectArticle?.(item)}
-                            className="text-left rounded-xl border border-white/70 bg-white/70 hover:bg-white/90 transition-colors overflow-hidden"
-                          >
-                            {item.image && (
-                              <img src={item.image} alt={item.title} className="w-full h-24 object-cover" />
-                            )}
-                            <div className="p-3">
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <p className="text-[11px] text-gray-500">{item.category || '일반 뉴스'}</p>
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">동일 카테고리</span>
-                              </div>
-                              <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {flattenedRecommendations.map((item) => {
+                      const isBalanceItem = recommendationGroups.balance.some((balance) => balance.id === item.id);
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => onSelectArticle?.(item)}
+                          className="text-left rounded-xl border border-white/70 bg-white/70 hover:bg-white/90 transition-colors overflow-hidden"
+                        >
+                          {item.image && (
+                            <img src={item.image} alt={item.title} className="w-full h-24 object-cover" />
+                          )}
+                          <div className="p-3">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <p className="text-[11px] text-gray-500">{item.category || '일반 뉴스'}</p>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full ${isBalanceItem ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+                                {isBalanceItem ? '균형 추천' : '연결 추천'}
+                              </span>
                             </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {recommendationGroups.balance.length > 0 && (
-                    <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-3">
-                      <p className="text-xs font-semibold text-emerald-800 mb-2">감정 균형 추천 · 다른 카테고리 ({recommendationGroups.balance.length})</p>
-                      <div className="grid grid-cols-1 gap-3">
-                        {recommendationGroups.balance.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => onSelectArticle?.(item)}
-                            className="text-left rounded-xl border border-emerald-200/80 bg-white/80 hover:bg-white transition-colors overflow-hidden"
-                          >
-                            {item.image && (
-                              <img src={item.image} alt={item.title} className="w-full h-28 object-cover" />
-                            )}
-                            <div className="p-3">
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <p className="text-[11px] text-emerald-700">균형 제안 · {item.category || '일반 뉴스'}</p>
-                                <span
-                                  className="text-[10px] px-2 py-0.5 rounded-full border"
-                                  style={{
-                                    color: getEmotionMeta(item.emotion).color,
-                                    borderColor: `${getEmotionMeta(item.emotion).color}66`,
-                                    backgroundColor: `${getEmotionMeta(item.emotion).color}18`,
-                                  }}
-                                >
-                                  {getEmotionMeta(item.emotion).label}
-                                </span>
-                              </div>
-                              <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                            <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
+
             </div>
 
-            {/* Fixed Footer Buttons */}
-            <div className="p-4 border-t border-white/40 bg-white/50 backdrop-blur z-20 shrink-0">
+            {/* Footer Action Buttons (scroll-end or hover reveal) */}
+            <div
+              onMouseEnter={() => setShowFooterActions(true)}
+              onMouseLeave={() => setShowFooterActions(false)}
+              className={`absolute left-4 right-4 bottom-4 p-3 border border-white/50 bg-white/72 backdrop-blur z-20 rounded-2xl transition-all duration-300 ${showFooterActions ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
+            >
               <div className="flex items-center gap-2 flex-wrap">
                 <Button
                   variant="ghost"
