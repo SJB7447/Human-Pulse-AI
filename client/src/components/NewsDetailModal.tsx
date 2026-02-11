@@ -304,6 +304,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               damping: 25
             }}
             onClick={(e) => e.stopPropagation()}
+            className="relative w-[95vw] h-[90vh] max-w-[800px] flex flex-col overflow-hidden rounded-3xl"
             className="relative w-[95vw] h-[90vh] max-w-[1120px] flex flex-col overflow-hidden rounded-3xl"
             style={{
               background: cardBackground || 'rgba(255,255,255,0.96)',
@@ -333,6 +334,30 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               />
             </div>
 
+            {/* Scrollable Content */}
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleContentScroll}
+              className="flex-1 overflow-y-auto px-5 md:px-7 pb-28 pt-4 z-10"
+            >
+              <div className="flex justify-end mb-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onClose}
+                  className="bg-white/80 text-gray-700 hover:bg-white border border-white/80 shadow-sm"
+                  data-testid="button-close-modal"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+              {article.image && (
+                <div className="mb-5">
+                  <div className="max-w-[800px] w-full mx-auto rounded-2xl overflow-hidden bg-white/60 border border-white/70 aspect-video">
+                    <img
+                      src={article.image}
+                      alt={article.title}
+                      className="w-full h-full object-contain bg-white"
             {/* Header / Close Button */}
             <Button
               variant="ghost"
@@ -445,6 +470,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                       <span className="text-[11px] text-gray-500">감정 균형을 고려해 제안합니다</span>
                     </div>
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {flattenedRecommendations.map((item) => {
                       const isBalanceItem = recommendationGroups.balance.some((balance) => balance.id === item.id);
@@ -452,6 +478,14 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                         <button
                           key={item.id}
                           type="button"
+                          onClick={() => {
+                            onSelectArticle?.(item);
+                            scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="text-left rounded-2xl border border-white/80 bg-white/78 hover:bg-white transition-colors overflow-hidden shadow-sm"
+                        >
+                          {item.image && (
+                            <img src={item.image} alt={item.title} className="w-full aspect-[4/3] object-cover" />
                           onClick={() => onSelectArticle?.(item)}
                           className="text-left rounded-xl border border-white/70 bg-white/70 hover:bg-white/90 transition-colors overflow-hidden"
                         >
@@ -461,6 +495,20 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                           <div className="p-3">
                             <div className="flex items-center justify-between gap-2 mb-1">
                               <p className="text-[11px] text-gray-500">{item.category || '일반 뉴스'}</p>
+                              <span
+                                className="text-[10px] px-2 py-0.5 rounded-full border"
+                                style={isBalanceItem
+                                  ? {
+                                      color: getEmotionMeta(item.emotion).color,
+                                      borderColor: `${getEmotionMeta(item.emotion).color}77`,
+                                      backgroundColor: `${getEmotionMeta(item.emotion).color}22`,
+                                    }
+                                  : {
+                                      color: '#4b5563',
+                                      borderColor: 'rgba(107,114,128,0.35)',
+                                      backgroundColor: 'rgba(243,244,246,0.9)',
+                                    }}
+                              >
                               <span className={`text-[10px] px-2 py-0.5 rounded-full ${isBalanceItem ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
                                 {isBalanceItem ? '균형 추천' : '연결 추천'}
                               </span>
