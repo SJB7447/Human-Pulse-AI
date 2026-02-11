@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { DBService } from '@/services/DBService';
 import { useLocation } from "wouter";
 import { useEmotionStore } from '@/lib/store';
+import { useToast } from '@/hooks/use-toast';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -37,6 +38,7 @@ export default function AdminPage() {
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const { user } = useEmotionStore();
   const [crawling, setCrawling] = useState(false); // Moved to top with other hooks
@@ -52,15 +54,41 @@ export default function AdminPage() {
       setStats(statsData);
     } catch (error) {
       console.error(error);
-      alert("데이터를 불러오는 중 오류가 발생했습니다.");
+      const status = (error as { status?: number })?.status;
+      if (status === 401 || status === 403) {
+        toast({
+          title: "로그인 필요",
+          description: "관리자 화면은 로그인 후 이용할 수 있습니다.",
+          variant: "destructive",
+        });
+        setLocation(`/login?redirect=${encodeURIComponent('/admin')}`);
+        return;
+      }
+
+      toast({
+        title: "오류",
+        description: "데이터를 불러오는 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      toast({
+        title: "로그인 필요",
+        description: "관리자 화면은 로그인 후 이용할 수 있습니다.",
+        variant: "destructive",
+      });
+      setLocation(`/login?redirect=${encodeURIComponent('/admin')}`);
+      return;
+    }
+
     fetchData();
-  }, []);
+  }, [user]);
   const handleDeploy = async (genId: number, currentText: string) => {
     if (!confirm("이 내용을 배포(Deployed) 상태로 변경하시겠습니까?")) return;
     try {

@@ -3,6 +3,31 @@
 import { supabase } from './supabaseClient'; // 같은 폴더에 있는 설정 파일 사용
 import { useEmotionStore } from '@/lib/store';
 
+type ApiError = Error & { status?: number };
+
+const createApiError = async (response: Response, fallbackMessage: string): Promise<ApiError> => {
+    let message = fallbackMessage;
+
+    try {
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const payload = await response.json();
+            message = payload?.error || payload?.message || fallbackMessage;
+        } else {
+            const text = await response.text();
+            if (text?.trim()) {
+                message = text.slice(0, 200);
+            }
+        }
+    } catch {
+        // keep fallback message
+    }
+
+    const error: ApiError = new Error(message);
+    error.status = response.status;
+    return error;
+};
+
 export const DBService = {
 
     // [User] 현재 로그인한 사용자 정보 가져오기
@@ -109,8 +134,8 @@ export const DBService = {
         if (!response.ok) throw new Error('Failed to fetch articles');
         const allArticles = await response.json();
 
-        // Filter by authorId
-        return allArticles.filter((a: any) => a.authorId === authorId);
+        // Filter by authorId (camelCase from API abstraction or snake_case raw row)
+        return allArticles.filter((a: any) => a.authorId === authorId || a.author_id === authorId);
     },
 
     // [2] 생성된 콘텐츠 저장 - 상세 페이지용
@@ -133,7 +158,7 @@ export const DBService = {
     // [3] 관리자용: 전체 데이터 조회 (Hidden 포함)
     async getAdminDashboardData() {
         const response = await fetch('/api/articles?all=true');
-        if (!response.ok) throw new Error('Failed to fetch admin data');
+        if (!response.ok) throw await createApiError(response, 'Failed to fetch admin data');
         return await response.json();
     },
 
@@ -154,7 +179,7 @@ export const DBService = {
         // server/routes.ts 에 정의된 API 엔드포인트 호출
         const response = await fetch('/api/admin/stats');
         if (!response.ok) {
-            throw new Error('Failed to fetch admin stats');
+            throw await createApiError(response, 'Failed to fetch admin stats');
         }
         return await response.json();
     }
