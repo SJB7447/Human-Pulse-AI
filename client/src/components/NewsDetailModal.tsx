@@ -113,6 +113,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
   const hasRecommendations = recommendationGroups.sameCategory.length > 0 || recommendationGroups.balance.length > 0;
   const isBrightEmotion = article?.emotion === 'vibrance' || article?.emotion === 'serenity';
+  const currentEmotionMeta = article?.emotion ? getEmotionMeta(article.emotion) : null;
 
   const handleSave = () => {
     toast({
@@ -413,14 +414,28 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
               {hasRecommendations && !interactiveArticle && (
                 <div className="mt-6 space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
                     <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
-                    <span className="text-[11px] text-gray-500">감정 균형을 고려해 제안합니다</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {currentEmotionMeta && (
+                        <span
+                          className="text-[10px] px-2 py-0.5 rounded-full border"
+                          style={{
+                            color: currentEmotionMeta.color,
+                            borderColor: `${currentEmotionMeta.color}66`,
+                            backgroundColor: `${currentEmotionMeta.color}18`,
+                          }}
+                        >
+                          현재 감정 {currentEmotionMeta.label}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-gray-500">감정 균형을 고려해 제안합니다</span>
+                    </div>
                   </div>
 
                   {recommendationGroups.sameCategory.length > 0 && (
                     <div className="rounded-2xl border border-white/70 bg-white/55 p-3">
-                      <p className="text-xs font-semibold text-gray-700 mb-2">같은 카테고리 이어보기</p>
+                      <p className="text-xs font-semibold text-gray-700 mb-2">같은 카테고리 이어보기 ({recommendationGroups.sameCategory.length})</p>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {recommendationGroups.sameCategory.map((item) => (
                           <button
@@ -447,7 +462,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
                   {recommendationGroups.balance.length > 0 && (
                     <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/70 p-3">
-                      <p className="text-xs font-semibold text-emerald-800 mb-2">감정 균형 추천 · 다른 카테고리</p>
+                      <p className="text-xs font-semibold text-emerald-800 mb-2">감정 균형 추천 · 다른 카테고리 ({recommendationGroups.balance.length})</p>
                       <div className="grid grid-cols-1 gap-3">
                         {recommendationGroups.balance.map((item) => (
                           <button
