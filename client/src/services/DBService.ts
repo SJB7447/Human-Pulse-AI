@@ -109,8 +109,8 @@ export const DBService = {
         if (!response.ok) throw new Error('Failed to fetch articles');
         const allArticles = await response.json();
 
-        // Filter by authorId
-        return allArticles.filter((a: any) => a.authorId === authorId);
+        // Filter by authorId (camelCase from API abstraction or snake_case raw row)
+        return allArticles.filter((a: any) => a.authorId === authorId || a.author_id === authorId);
     },
 
     // [2] 생성된 콘텐츠 저장 - 상세 페이지용

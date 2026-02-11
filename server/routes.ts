@@ -15,6 +15,90 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const parseRetryAfterSeconds = (value: unknown): number | undefined => {
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) {
+      return Math.max(0, Math.round(asNumber));
+    }
+    const asDateMs = Date.parse(value);
+    if (Number.isNaN(asDateMs)) return undefined;
+    const deltaSeconds = Math.round((asDateMs - Date.now()) / 1000);
+    return deltaSeconds > 0 ? deltaSeconds : 0;
+  };
+
+  const getErrorInfo = (error: any): { status?: number; retryAfterSeconds?: number; message: string } => {
+    const status =
+      typeof error?.status === "number"
+        ? error.status
+        : typeof error?.statusCode === "number"
+          ? error.statusCode
+          : typeof error?.response?.status === "number"
+            ? error.response.status
+            : undefined;
+
+    const retryAfterSeconds = parseRetryAfterSeconds(
+      error?.response?.headers?.get?.("retry-after")
+      || error?.response?.headers?.["retry-after"]
+      || error?.headers?.["retry-after"]
+      || error?.retryAfter
+      || error?.retryAfterSeconds
+    );
+
+    return {
+      status,
+      retryAfterSeconds,
+      message: String(error?.message || "Unknown Gemini error"),
+    };
+  };
+
+  const isRetriableGeminiError = (error: any): boolean => {
+    const info = getErrorInfo(error);
+    if (info.status === 503 || info.status === 504 || info.status === 408 || info.status === 429) {
+      return true;
+    }
+    return /(?:timeout|timed out|deadline|unavailable|high demand|econnreset|etimedout|socket hang up)/i.test(info.message);
+  };
+
+  async function withBackoffRetry<T>(
+    operation: () => Promise<T>,
+    {
+      maxRetries = 5,
+      baseDelayMs = 800,
+      maxDelayMs = 10000,
+    }: {
+      maxRetries?: number;
+      baseDelayMs?: number;
+      maxDelayMs?: number;
+    } = {}
+  ): Promise<T> {
+    let attempt = 0;
+    let lastError: any;
+    while (attempt <= maxRetries) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        lastError = error;
+        if (!isRetriableGeminiError(error) || attempt >= maxRetries) {
+          throw error;
+        }
+
+        const { retryAfterSeconds } = getErrorInfo(error);
+        const exponentialDelay = Math.min(maxDelayMs, baseDelayMs * (2 ** attempt));
+        const jitter = Math.floor(Math.random() * Math.max(200, Math.round(exponentialDelay * 0.25)));
+        const waitMs = retryAfterSeconds !== undefined
+          ? Math.min(maxDelayMs, retryAfterSeconds * 1000) + jitter
+          : exponentialDelay + jitter;
+
+        await sleep(waitMs);
+        attempt += 1;
+      }
+    }
+    throw lastError;
+  }
+
   app.get("/api/emotions", async (_req, res) => {
     const emotions = emotionTypes.map(type => ({
       type,
@@ -41,6 +125,20 @@ export async function registerRoutes(
     res.json(news);
   });
 
+  const sendAiError = (res: any, error: any) => {
+    const errorInfo = getErrorInfo(error);
+    const overloaded = isRetriableGeminiError(error);
+    return res.status(overloaded ? 503 : 500).json({
+      error: overloaded
+        ? "AI 서버 요청이 일시적으로 많습니다. 잠시 후 다시 시도해주세요."
+        : error?.message || "AI Service Error",
+      code: overloaded ? "AI_TEMPORARILY_UNAVAILABLE" : "AI_INTERNAL_ERROR",
+      retryable: overloaded,
+      retryAfterSeconds: errorInfo.retryAfterSeconds,
+    });
+  };
+
+
   // AI Service Methods
   const getGenAI = () => {
     const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
@@ -53,12 +151,28 @@ export async function registerRoutes(
   };
 
   // Helper for JSON generation
-  async function generateJSON(modelName: string, prompt: string) {
+  async function generateJSON(modelName: string, prompt: string, fallbackModelName?: string) {
     const genAI = getGenAI();
-    const model = genAI.getGenerativeModel({ model: modelName });
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().replace(/```json|```/g, '').trim();
-    return JSON.parse(text);
+    const modelCandidates = fallbackModelName ? [modelName, fallbackModelName] : [modelName];
+    let lastError: any;
+
+    for (const candidateModel of modelCandidates) {
+      try {
+        const model = genAI.getGenerativeModel({ model: candidateModel });
+        const result = await withBackoffRetry(() => model.generateContent(prompt));
+        const text = result.response.text().replace(/```json|```/g, '').trim();
+        return JSON.parse(text);
+      } catch (error: any) {
+        lastError = error;
+        const errorInfo = getErrorInfo(error);
+        if (!isRetriableGeminiError(error)) {
+          throw error;
+        }
+        console.warn(`[AI] Model ${candidateModel} exhausted retries: ${errorInfo.message}`);
+      }
+    }
+
+    throw lastError;
   }
 
   const REQUIRED_INTENTS: StoryBlockIntent[] = [
@@ -239,7 +353,7 @@ Return ONLY valid JSON, no markdown.
             Create 3 unique, realistic news headlines for emotion "${emotion}".
             Return JSON: [ { title, summary, content, source, emotion: "${emotion}", imagePrompt } ]
         `;
-      const result = await generateJSON("gemini-3-flash-preview", prompt);
+      const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -278,12 +392,7 @@ Return ONLY valid JSON, no markdown.
       };
 
       const prompt = buildInteractivePrompt(input);
-      let generated: any;
-      try {
-        generated = await generateJSON("gemini-3-flash-preview", prompt);
-      } catch (_firstError) {
-        generated = await generateJSON("gemini-3-flash-preview", prompt);
-      }
+      const generated = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       const normalized = normalizeInteractiveArticle(generated, input);
       const validation = validateInteractiveArticle(normalized);
 
@@ -294,7 +403,7 @@ Return ONLY valid JSON, no markdown.
 
       res.json(normalized);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      return sendAiError(res, e);
     }
   });
 
@@ -307,7 +416,7 @@ Return ONLY valid JSON, no markdown.
             Respond in Korean. Be empathetic. Recommend ONE emotion color (vibrance, immersion, clarity, gravity, serenity) if appropriate.
             Return ONLY JSON: { "text": "...", "recommendation": "vibrance" | null }
         `;
-      const result = await generateJSON("gemini-3-flash-preview", prompt);
+      const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -318,10 +427,12 @@ Return ONLY valid JSON, no markdown.
     try {
       const { keyword } = req.body;
       const prompt = `
-            Keyword: "${keyword}". Analyze trending topics and context.
-            Return JSON: { "topics": string[], "context": string }
+            키워드: "${keyword}".
+            한국어 뉴스룸 기자가 바로 쓸 수 있게 트렌드 키워드와 배경을 분석하세요.
+            반드시 모든 텍스트를 자연스러운 한국어로 작성하세요. 영어 문장/영어 태그는 금지합니다.
+            Return JSON only: { "topics": string[], "context": string }
         `;
-      const result = await generateJSON("gemini-3-flash-preview", prompt);
+      const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -337,7 +448,7 @@ Return ONLY valid JSON, no markdown.
             어조: 전문적, 객관적, 한국 언론 스타일.
             반드시 한국어로만 작성하세요.
         `;
-      const result = await generateJSON("gemini-3-flash-preview", prompt);
+      const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -352,7 +463,7 @@ Return ONLY valid JSON, no markdown.
             "${content}"
             Return JSON: { "correctedText": string, "errors": { original: string, corrected: string, reason: string }[] }
         `;
-      const result = await generateJSON("gemini-3-flash-preview", prompt);
+      const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -367,7 +478,7 @@ Return ONLY valid JSON, no markdown.
             Platforms: ${platforms.join(', ')}.
             Return JSON: { "hashtags": string[] }
         `;
-      const result = await generateJSON("gemini-3-flash-preview", prompt);
+      const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -382,7 +493,7 @@ Return ONLY valid JSON, no markdown.
             Platforms: ${platforms.join(', ')}.
             Return JSON: { "titles": { "platform": string, "title": string }[] }
         `;
-      const result = await generateJSON("gemini-3-flash-preview", prompt);
+      const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -394,13 +505,14 @@ Return ONLY valid JSON, no markdown.
       const { content } = req.body;
       const prompt = `
             Analyze sentiment distribution: "${content.substring(0, 500)}".
+            feedback must be written in Korean.
             Return JSON: { "vibrance": number, "immersion": number, "clarity": number, "gravity": number, "serenity": number, "dominantEmotion": string, "feedback": string }
             dominantEmotion must be one of: vibrance, immersion, clarity, gravity, serenity, spectrum
         `;
-      const result = await generateJSON("gemini-3-flash-preview", prompt);
+      const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");
       res.json(result);
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      return sendAiError(res, e);
     }
   });
 
