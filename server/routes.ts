@@ -350,7 +350,8 @@ Return ONLY valid JSON, no markdown.
     try {
       const { emotion } = req.body;
       const prompt = `
-            Create 3 unique, realistic news headlines for emotion "${emotion}".
+            Create 3 unique, realistic Korean news articles for emotion "${emotion}".
+            title, summary, content must be written in Korean.
             Return JSON: [ { title, summary, content, source, emotion: "${emotion}", imagePrompt } ]
         `;
       const result = await generateJSON("gemini-3-flash-preview", prompt, "gemini-2.0-flash");

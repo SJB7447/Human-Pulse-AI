@@ -23,9 +23,11 @@ interface NewsDetailModalProps {
   emotionType: EmotionType;
   onClose: () => void;
   onSaveCuration?: (curation: CuratedArticle) => void;
+  cardBackground?: string;
+  layoutId?: string;
 }
 
-export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration }: NewsDetailModalProps) {
+export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration, cardBackground, layoutId }: NewsDetailModalProps) {
   const { toast } = useToast();
   const { user } = useEmotionStore();
   const [isTransforming, setIsTransforming] = useState(false);
@@ -195,13 +197,15 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
             animate={{ opacity: 1, backdropFilter: 'blur(12px)' }}
             exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
             transition={{ duration: 0.4 }}
-            className="absolute inset-0 bg-black/60"
+            className="absolute inset-0"
             style={{
               WebkitBackdropFilter: 'blur(12px)',
+              background: `radial-gradient(circle at 30% 20%, ${color}26 0%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.92) 100%)`,
             }}
           />
 
           <motion.div
+            layoutId={layoutId}
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{
               opacity: 1,
@@ -216,12 +220,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
               damping: 25
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-lg h-[85vh] flex flex-col overflow-hidden rounded-2xl"
+            className="relative w-[90vw] h-[88vh] max-w-[1400px] flex flex-col overflow-hidden rounded-3xl"
             style={{
-              backgroundColor: 'rgba(20, 20, 25, 0.85)',
+              background: cardBackground || 'rgba(255,255,255,0.96)',
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
+              border: '1px solid rgba(255, 255, 255, 0.45)',
             }}
           >
             <div className="absolute inset-0 rounded-2xl pointer-events-none z-0">
@@ -250,7 +254,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
               variant="ghost"
               size="icon"
               onClick={onClose}
-              className="absolute top-4 right-4 z-50 bg-black/20 text-white/90 hover:bg-black/40 backdrop-blur-sm"
+              className="absolute top-4 right-4 z-50 bg-white/50 text-gray-700 hover:bg-white/80 backdrop-blur-sm"
               data-testid="button-close-modal"
             >
               <X className="w-5 h-5" />
@@ -279,23 +283,23 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration 
                 {article.category && (
                   <EmotionTag emotion={article.category.toLowerCase() as EmotionType} showIcon={true} />
                 )}
-                <span className="text-xs text-white/50 flex items-center gap-1">
+                <span className="text-xs text-gray-600 flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {formatTimeAgo(article.created_at)}
                 </span>
               </div>
 
-              <h2 className="text-2xl font-bold text-white mb-3 leading-tight">
+              <h2 className="text-3xl font-bold text-gray-900 mb-3 leading-tight">
                 {article.title}
               </h2>
 
-              <p className="text-sm text-white/60 mb-6 flex items-center gap-2">
-                <span className="bg-white/10 px-2 py-0.5 rounded text-xs text-white/70">
+              <p className="text-sm text-gray-700 mb-6 flex items-center gap-2">
+                <span className="bg-white/60 px-2 py-0.5 rounded text-xs text-gray-700">
                   {article.source?.startsWith('http') ? new URL(article.source).hostname.replace('www.', '') : article.source}
                 </span>
               </p>
 
-              <div className="text-white/90 text-lg leading-8 font-light mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide">
+              <div className="text-gray-900 text-xl leading-9 font-light mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide">
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
