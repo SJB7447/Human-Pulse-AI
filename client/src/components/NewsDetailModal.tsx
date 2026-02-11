@@ -240,6 +240,14 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     return `${diffDays}d ago`;
   };
 
+  const getEmotionMeta = (emotion: EmotionType) => {
+    const matched = EMOTION_CONFIG.find((entry) => entry.type === emotion);
+    return {
+      color: matched?.color || '#888888',
+      label: matched?.labelKo || emotion,
+    };
+  };
+
   const glowCore = `0 0 20px ${color}60`;
   const glowMid = `0 0 60px ${color}30`;
   const glowAmbient = `0 0 120px ${color}10`;
@@ -425,7 +433,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                               <img src={item.image} alt={item.title} className="w-full h-24 object-cover" />
                             )}
                             <div className="p-3">
-                              <p className="text-[11px] text-gray-500 mb-1">{item.category || '일반 뉴스'}</p>
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <p className="text-[11px] text-gray-500">{item.category || '일반 뉴스'}</p>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">동일 카테고리</span>
+                              </div>
                               <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
                             </div>
                           </button>
@@ -449,7 +460,19 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                               <img src={item.image} alt={item.title} className="w-full h-28 object-cover" />
                             )}
                             <div className="p-3">
-                              <p className="text-[11px] text-emerald-700 mb-1">균형 제안 · {item.category || '일반 뉴스'}</p>
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <p className="text-[11px] text-emerald-700">균형 제안 · {item.category || '일반 뉴스'}</p>
+                                <span
+                                  className="text-[10px] px-2 py-0.5 rounded-full border"
+                                  style={{
+                                    color: getEmotionMeta(item.emotion).color,
+                                    borderColor: `${getEmotionMeta(item.emotion).color}66`,
+                                    backgroundColor: `${getEmotionMeta(item.emotion).color}18`,
+                                  }}
+                                >
+                                  {getEmotionMeta(item.emotion).label}
+                                </span>
+                              </div>
                               <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
                             </div>
                           </button>
