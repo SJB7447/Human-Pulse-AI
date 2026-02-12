@@ -1,172 +1,184 @@
-# AGENTS.md ? Human Pulse AI
+# AGENTS.md — Human Pulse AI (KR/EN Bilingual)
 (Vite + React + Express + Supabase/Drizzle + R3F(Three.js) + Gemini)
 
----
-
-## 0) ?勲?濏姼 ??欷??旍暯
-Human Pulse AI???挫姢毳??垳 ?嶌姢?戈? ?勲媹??
-**臧愳爼 路 ?疙劙?欖厴 路 3D 路 ?ろ伂搿るΜ?旊**?茧 瓴巾棙?橁矊 毵岆摐???疙劙?欗嫲敫??挫姢 ?岆灚?检澊??
-
----
-
-## 1) ?勴偆?嶌矘 瓿犾爼 ?愳箼 (欷戩殧)
-- Backend 氅旍澑: **Express (server/)**
-- Frontend: **Vite + React (?曥爜 牍岆摐 ??Vercel 氚绊彫)**
-- api/(Vercel serverless)???勳嫓/氤挫“ 於曥澊氅?
-  server/?� ?欖澕??旮半姤??欷戨车 甑槃?橃? ?婋姅??
-- ?措澕?挫柛?鸽姅 **Gemini API毳?歆侅爲 ?胳稖?橃? ?婋姅??**
-  ??AI ?胳稖?� ?れ `/server/routes.ts` ??`/api/ai/*`?愳劀毵??橅枆?滊嫟.
+> 목적 / Purpose  
+> - 이 문서는 Codex 에이전트 작업 지침입니다.  
+> - This file defines operational instructions for Codex agents.  
+> - 인코딩 이슈 대비를 위해 모든 핵심 지침은 한국어/영문 병기합니다.  
+> - To survive encoding issues, every core rule is written in both Korean and English.
 
 ---
 
-## 2) ?堧? 攴滌箼 (旖旊摐 昙瀯 氚╈?)
-- ???勳泊 毽澕?错姼(臧堨晞?庩赴) 旮堨?
-- ????儊 **斓滌唽 氤�瓴?patch)** ?渼搿??戩梾
-- ??氩堨棎 **?橂倶??氇╉憸毵?* 觳橂Μ?滊嫟  
-  (旮半姤 於旉? / UI路UX 臧滌劆 / 氩勱犯 ?橃爼 / 毽尒?犽 / ?彪姤 臧滌劆 欷?1臧?
-- 氇摖 ?戩梾?� ?れ潓 ?Х???半ジ??
-  1. Plan (3欷?
-  2. What changed (3欷?
-  3. ?ろ枆/瓴�歃?氚╇矔 (1~3欷?
+## 0) 제품 목표 / Product Goal
+- Human Pulse AI는 **기사(스토리) + 데이터 시각화 + 3D + 스크롤 인터랙션**의 결합 경험을 지향합니다.  
+- Human Pulse AI aims to combine **story content + data visualization + 3D + scroll interaction**.
+- 사용자는 읽기 흐름과 맥락을 잃지 않아야 합니다.  
+- Users should keep narrative flow and context continuity.
 
 ---
 
-## 3) ??暊(Role) ?曥潣 ??Codex ?愳澊?勴姼 ?挫榿 旮办?
-
-### ? ROLE: PM (Product Manager)
-- 旮半姤 氩旍渼 ?曥潣, ?办劆?滌渼 瓴办爼, ?戩梾 氇╉憸毳???臧溾�濍 飒缄盃??
-- ?橃毄 旮办?(Acceptance Criteria)??氇呿檿???曥潣?滊嫟.
-- 旖旊摐 ?戩劚?� ?橃? ?婋姅??
-
----
-
-### ?帹 ROLE: UX (UI/UX Designer)  猸愶笍 欷戩殧
-> ?狅笍 UX ?愳澊?勴姼??**?堧? 旖旊摐毳??橃爼?橃? ?婋姅??*
-
-UX ??暊??毂呾瀯:
-- ?毄???岆???曥潣 (?ろ伂搿?/ ?措Ν / 氇嫭 / 3D ?勴櫂 ?暔)
-- ?旊┐ 甑劚 ?滌晥 (旎错彫?岉姼 ?渼)
-- 毵堨澊? ?疙劙?欖厴 ?曥潣
-  - hover / active / loading / empty / error ?來儨
-- ?ろ伂搿るΜ?旊 攴滌箼 ?曥潣
-  - scroll progress ???措枻 氤�?旉? ?检柎?橂姅歆�
-- ?戧芳??/ 臧�?呾劚 / ?胳? 攵�??甏�?愳潣 臧滌劆 ?滌晥
-
-UX ?办稖氍??曥嫕:
-- 觳错伂毽姢???愲姅 甑“?旊悳 氇╇
-- ?滊?囲潉 ?措柣瓴??愲伡瓴??犾???欷戩嫭
-- ??HTML / CSS / JS 旖旊摐 ?戩劚 旮堨?
+## 1) 기술 아키텍처 / Technical Architecture
+- Backend: **Express (`server/`)**
+- Frontend: **Vite + React (`client/`)**
+- Serverless: **`api/` (Vercel)**
+- `api/` 와 `server/` 라우팅 관계를 항상 일관되게 유지합니다.  
+- Keep routing behavior between `api/` and `server/` consistent.
+- AI/Gemini 구현은 `server/routes.ts`, `api/ai/*` 관례를 우선 따릅니다.  
+- AI/Gemini features should follow conventions in `server/routes.ts` and `api/ai/*`.
 
 ---
 
-### ??嶐煉?ROLE: BUILDER (Developer)
-- PM + UX ?办稖氍检潉 旮半皹?茧 **甑槃毵??措嫻**
-- ?勳泊 毽澕?错姼 旮堨?, patch毵??堨毄
-- 旮办〈 ?办澊???愲???堧? 旯? ?婋姅??
-  RSS ??newsCron ??DB ??useNews ??3D / ?橃澊歆� / 氇嫭
-- Gemini 於滊牓?� 氚橂摐??**JSON 旮半皹 Story Spec**???毄?滊嫟.
-  (HTML 氍胳瀽??歆侅爲 ?濎劚 旮堨?)
+## 2) 작업 원칙 / Working Principles
+- 작은 단위, 안전한 변경을 우선합니다.  
+- Prefer small, safe, incremental changes.
+- 가능한 경우 patch 중심으로 수정합니다.  
+- Use patch-based edits whenever possible.
+- 변경 범위를 최소화하고 의존성 영향을 통제합니다.  
+- Minimize scope and dependency impact.
+- 진행 보고는 간결하게 유지합니다.  
+- Keep progress reporting concise.
+
+### 결과 보고 형식 / Output Format
+1. Plan (max 3 lines)
+2. What changed (max 3 lines)
+3. Test/Verification (1–3 lines)
 
 ---
 
-### ?И ROLE: QA (Quality & Stability)
-- 旮半姤 ?岅? ?岇姢??
-- UX 觳错伂毽姢??瓴�歃?(UX ?办稖氍?旮办?)
-- Three.js 甏�???彪姤/氅旊毽?dispose, render loop) ?勴棙 ?愱?
-- ?愲煬 ?槃 ???愳澑 ?勲炒 ??斓滌唽 ?橃爼 ?滌晥
-- ?勳殧 ??**patch ?滌晥旯岇?毵?* 臧�??(?�攴滊 ?橃爼 旮堨?)
+## 3) 역할 기준 / Role Expectations
+### PM
+- 요구사항을 구현 단위로 분해하고 Acceptance Criteria를 명확히 정의합니다.  
+- Break requests into implementable units and define explicit acceptance criteria.
+
+### UX
+- 반응형 및 상태(hover/active/loading/empty/error) 일관성을 유지합니다.  
+- Keep responsive and state behavior consistent.
+- 모바일/태블릿에 hover 의존 UX를 강제하지 않습니다.  
+- Do not force hover-dependent UX on mobile/tablet.
+- 가독성(행간/정렬/밀도)을 기능 추가보다 우선합니다.  
+- Prioritize readability (line-height/alignment/density) over adding features.
+
+### BUILDER
+- PM/UX 의도를 코드에 정확히 반영합니다.  
+- Implement PM/UX intent precisely.
+- Gemini 출력은 가능하면 raw HTML이 아니라 **Story Spec JSON**으로 처리합니다.  
+- Prefer **Story Spec JSON** over raw HTML from Gemini.
+
+### QA
+- 회귀(regression), 맥락 손실, 복귀 동선 실패를 집중 점검합니다.  
+- Validate regression risks, context loss, and back-navigation continuity.
+- Three.js는 render loop/camera/controls/dispose 누수와 성능 저하를 점검합니다.  
+- For Three.js, verify render loop/camera/controls/dispose stability.
 
 ---
 
-## 4) ?疙劙?欗嫲敫??挫姢 ?濎劚 攴滌箼 (?奠嫭)
-- Gemini??**?挫姢 HTML??歆侅爲 ?濎劚?橃? ?婋姅??**
-- Gemini??於滊牓?� ??儊 **Story Spec (JSON Schema)** ?措嫟.
-- Story Spec?� 氩勳爠 甏�毽暅??
-  - ?? `schemas/story_spec_v1.json`
-- React??StoryRenderer毳??淀暣
-  ?ろ伂搿るΜ?旊 / ?措Ν ?挫妶 / 氙鸽敂??/ 3D ?半彊???岆崝毵來暅??
-- 氇摖 ?濎劚氍检棎??臧�?ロ暅 瓴届毎:
-  - 於滌矘
-  - ?�?戧秾
-  - ?濎劚/攵勳劃 氅旐??办澊??
-  毳??暔?滊嫟.
+## 4) 스토리 렌더링 원칙 / Story Rendering Rules
+- Gemini 출력은 **Story Spec(JSON Schema)** 우선.  
+- Prefer **Story Spec (JSON Schema)** over direct HTML rendering.
+- 기준 스키마: `schemas/story_spec_v1.json`.
+- React 렌더러(예: `StoryRenderer`)는 스크롤/인터랙션/3D 요소를 안전하게 렌더링해야 합니다.  
+- React renderer must safely handle scroll/interaction/3D elements.
 
 ---
 
-## 5) Three.js (React Three Fiber) 攴滌箼
-- `Scene.tsx`??3D???澕 歆勳瀰?愳澊??
-- render loop / camera / controls 甑“毳?旯? ?婋姅??
-- dispose ?勲澖 ??毳???儊 ?愱??滊嫟.
-- ?彪姤 氤�瓴???
+## 5) Three.js / React Three Fiber
+- 3D 상태/생명주기 관리는 `Scene.tsx` 중심으로 명확히 유지합니다.  
+- Keep 3D state/lifecycle explicit and centered in `Scene.tsx`.
+- 성능 이슈가 재현되면 원인 + 최소 수정안을 함께 기록합니다.  
+- For reproducible perf issues, record root cause and propose minimal fix.
 
 ---
 
-## 9) Responsive Interaction Baseline (Validated)
-> Epic 1~4 검증 결과를 반영한 운영 기준 (HueBrief 공통)
+## 6) 데이터/스키마 / Data & Schema
+- 공유 타입/스키마는 `shared/schema.ts` 기준으로 정렬합니다.  
+- Keep shared types/schemas aligned with `shared/schema.ts`.
+- DB 변경은 migration + drizzle 절차를 준수합니다.  
+- Follow migration + drizzle workflow for DB changes.
 
-### 9.1 적용 범위 / 브레이크포인트
+---
+
+## 7) 테스트/검증 / Test & Verification
+### 기본 체크 / Baseline checks
+- `npm run dev`
+- `npm run lint`
+- `npm test`
+
+### 실패 시 기록 / If blocked by environment
+- 실패 원인(cause), 대안(workaround), 영향(impact)을 반드시 기록합니다.  
+- Always document cause, workaround, and impact.
+
+---
+
+## 8) 안전 수칙 / Safety Rules
+- 비밀키/민감정보 노출 금지.  
+- Never expose secrets or sensitive data.
+- 파괴적 명령(`rm -rf` 등) 사용 금지.  
+- Avoid destructive commands (`rm -rf`, dangerous system operations).
+- 보안/운영 리스크가 큰 변경은 근거를 남기고 최소화합니다.  
+- Minimize high-risk security/ops changes with clear rationale.
+
+---
+
+## 9) Responsive Interaction Baseline
+> Epic 1~4 검증 결과 기반 운영 기준 / Operational baseline from Epic 1~4 validation.
+
+### 9.1 Breakpoints
 - Desktop: `>= 1280px`
 - Tablet: `768px ~ 1279px`
 - Mobile: `<= 767px`
-- 반응형 전 구간에서 상태 전이(카드→상세→다음콘텐츠) 맥락이 유지되어야 한다.
+- 카드 → 상세 → 다음 콘텐츠 전환에서 맥락 유지.  
+- Preserve context during card → detail → next-content transitions.
 
-### 9.2 Card → Detail 전환 원칙
-- 카드 상세 진입 시 원 카드 맥락(위치/출처)을 유지한다.
-- 복귀 시 리스트 문맥(스크롤/카드 위치)을 깨지 않는다.
-- Hover 의존 패턴은 모바일/태블릿에서 강제하지 않는다.
-- 키보드 진입(Enter/Space), focus-visible 상태를 기본 지원한다.
+### 9.2 Card → Detail
+- 상세 진입 시 원 카드 위치/출처 맥락 유지.  
+- Preserve original card context (position/source) entering detail.
+- 복귀 시 리스트 스크롤 위치를 유지.  
+- Preserve list scroll position on return.
+- 키보드 접근성(Enter/Space, focus-visible) 보장.  
+- Support keyboard entry and focus-visible.
 
-### 9.3 Scroll Text Rhythm 원칙
-- 텍스트는 문장/문단 의미 단위로 노출한다.
-- 과도한 단어 단위 모션은 금지한다.
-- `prefers-reduced-motion` 환경에서 모션을 축소/제거한다.
-- 작은 화면에서는 읽기 우선(가독성/행간/정렬)으로 구성한다.
+### 9.3 Scroll Text Rhythm
+- 문장/문단 단위 의미 노출을 우선합니다.  
+- Reveal text by sentence/paragraph meaning.
+- 과도한 단어 단위 모션 금지.  
+- Avoid word-by-word over-animation.
+- `prefers-reduced-motion`에서 모션 축소/제거.  
+- Reduce/remove motion for `prefers-reduced-motion`.
 
-### 9.4 Background Transition 원칙
-- 배경 컬러 전환은 콘텐츠 이해를 돕는 보조 장치로만 사용한다.
-- 스크롤 진행에 따라 자연스럽게 변하되, 본문 대비를 항상 유지한다.
-- 빠른 스크롤에서도 점프/깜빡임이 없어야 한다.
+### 9.4 Background Transition
+- 배경 전환은 보조 장치로 사용합니다.  
+- Use background transitions as supportive cues.
+- 빠른 스크롤에서도 점프/깜빡임 없이 본문 대비를 유지합니다.  
+- Keep smooth sync and text contrast during fast scroll.
 
-### 9.5 Next Content Handoff 원칙
-- 기사 말미 전환은 사용자 선택 기반으로 제공한다.
-- 추천 콘텐츠는 현재 콘텐츠 하단에서 자연스럽게 이어지게 구성한다.
-- 불필요한 중복 CTA는 지양하고 맥락 단절을 방지한다.
+### 9.5 Next Content Handoff
+- 기사 말미 전환은 사용자 선택 기반.  
+- End-of-article transitions should be user-choice driven.
+- 추천 콘텐츠는 현재 기사 하단에서 자연스럽게 연결.  
+- Recommendations should continue naturally below current content.
+- 중복 CTA를 줄여 맥락 단절을 방지.  
+- Reduce redundant CTAs to prevent context breaks.
 
-### 9.6 QA 게이트
-- 필수 체크: `npm run dev`, `npm run lint`, `npm test`
-- 배포 기준:
-  - UX 체크리스트 90% 이상 통과
-  - Blocker(맥락 손실/읽기 방해/복귀 실패) 0건
-  - 성능 이슈 재현 시 원인 기록 및 최소 patch 제안
+### 9.6 QA Gate
+- Required checks: `npm run dev`, `npm run lint`, `npm test`
+- Release criteria:
+  - UX checklist pass rate `>= 90%`
+  - Blocker 0건 (맥락 손실/읽기 방해/복귀 실패)
+  - 재현 가능한 성능 이슈는 원인 + 최소 패치 제안 기록
 
-### 9.7 Layout Density & Readability (Padding / Alignment)
-- UI는 기본적으로 **여유로운 여백(padding, spacing)**을 우선한다.
-- 텍스트/버튼/카드가 밀집되어 보이지 않도록 컴포넌트 간 간격을 충분히 확보한다.
-- `목록으로 돌아가기`, 하단 다른 뉴스 카테고리 카드처럼 맥락상 중요한 요소는 화면 흐름 기준으로 중앙 정렬/균형 정렬을 우선 검토한다.
-- 작은 화면일수록 정보 밀도를 낮추고, 터치/시선 이동에 부담이 없는 간격을 유지한다.
-- 배치 결과가 답답하거나 과밀해 보이면 기능 추가보다 먼저 여백/정렬을 조정한다.
-  - ?措敂???愲牑歆�?旍?
-  - ?措柣瓴??曥澑?橂姅歆�
-  毳??粯 ?る獏?滊嫟.
-
----
-
-## 6) ?办澊??& ?ろ偆毵?攴滌箼
-- `shared/schema.ts`???勲??氚膘潣 ?澕 旮办??措嫟.
-- ?�??於╇弻 氚滌儩 ??shared毳??办劆 ?橃爼?滊嫟.
-- DB ?ろ偆毵?氤�瓴届? migrations + drizzle ?れ爼???粯 瓿犽牑?滊嫟.
-
----
-
-## 7) ?ろ枆 / 瓴�歃?攴滌箼
-- 氇摖 氤�瓴???氚橂摐???れ潓 欷??措嫻?橂姅 瓴冹潉 ?堧偞:
-  - `npm run dev`
-  - `npm run lint`
-  - `npm test`
-- ?滌柎???旊┐?愳劀 氍挫棁???曥澑?挫暭 ?橂姅歆�?濍? 氇呿檿???措嫟.
+### 9.7 Layout Density & Readability
+- 여백(padding/spacing) 우선.
+- 텍스트/버튼/카드 과밀 배치 금지.
+- 맥락 핵심 요소(목록 복귀, 하단 추천 카드)는 중앙/균형 정렬 우선 검토.
+- 작은 화면일수록 정보 밀도 축소.
+- UI가 답답하면 기능 추가보다 여백/정렬 조정 우선.
 
 ---
 
-## 8) ?堨爠 攴滌箼
-- API ?る姅 ?措澕?挫柛??氩堧摛???暔?橃? ?婋姅??
-- ?勴棙??氇呺牴(rm, system 氤�瓴????� ?ろ枆?橃? 毵愱碃 ?る獏 ???曥澑??氚涬姅??
+## 10) 현재 UX 중점 항목 (뉴스/감정 페이지) / Current UX Focus (News/Emotion)
+- 감정 카드 색 대비는 감정 깊이(intensity) 구간별로 명확히 구분하되 과도한 채도/명도 극단값을 피합니다.  
+- Emotion-card contrast should be tiered by intensity while avoiding extreme saturation/lightness.
+- 상세 모달은 전체 화면 배경 + 중앙 본문 구조를 유지하고, 하단 액션은 항상 가시성을 확보합니다.  
+- Keep full-screen detail modal with centered content and always-visible footer actions.
+- 추천 뉴스는 맥락 연결 + 감정 균형을 동시에 만족하도록 배치합니다.  
+- Recommendation area should satisfy both topical continuity and emotional balance.
