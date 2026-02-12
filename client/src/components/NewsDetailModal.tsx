@@ -511,7 +511,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   <button
                     type="button"
                     onClick={onClose}
-                    className="text-lg md:text-2xl font-weight:400 tracking-tight text-teal-700 hover:text-violet-700 transition-colors"
+                    className="text-lg md:text-2xl font-semibold tracking-tight text-teal-700 hover:text-violet-700 transition-colors"
                   >
                     목록으로 돌아가기
                   </button>
@@ -597,7 +597,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
             <div
               onMouseEnter={() => setShowFooterActions(true)}
               onMouseLeave={() => setShowFooterActions(false)}
-              className={`absolute left-3 sm:left-4 right-3 sm:right-4 bottom-3 sm:bottom-4 p-3 border border-white/50 bg-white/72 backdrop-blur z-20 rounded-2xl transition-all duration-300 opacity-100 translate-y-0 ${showFooterActions ? 'md:opacity-100 md:translate-y-0 md:pointer-events-auto' : 'md:opacity-0 md:translate-y-4 md:pointer-events-none'}`}
+              className={`absolute left-1/2 -translate-x-1/2 bottom-3 sm:bottom-4 w-[calc(100%-2rem)] max-w-4xl p-2.5 border border-white/45 bg-white/68 backdrop-blur z-20 rounded-2xl transition-all duration-300 opacity-100 ${showFooterActions ? 'md:opacity-100 md:translate-y-0 md:pointer-events-auto' : 'md:opacity-0 md:translate-y-4 md:pointer-events-none'}`}
             >
               <div className="flex items-center gap-2 flex-wrap">
                 <Button
