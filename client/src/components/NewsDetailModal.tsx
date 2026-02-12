@@ -10,6 +10,18 @@ import type { InteractiveArticle } from '@shared/interactiveArticle';
 import { StoryRenderer } from '@/components/StoryRenderer';
 import { EmotionTag } from '@/components/ui/EmotionTag';
 
+function isDarkHexColor(hex: string): boolean {
+  const normalized = hex.replace('#', '');
+  const fullHex = normalized.length === 3
+    ? normalized.split('').map((ch) => `${ch}${ch}`).join('')
+    : normalized;
+  const r = parseInt(fullHex.slice(0, 2), 16);
+  const g = parseInt(fullHex.slice(2, 4), 16);
+  const b = parseInt(fullHex.slice(4, 6), 16);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance < 0.5;
+}
+
 interface CuratedArticle {
   id: number;
   originalArticle: NewsItem;
@@ -320,6 +332,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const glowAmbient = `0 0 120px ${color}10`;
   const fullGlow = `${glowCore}, ${glowMid}, ${glowAmbient}`;
   const currentEmotionMeta = article?.emotion ? getEmotionMeta(article.emotion) : null;
+  const isBackdropDark = isDarkHexColor(color);
 
   return (
     <AnimatePresence>
@@ -395,7 +408,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               onScroll={handleContentScroll}
               className="flex-1 overflow-y-auto px-5 sm:px-7 md:px-10 pb-36 pt-8 z-10"
             >
-              <div className="max-w-4xl w-full mx-auto">
+              <div className="max-w-4xl w-full mx-auto bg-white/78 rounded-3xl px-4 sm:px-5 md:px-7 py-4 md:py-6 shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
               <div className="flex justify-end mb-4">
                 <Button
                   variant="ghost"
@@ -418,11 +431,11 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   </div>
                 </div>
               )}
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
                 {article.category && (
                   <EmotionTag emotion={article.category.toLowerCase() as EmotionType} showIcon={true} />
                 )}
-                <span className="text-xs text-gray-600 flex items-center gap-1">
+                <span className="text-xs text-gray-700 bg-white/80 px-2.5 py-1 rounded-full inline-flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {formatTimeAgo(article.created_at)}
                 </span>
@@ -506,12 +519,16 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
-                  className="mb-10 pt-16 pb-14 text-left"
+                  className="mb-10 pt-16 pb-14 text-center"
                 >
                   <button
                     type="button"
                     onClick={onClose}
-                    className="text-lg md:text-2xl font-semibold tracking-tight text-teal-700 hover:text-violet-700 transition-colors"
+                    className="text-lg md:text-2xl font-semibold tracking-tight transition-colors"
+                    style={{
+                      color: isBackdropDark ? '#ffffff' : '#1f2937',
+                      textShadow: isBackdropDark ? '0 1px 14px rgba(15,23,42,0.55)' : '0 1px 8px rgba(255,255,255,0.65)',
+                    }}
                   >
                     목록으로 돌아가기
                   </button>
@@ -519,23 +536,23 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               )}
 
               {hasRecommendations && !interactiveArticle && (
-                <div ref={recommendationSectionRef} className="mt-10 bg-white/92 rounded-2xl p-4 md:p-5">
+                <div ref={recommendationSectionRef} className="mt-10 bg-white rounded-2xl p-4 md:p-5 shadow-sm">
                   <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                    <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
+                    <h4 className="text-sm font-semibold text-gray-900">추천 뉴스</h4>
                     <div className="flex items-center gap-2 flex-wrap">
                       {currentEmotionMeta && (
                         <span
                           className="text-[10px] px-2 py-0.5 rounded-full border"
                           style={{
-                            color: currentEmotionMeta.color,
-                            borderColor: `${currentEmotionMeta.color}66`,
-                            backgroundColor: `${currentEmotionMeta.color}18`,
+                            color: '#374151',
+                            borderColor: '#d1d5db',
+                            backgroundColor: '#f9fafb',
                           }}
                         >
                           현재 감정 {currentEmotionMeta.label}
                         </span>
                       )}
-                      <span className="text-[11px] text-gray-500">감정 균형을 고려해 제안합니다</span>
+                      <span className="text-[11px] text-gray-600">감정 균형을 고려해 제안합니다</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
