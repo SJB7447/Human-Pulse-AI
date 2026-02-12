@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useLocation } from 'wouter';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, ArrowUp } from 'lucide-react';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
@@ -80,6 +80,12 @@ export default function EmotionPage() {
   const { toast } = useToast();
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [selectedCardBg, setSelectedCardBg] = useState<string>('rgba(255,255,255,0.96)');
+  const shouldReduceMotion = useReducedMotion();
+
+  const openArticleDetail = (item: NewsItem, cardBgColor: string) => {
+    setSelectedCardBg(cardBgColor);
+    setSelectedArticle(item);
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -374,15 +380,23 @@ export default function EmotionPage() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: mounted ? 1 : 0, y: mounted ? 0 : 20 }}
                     transition={{ duration: 0.4, delay: index * 0.1 }}
-                    onClick={() => {
-                      setSelectedCardBg(cardBgColor);
-                      setSelectedArticle(item);
+                    whileHover={shouldReduceMotion ? undefined : { y: -6, scale: 1.01 }}
+                    whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
+                    onClick={() => openArticleDetail(item, cardBgColor)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        openArticleDetail(item, cardBgColor);
+                      }
                     }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`${item.title} 상세 보기`}
                     className="w-full group cursor-pointer"
                     data-testid={`card-news-${item.id}`}
                   >
                     <div
-                      className="h-full rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col"
+                      className="h-full rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group-focus-visible:ring-2 group-focus-visible:ring-offset-2 group-focus-visible:ring-gray-700 flex flex-col"
                       style={{ background: cardBgColor }}
                     >
                       {/* Header with category and update time */}
