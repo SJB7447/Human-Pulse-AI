@@ -260,6 +260,46 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     };
   };
 
+  const proseBlocks = useMemo(() => {
+    const raw = (article?.content || article?.summary || '').trim();
+    if (!raw) return [] as string[];
+
+    const paragraphs = raw
+      .split('\n\n')
+      .map((paragraph) => paragraph.trim())
+      .filter(Boolean);
+
+    return paragraphs.flatMap((paragraph) => {
+      if (paragraph.length <= 220) {
+        return [paragraph];
+      }
+
+      const segments = paragraph
+        .split(/(?<=[.!?。！？])\s+/)
+        .map((segment) => segment.trim())
+        .filter(Boolean);
+
+      const chunks: string[] = [];
+      let current = '';
+
+      segments.forEach((segment) => {
+        const candidate = current ? `${current} ${segment}` : segment;
+        if (candidate.length > 200 && current) {
+          chunks.push(current);
+          current = segment;
+          return;
+        }
+        current = candidate;
+      });
+
+      if (current) {
+        chunks.push(current);
+      }
+
+      return chunks.length > 0 ? chunks : [paragraph];
+    });
+  }, [article?.content, article?.summary]);
+
   const glowCore = `0 0 20px ${color}60`;
   const glowMid = `0 0 60px ${color}30`;
   const glowAmbient = `0 0 120px ${color}10`;
@@ -429,8 +469,17 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                         </Button>
                       </div>
                     )}
-                    {(article.content || article.summary).split('\n\n').map((paragraph, idx) => (
-                      <p key={idx} className="text-justify opacity-95">{paragraph}</p>
+                    {proseBlocks.map((paragraph, idx) => (
+                      <motion.p
+                        key={`${article.id}-${idx}`}
+                        initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                        whileInView={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                        viewport={{ once: true, amount: 0.7, margin: '-8% 0px -8% 0px' }}
+                        transition={{ duration: shouldReduceMotion ? 0.1 : 0.28, ease: 'easeOut', delay: shouldReduceMotion ? 0 : Math.min(idx * 0.04, 0.18) }}
+                        className="text-left sm:text-justify opacity-95 leading-8 md:leading-9"
+                      >
+                        {paragraph}
+                      </motion.p>
                     ))}
                   </div>
                 )}
