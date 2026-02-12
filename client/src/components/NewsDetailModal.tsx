@@ -506,12 +506,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
-                  className="mb-6 pt-2 border-t border-white/60"
+                  className="mb-8 pt-8 pb-6 border-t border-white/60 text-center"
                 >
                   <button
                     type="button"
                     onClick={onClose}
-                    className="text-base md:text-xl font-semibold tracking-tight text-gray-700 hover:text-gray-900 underline underline-offset-4"
+                    className="inline-flex items-center justify-center rounded-full px-5 py-2 text-lg md:text-2xl font-semibold tracking-tight text-gray-700 bg-white/45 border border-white/70 hover:bg-white/70 hover:text-gray-900 transition-colors"
                   >
                     목록으로 돌아가기
                   </button>
@@ -538,9 +538,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                       <span className="text-[11px] text-gray-500">감정 균형을 고려해 제안합니다</span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
                     {flattenedRecommendations.map((item) => {
                       const isBalanceItem = recommendationGroups.balance.some((balance) => balance.id === item.id);
+                      const itemEmotionMeta = getEmotionMeta(item.emotion);
                       return (
                         <button
                           key={item.id}
@@ -549,21 +550,25 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                             onSelectArticle?.(item);
                             scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="text-left rounded-2xl border border-white/80 bg-white/78 hover:bg-white transition-colors overflow-hidden shadow-sm"
+                          className="flex items-stretch gap-3 md:block md:gap-0 text-left rounded-2xl border overflow-hidden shadow-sm transition-all hover:shadow-md"
+                          style={{
+                            borderColor: `${itemEmotionMeta.color}55`,
+                            backgroundColor: `${itemEmotionMeta.color}12`,
+                          }}
                         >
                           {item.image && (
-                            <img src={item.image} alt={item.title} className="w-full aspect-[4/3] object-cover" />
+                            <img src={item.image} alt={item.title} className="w-20 h-20 sm:w-24 sm:h-24 md:w-full md:h-auto md:aspect-[4/3] object-cover shrink-0" />
                           )}
-                          <div className="p-3">
-                            <div className="flex items-center justify-between gap-2 mb-1">
+                          <div className="p-3 flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
                               <p className="text-[11px] text-gray-500">{item.category || '일반 뉴스'}</p>
                               <span
                                 className="text-[10px] px-2 py-0.5 rounded-full border"
                                 style={isBalanceItem
                                   ? {
-                                      color: getEmotionMeta(item.emotion).color,
-                                      borderColor: `${getEmotionMeta(item.emotion).color}77`,
-                                      backgroundColor: `${getEmotionMeta(item.emotion).color}22`,
+                                      color: itemEmotionMeta.color,
+                                      borderColor: `${itemEmotionMeta.color}88`,
+                                      backgroundColor: `${itemEmotionMeta.color}26`,
                                     }
                                   : {
                                       color: '#4b5563',
@@ -574,7 +579,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                                 {isBalanceItem ? '균형 추천' : '연결 추천'}
                               </span>
                             </div>
-                            <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
+                            <p className="text-sm font-semibold text-gray-800 line-clamp-1 md:line-clamp-2">{item.title}</p>
+                            <p className="mt-1 text-xs text-gray-600 line-clamp-1">{item.summary}</p>
                           </div>
                         </button>
                       );
