@@ -41,6 +41,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const [showFooterActions, setShowFooterActions] = useState(false);
   const [bgTransitionProgress, setBgTransitionProgress] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const recommendationSectionRef = useRef<HTMLDivElement | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
   const shouldReduceMotion = useReducedMotion();
 
@@ -120,6 +121,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const hasRecommendations = recommendationGroups.sameCategory.length > 0 || recommendationGroups.balance.length > 0;
   const flattenedRecommendations = [...recommendationGroups.sameCategory, ...recommendationGroups.balance].slice(0, 3);
   const isBrightEmotion = article?.emotion === 'vibrance' || article?.emotion === 'serenity';
+  const showNextHandoffCue = hasRecommendations && !interactiveArticle && bgTransitionProgress >= 0.72;
 
   const handleContentScroll = () => {
     const node = scrollContainerRef.current;
@@ -499,8 +501,37 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 )}
               </div>
 
+              {showNextHandoffCue && (
+                <motion.div
+                  initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
+                  animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                  transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
+                  className="mb-6 rounded-2xl border border-white/70 bg-white/65 p-4 md:p-5"
+                >
+                  <p className="text-sm md:text-[15px] text-gray-700 mb-3">이 기사 요약은 여기까지예요. 다음 콘텐츠를 이어서 탐색할까요?</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-gray-700 bg-white/70 border border-white/80 hover:bg-white"
+                      onClick={() => recommendationSectionRef.current?.scrollIntoView({ behavior: shouldReduceMotion ? 'auto' : 'smooth', block: 'start' })}
+                    >
+                      다음 추천 보기
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="text-gray-700 border-gray-300 bg-white/55 hover:bg-white"
+                      onClick={onClose}
+                    >
+                      목록으로 돌아가기
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+
               {hasRecommendations && !interactiveArticle && (
-                <div className="mt-8">
+                <div ref={recommendationSectionRef} className="mt-8">
                   <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                     <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
                     <div className="flex items-center gap-2 flex-wrap">
