@@ -39,6 +39,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const [interactiveArticle, setInteractiveArticle] = useState<InteractiveArticle | null>(null);
   const [interactiveError, setInteractiveError] = useState<{ message: string; retryAfterSeconds?: number } | null>(null);
   const [showFooterActions, setShowFooterActions] = useState(false);
+  const [bgTransitionProgress, setBgTransitionProgress] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
   const shouldReduceMotion = useReducedMotion();
@@ -51,6 +52,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     setInteractiveArticle(null);
     setInteractiveError(null);
     setShowFooterActions(false);
+    setBgTransitionProgress(0);
   }, [article?.id]);
 
   useEffect(() => {
@@ -124,6 +126,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     if (!node) return;
     const nearBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 80;
     setShowFooterActions(nearBottom);
+
+    const maxScroll = Math.max(node.scrollHeight - node.clientHeight, 1);
+    const progress = Math.max(0, Math.min(1, node.scrollTop / maxScroll));
+    setBgTransitionProgress(progress);
   };
 
   const handleSave = () => {
@@ -260,6 +266,13 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     };
   };
 
+  const emotionTintAlpha = 0.12 + bgTransitionProgress * 0.16;
+  const neutralTintAlpha = 0.74 + bgTransitionProgress * 0.2;
+  const settleTintAlpha = 0.9 + bgTransitionProgress * 0.08;
+  const backdropBackground = shouldReduceMotion
+    ? `radial-gradient(circle at 30% 20%, ${color}26 0%, rgba(255,255,255,0.78) 35%, rgba(255,255,255,0.94) 100%)`
+    : `radial-gradient(circle at ${30 + bgTransitionProgress * 18}% ${20 + bgTransitionProgress * 26}%, ${color}${Math.round(emotionTintAlpha * 255).toString(16).padStart(2, '0')} 0%, rgba(255,255,255,${neutralTintAlpha.toFixed(2)}) 35%, rgba(255,255,255,${settleTintAlpha.toFixed(2)}) 100%)`;
+
   const proseBlocks = useMemo(() => {
     const raw = (article?.content || article?.summary || '').trim();
     if (!raw) return [] as string[];
@@ -325,7 +338,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
             className="absolute inset-0"
             style={{
               WebkitBackdropFilter: 'blur(12px)',
-              background: `radial-gradient(circle at 30% 20%, ${color}26 0%, rgba(255,255,255,0.75) 35%, rgba(255,255,255,0.92) 100%)`,
+              background: backdropBackground,
+              transition: 'background 260ms ease-out',
             }}
           />
 
