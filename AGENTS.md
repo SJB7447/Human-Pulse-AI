@@ -1,191 +1,184 @@
 # AGENTS.md — Human Pulse AI (KR/EN Bilingual)
 (Vite + React + Express + Supabase/Drizzle + R3F(Three.js) + Gemini)
 
-> 목적 / Purpose
-> - 이 문서는 에이전트(Codex) 작업 지침입니다.
-> - This file defines the working instructions for agents (Codex).
-> - 한국어가 깨질 가능성에 대비해 한국어/영문을 함께 제공합니다.
-> - Korean and English are written together so instructions remain readable even if Korean text gets corrupted.
+> 목적 / Purpose  
+> - 이 문서는 Codex 에이전트 작업 지침입니다.  
+> - This file defines operational instructions for Codex agents.  
+> - 인코딩 이슈 대비를 위해 모든 핵심 지침은 한국어/영문 병기합니다.  
+> - To survive encoding issues, every core rule is written in both Korean and English.
 
 ---
 
 ## 0) 제품 목표 / Product Goal
-- Human Pulse AI는 **기사(스토리) + 데이터 시각화 + 3D + 스크롤 인터랙션**을 결합한 경험을 지향합니다.
+- Human Pulse AI는 **기사(스토리) + 데이터 시각화 + 3D + 스크롤 인터랙션**의 결합 경험을 지향합니다.  
 - Human Pulse AI aims to combine **story content + data visualization + 3D + scroll interaction**.
-- 사용자는 읽기 흐름을 잃지 않고 콘텐츠 맥락을 이어가야 합니다.
-- Users should keep reading context without losing flow.
+- 사용자는 읽기 흐름과 맥락을 잃지 않아야 합니다.  
+- Users should keep narrative flow and context continuity.
 
 ---
 
-## 1) 아키텍처 원칙 / Architecture Principles
+## 1) 기술 아키텍처 / Technical Architecture
 - Backend: **Express (`server/`)**
-- Frontend: **Vite + React**
-- `api/` (Vercel serverless)와 `server/` 라우팅 관계를 일관되게 유지합니다.
-- Keep the routing relationship between `api/` (Vercel serverless) and `server/` consistent.
-- AI/Gemini 관련 구현은 `server/routes.ts` 및 `api/ai/*` 컨벤션을 준수합니다.
-- For AI/Gemini features, follow conventions in `server/routes.ts` and `api/ai/*`.
+- Frontend: **Vite + React (`client/`)**
+- Serverless: **`api/` (Vercel)**
+- `api/` 와 `server/` 라우팅 관계를 항상 일관되게 유지합니다.  
+- Keep routing behavior between `api/` and `server/` consistent.
+- AI/Gemini 구현은 `server/routes.ts`, `api/ai/*` 관례를 우선 따릅니다.  
+- AI/Gemini features should follow conventions in `server/routes.ts` and `api/ai/*`.
 
 ---
 
-## 2) 작업 방식 / Working Rules
-- 작은 단위의 안전한 변경을 우선합니다.
+## 2) 작업 원칙 / Working Principles
+- 작은 단위, 안전한 변경을 우선합니다.  
 - Prefer small, safe, incremental changes.
-- 가능한 경우 **patch 중심**으로 수정합니다.
-- Use **patch-based** edits whenever possible.
-- 작업 결과 보고는 간결하게 유지합니다.
-- Keep status reporting concise.
-- 결과 보고 형식:
-  1. Plan (3 lines max)
-  2. What changed (3 lines max)
-  3. Test/Verification (1–3 lines)
+- 가능한 경우 patch 중심으로 수정합니다.  
+- Use patch-based edits whenever possible.
+- 변경 범위를 최소화하고 의존성 영향을 통제합니다.  
+- Minimize scope and dependency impact.
+- 진행 보고는 간결하게 유지합니다.  
+- Keep progress reporting concise.
+
+### 결과 보고 형식 / Output Format
+1. Plan (max 3 lines)
+2. What changed (max 3 lines)
+3. Test/Verification (1–3 lines)
 
 ---
 
 ## 3) 역할 기준 / Role Expectations
+### PM
+- 요구사항을 구현 단위로 분해하고 Acceptance Criteria를 명확히 정의합니다.  
+- Break requests into implementable units and define explicit acceptance criteria.
 
-### PM (Product Manager)
-- 요구사항을 기능 단위로 분해하고 Acceptance Criteria를 명확히 정의합니다.
-- Break requirements into implementable units and define clear acceptance criteria.
+### UX
+- 반응형 및 상태(hover/active/loading/empty/error) 일관성을 유지합니다.  
+- Keep responsive and state behavior consistent.
+- 모바일/태블릿에 hover 의존 UX를 강제하지 않습니다.  
+- Do not force hover-dependent UX on mobile/tablet.
+- 가독성(행간/정렬/밀도)을 기능 추가보다 우선합니다.  
+- Prioritize readability (line-height/alignment/density) over adding features.
 
-### UX (UI/UX Designer)
-- 반응형/상태(hover, active, loading, empty, error) 일관성을 유지합니다.
-- Keep responsive/state behavior (hover, active, loading, empty, error) consistent.
-- 모바일/태블릿에서 hover 의존 패턴을 강제하지 않습니다.
-- Do not force hover-dependent interactions on mobile/tablet.
-- 가독성(행간/정렬/밀도) 우선으로 구성합니다.
-- Prioritize readability (line-height/alignment/density).
+### BUILDER
+- PM/UX 의도를 코드에 정확히 반영합니다.  
+- Implement PM/UX intent precisely.
+- Gemini 출력은 가능하면 raw HTML이 아니라 **Story Spec JSON**으로 처리합니다.  
+- Prefer **Story Spec JSON** over raw HTML from Gemini.
 
-### BUILDER (Developer)
-- PM/UX 의도를 코드로 정확히 반영합니다.
-- Implement PM/UX intent precisely in code.
-- 변경 범위를 최소화하고 의존성 영향을 통제합니다.
-- Minimize change scope and control dependency impact.
-- Gemini 출력은 가능하면 **Story Spec JSON** 중심으로 다룹니다.
-- Prefer **Story Spec JSON** over raw HTML for Gemini outputs.
-
-### QA (Quality & Stability)
-- 회귀(regression)와 UX 맥락 손실 여부를 중점 확인합니다.
-- Validate regressions and UX context continuity.
-- Three.js는 render loop / camera / controls / dispose 안정성을 확인합니다.
-- For Three.js, verify render loop / camera / controls / dispose stability.
-- 배포 전 최소 패치로 위험을 줄입니다.
-- Reduce risk with minimal patches before release.
+### QA
+- 회귀(regression), 맥락 손실, 복귀 동선 실패를 집중 점검합니다.  
+- Validate regression risks, context loss, and back-navigation continuity.
+- Three.js는 render loop/camera/controls/dispose 누수와 성능 저하를 점검합니다.  
+- For Three.js, verify render loop/camera/controls/dispose stability.
 
 ---
 
 ## 4) 스토리 렌더링 원칙 / Story Rendering Rules
-- Gemini 출력은 **직접 HTML 렌더링보다 Story Spec(JSON Schema) 우선**.
-- Prefer **Story Spec (JSON Schema)** over direct HTML rendering from Gemini.
-- 기준 스키마: `schemas/story_spec_v1.json`
-- Canonical schema: `schemas/story_spec_v1.json`
-- React 렌더러(예: StoryRenderer)는 스크롤/인터랙션/3D 요소를 안전하게 렌더링해야 합니다.
-- React renderer (e.g., StoryRenderer) must safely render scroll/interaction/3D elements.
+- Gemini 출력은 **Story Spec(JSON Schema)** 우선.  
+- Prefer **Story Spec (JSON Schema)** over direct HTML rendering.
+- 기준 스키마: `schemas/story_spec_v1.json`.
+- React 렌더러(예: `StoryRenderer`)는 스크롤/인터랙션/3D 요소를 안전하게 렌더링해야 합니다.  
+- React renderer must safely handle scroll/interaction/3D elements.
 
 ---
 
 ## 5) Three.js / React Three Fiber
-- `Scene.tsx` 중심의 3D 상태 및 생명주기 관리를 명확히 합니다.
-- Keep 3D state and lifecycle management explicit (centered in `Scene.tsx`).
-- render loop/camera/controls/dispose 누수 및 성능 저하를 방지합니다.
-- Prevent leaks/perf regressions in render loop/camera/controls/dispose.
-- 성능 문제는 원인 기록 + 최소 수정안을 함께 제시합니다.
-- For performance issues, document root cause and propose a minimal fix.
+- 3D 상태/생명주기 관리는 `Scene.tsx` 중심으로 명확히 유지합니다.  
+- Keep 3D state/lifecycle explicit and centered in `Scene.tsx`.
+- 성능 이슈가 재현되면 원인 + 최소 수정안을 함께 기록합니다.  
+- For reproducible perf issues, record root cause and propose minimal fix.
 
 ---
 
-## 6) 데이터/스키마 변경 / Data & Schema Changes
-- 공유 타입/스키마는 `shared/schema.ts`를 기준으로 유지합니다.
+## 6) 데이터/스키마 / Data & Schema
+- 공유 타입/스키마는 `shared/schema.ts` 기준으로 정렬합니다.  
 - Keep shared types/schemas aligned with `shared/schema.ts`.
-- DB 변경 시 migration + drizzle 흐름을 준수합니다.
+- DB 변경은 migration + drizzle 절차를 준수합니다.  
 - Follow migration + drizzle workflow for DB changes.
 
 ---
 
 ## 7) 테스트/검증 / Test & Verification
-- 기본 검증 명령:
-  - `npm run dev`
-  - `npm run lint`
-  - `npm test`
-- 환경 제약으로 실패하면 원인/대안/영향도를 함께 기록합니다.
-- If environment limitations block checks, document cause/workaround/impact.
+### 기본 체크 / Baseline checks
+- `npm run dev`
+- `npm run lint`
+- `npm test`
+
+### 실패 시 기록 / If blocked by environment
+- 실패 원인(cause), 대안(workaround), 영향(impact)을 반드시 기록합니다.  
+- Always document cause, workaround, and impact.
 
 ---
 
 ## 8) 안전 수칙 / Safety Rules
-- 민감 정보/비밀키 노출 금지.
-- Never expose secrets or sensitive credentials.
-- 파괴적 명령(`rm -rf`, 시스템 파괴성 조작) 사용 금지.
+- 비밀키/민감정보 노출 금지.  
+- Never expose secrets or sensitive data.
+- 파괴적 명령(`rm -rf` 등) 사용 금지.  
 - Avoid destructive commands (`rm -rf`, dangerous system operations).
-- 보안/운영 위험이 큰 변경은 사전 근거와 함께 최소화합니다.
-- Minimize high-risk security/ops changes and document justification.
+- 보안/운영 리스크가 큰 변경은 근거를 남기고 최소화합니다.  
+- Minimize high-risk security/ops changes with clear rationale.
 
 ---
 
-## 9) Responsive Interaction Baseline (Validated)
-> Epic 1~4 검증 결과를 반영한 운영 기준 (HueBrief 공통)
-> Operational baseline reflecting Epic 1~4 validation results (HueBrief common).
+## 9) Responsive Interaction Baseline
+> Epic 1~4 검증 결과 기반 운영 기준 / Operational baseline from Epic 1~4 validation.
 
-### 9.1 적용 범위 / Breakpoints
+### 9.1 Breakpoints
 - Desktop: `>= 1280px`
 - Tablet: `768px ~ 1279px`
 - Mobile: `<= 767px`
-- 반응형 전 구간에서 상태 전이(카드→상세→다음콘텐츠) 맥락 유지.
-- Preserve transition context (card → detail → next content) across all breakpoints.
+- 카드 → 상세 → 다음 콘텐츠 전환에서 맥락 유지.  
+- Preserve context during card → detail → next-content transitions.
 
-### 9.2 Card → Detail 전환 원칙 / Transition Principles
-- 상세 진입 시 원 카드 맥락(위치/출처) 유지.
-- Preserve original card context (position/source) when entering detail.
-- 복귀 시 리스트 스크롤/카드 위치 맥락 유지.
-- Preserve list scroll/card position on back navigation.
-- 모바일/태블릿에서 hover 의존 UX 강제 금지.
-- Do not enforce hover-dependent UX on mobile/tablet.
-- 키보드 접근(Enter/Space), focus-visible 기본 지원.
-- Support keyboard entry (Enter/Space) and focus-visible by default.
+### 9.2 Card → Detail
+- 상세 진입 시 원 카드 위치/출처 맥락 유지.  
+- Preserve original card context (position/source) entering detail.
+- 복귀 시 리스트 스크롤 위치를 유지.  
+- Preserve list scroll position on return.
+- 키보드 접근성(Enter/Space, focus-visible) 보장.  
+- Support keyboard entry and focus-visible.
 
-### 9.3 Scroll Text Rhythm 원칙 / Scroll Text Rhythm
-- 텍스트는 문장/문단 단위 의미로 노출.
-- Reveal text by sentence/paragraph-level meaning.
-- 과도한 단어 단위 모션 금지.
-- Avoid overly granular word-by-word motion.
-- `prefers-reduced-motion`에서 모션 축소/제거.
-- Reduce/remove motion under `prefers-reduced-motion`.
-- 작은 화면은 가독성 우선.
-- Prioritize readability on small screens.
+### 9.3 Scroll Text Rhythm
+- 문장/문단 단위 의미 노출을 우선합니다.  
+- Reveal text by sentence/paragraph meaning.
+- 과도한 단어 단위 모션 금지.  
+- Avoid word-by-word over-animation.
+- `prefers-reduced-motion`에서 모션 축소/제거.  
+- Reduce/remove motion for `prefers-reduced-motion`.
 
-### 9.4 Background Transition 원칙 / Background Transition
-- 배경 전환은 보조 장치로만 사용.
-- Use background transitions only as supportive cues.
-- 스크롤 진행에 자연스럽게 동기화하고 본문 대비 유지.
-- Sync smoothly with scroll while preserving text contrast.
-- 빠른 스크롤에서도 점프/깜빡임 방지.
-- Prevent jump/flicker during fast scrolling.
+### 9.4 Background Transition
+- 배경 전환은 보조 장치로 사용합니다.  
+- Use background transitions as supportive cues.
+- 빠른 스크롤에서도 점프/깜빡임 없이 본문 대비를 유지합니다.  
+- Keep smooth sync and text contrast during fast scroll.
 
-### 9.5 Next Content Handoff 원칙 / Handoff
-- 기사 말미 전환은 사용자 선택 기반.
-- Provide end-of-article transitions based on user choice.
-- 추천 콘텐츠는 현재 콘텐츠 하단에서 자연스럽게 연결.
-- Recommended content should continue naturally below current content.
-- 중복 CTA를 줄이고 맥락 단절 방지.
-- Avoid redundant CTAs and context breaks.
+### 9.5 Next Content Handoff
+- 기사 말미 전환은 사용자 선택 기반.  
+- End-of-article transitions should be user-choice driven.
+- 추천 콘텐츠는 현재 기사 하단에서 자연스럽게 연결.  
+- Recommendations should continue naturally below current content.
+- 중복 CTA를 줄여 맥락 단절을 방지.  
+- Reduce redundant CTAs to prevent context breaks.
 
-### 9.6 QA 게이트 / QA Gate
-- 필수 체크 / Required checks:
-  - `npm run dev`
-  - `npm run lint`
-  - `npm test`
-- 배포 기준 / Release criteria:
-  - UX 체크리스트 90% 이상 통과 / >=90% UX checklist pass
-  - Blocker(맥락 손실/읽기 방해/복귀 실패) 0건 / 0 blockers
-  - 성능 이슈 재현 시 원인 기록 + 최소 패치 제안 / Root cause + minimal patch for reproducible perf issues
+### 9.6 QA Gate
+- Required checks: `npm run dev`, `npm run lint`, `npm test`
+- Release criteria:
+  - UX checklist pass rate `>= 90%`
+  - Blocker 0건 (맥락 손실/읽기 방해/복귀 실패)
+  - 재현 가능한 성능 이슈는 원인 + 최소 패치 제안 기록
 
-### 9.7 레이아웃 밀도/가독성 / Layout Density & Readability
-- 여백(padding/spacing)을 기본 우선순위로 둡니다.
-- Prioritize generous padding/spacing.
-- 텍스트/버튼/카드 과밀 배치를 피합니다.
-- Avoid dense text/button/card layouts.
-- 맥락상 중요한 요소(예: 목록 복귀, 하단 추천 카드)는 중앙/균형 정렬을 우선 검토합니다.
-- For context-critical elements (e.g., back-to-list, recommendation cards), prioritize centered/balanced alignment.
-- 작은 화면일수록 정보 밀도 낮추고 터치/시선 이동 부담을 줄입니다.
-- Lower information density on small screens to reduce touch/eye strain.
-- 답답하거나 과밀하면 기능 추가보다 먼저 여백/정렬을 조정합니다.
-- If UI feels cramped, adjust spacing/alignment before adding features.
+### 9.7 Layout Density & Readability
+- 여백(padding/spacing) 우선.
+- 텍스트/버튼/카드 과밀 배치 금지.
+- 맥락 핵심 요소(목록 복귀, 하단 추천 카드)는 중앙/균형 정렬 우선 검토.
+- 작은 화면일수록 정보 밀도 축소.
+- UI가 답답하면 기능 추가보다 여백/정렬 조정 우선.
+
+---
+
+## 10) 현재 UX 중점 항목 (뉴스/감정 페이지) / Current UX Focus (News/Emotion)
+- 감정 카드 색 대비는 감정 깊이(intensity) 구간별로 명확히 구분하되 과도한 채도/명도 극단값을 피합니다.  
+- Emotion-card contrast should be tiered by intensity while avoiding extreme saturation/lightness.
+- 상세 모달은 전체 화면 배경 + 중앙 본문 구조를 유지하고, 하단 액션은 항상 가시성을 확보합니다.  
+- Keep full-screen detail modal with centered content and always-visible footer actions.
+- 추천 뉴스는 맥락 연결 + 감정 균형을 동시에 만족하도록 배치합니다.  
+- Recommendation area should satisfy both topical continuity and emotional balance.
