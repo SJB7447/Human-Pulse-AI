@@ -506,7 +506,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
-                  className="mb-10 pt-16 pb-14 text-left"
+                  className="mb-10 pt-16 pb-14 text-center"
                 >
                   <button
                     type="button"
