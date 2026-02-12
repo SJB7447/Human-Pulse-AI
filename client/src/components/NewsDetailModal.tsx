@@ -10,6 +10,18 @@ import type { InteractiveArticle } from '@shared/interactiveArticle';
 import { StoryRenderer } from '@/components/StoryRenderer';
 import { EmotionTag } from '@/components/ui/EmotionTag';
 
+function isDarkHexColor(hex: string): boolean {
+  const normalized = hex.replace('#', '');
+  const fullHex = normalized.length === 3
+    ? normalized.split('').map((ch) => `${ch}${ch}`).join('')
+    : normalized;
+  const r = parseInt(fullHex.slice(0, 2), 16);
+  const g = parseInt(fullHex.slice(2, 4), 16);
+  const b = parseInt(fullHex.slice(4, 6), 16);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance < 0.5;
+}
+
 interface CuratedArticle {
   id: number;
   originalArticle: NewsItem;
@@ -127,7 +139,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     const node = scrollContainerRef.current;
     if (!node) return;
     const nearBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 80;
-    setShowFooterActions(nearBottom);
+    setShowFooterActions(true);
 
     const maxScroll = Math.max(node.scrollHeight - node.clientHeight, 1);
     const progress = Math.max(0, Math.min(1, node.scrollTop / maxScroll));
@@ -320,6 +332,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const glowAmbient = `0 0 120px ${color}10`;
   const fullGlow = `${glowCore}, ${glowMid}, ${glowAmbient}`;
   const currentEmotionMeta = article?.emotion ? getEmotionMeta(article.emotion) : null;
+  const isBackdropDark = isDarkHexColor(color);
 
   return (
     <AnimatePresence>
@@ -329,7 +342,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50"
           onClick={onClose}
         >
           <motion.div
@@ -361,17 +374,16 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               damping: 25,
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full sm:w-[95vw] h-[100dvh] sm:h-[90vh] max-w-[860px] flex flex-col overflow-hidden rounded-none sm:rounded-3xl"
+            className="relative w-full h-[100dvh] flex flex-col overflow-hidden"
             style={{
-              background: cardBackground || 'rgba(255,255,255,0.96)',
+              background: cardBackground || `linear-gradient(180deg, ${color}20 0%, rgba(250,250,252,0.98) 35%, rgba(248,248,250,0.98) 100%)`,
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
-              border: '1px solid rgba(255, 255, 255, 0.45)',
             }}
           >
-            <div className="absolute inset-0 rounded-2xl pointer-events-none z-0">
+            <div className="absolute inset-0 pointer-events-none z-0">
               <motion.div
-                className="absolute inset-0 rounded-2xl"
+                className="absolute inset-0"
                 initial={{ opacity: 0, boxShadow: 'none' }}
                 animate={{
                   opacity: isBrightEmotion ? [0.35, 0.95, 0.55, 1, 0.6] : [0, 1, 0.7, 1, 0.7],
@@ -394,9 +406,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
             <div
               ref={scrollContainerRef}
               onScroll={handleContentScroll}
-              className="flex-1 overflow-y-auto px-4 sm:px-5 md:px-7 pb-32 pt-4 z-10"
+              className="flex-1 overflow-y-auto px-5 sm:px-7 md:px-10 pb-36 pt-8 z-10"
             >
-              <div className="flex justify-end mb-2">
+              <div className="max-w-4xl w-full mx-auto bg-white/78 rounded-3xl px-4 sm:px-5 md:px-7 py-4 md:py-6 shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
+              <div className="flex justify-end mb-4">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -408,8 +421,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 </Button>
               </div>
               {article.image && (
-                <div className="mb-5">
-                  <div className="max-w-[800px] w-full mx-auto rounded-2xl overflow-hidden bg-white/60 border border-white/70 aspect-video">
+                <div className="mb-8">
+                  <div className="max-w-3xl w-full rounded-2xl overflow-hidden bg-white/60 border border-white/70 aspect-video">
                     <img
                       src={article.image}
                       alt={article.title}
@@ -418,11 +431,11 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   </div>
                 </div>
               )}
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
                 {article.category && (
                   <EmotionTag emotion={article.category.toLowerCase() as EmotionType} showIcon={true} />
                 )}
-                <span className="text-xs text-gray-600 flex items-center gap-1">
+                <span className="text-xs text-gray-700 bg-white/80 px-2.5 py-1 rounded-full inline-flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {formatTimeAgo(article.created_at)}
                 </span>
@@ -432,7 +445,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
                 animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                 transition={{ duration: 0.24, delay: shouldReduceMotion ? 0 : 0.08 }}
-                className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3 leading-tight"
+                className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 leading-tight"
               >
                 {article.title}
               </motion.h2>
@@ -448,7 +461,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 </span>
               </motion.p>
 
-              <div className="text-gray-900 text-[17px] md:text-[18px] leading-8 font-normal mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide max-w-3xl">
+              <div className="text-gray-900 text-[17px] md:text-[18px] leading-8 font-normal mb-12 min-h-[120px] whitespace-pre-wrap tracking-wide">
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
@@ -506,12 +519,16 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
-                  className="mb-6 pt-2 border-t border-white/60"
+                  className="mb-10 pt-16 pb-14 text-center"
                 >
                   <button
                     type="button"
                     onClick={onClose}
-                    className="text-base md:text-xl font-semibold tracking-tight text-gray-700 hover:text-gray-900 underline underline-offset-4"
+                    className="text-lg md:text-2xl font-semibold tracking-tight transition-colors"
+                    style={{
+                      color: isBackdropDark ? '#ffffff' : '#1f2937',
+                      textShadow: isBackdropDark ? '0 1px 14px rgba(15,23,42,0.55)' : '0 1px 8px rgba(255,255,255,0.65)',
+                    }}
                   >
                     목록으로 돌아가기
                   </button>
@@ -519,28 +536,29 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               )}
 
               {hasRecommendations && !interactiveArticle && (
-                <div ref={recommendationSectionRef} className="mt-8">
+                <div ref={recommendationSectionRef} className="mt-10 bg-white rounded-2xl p-4 md:p-5 shadow-sm">
                   <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                    <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
+                    <h4 className="text-sm font-semibold text-gray-900">추천 뉴스</h4>
                     <div className="flex items-center gap-2 flex-wrap">
                       {currentEmotionMeta && (
                         <span
                           className="text-[10px] px-2 py-0.5 rounded-full border"
                           style={{
-                            color: currentEmotionMeta.color,
-                            borderColor: `${currentEmotionMeta.color}66`,
-                            backgroundColor: `${currentEmotionMeta.color}18`,
+                            color: '#374151',
+                            borderColor: '#d1d5db',
+                            backgroundColor: '#f9fafb',
                           }}
                         >
                           현재 감정 {currentEmotionMeta.label}
                         </span>
                       )}
-                      <span className="text-[11px] text-gray-500">감정 균형을 고려해 제안합니다</span>
+                      <span className="text-[11px] text-gray-600">감정 균형을 고려해 제안합니다</span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
                     {flattenedRecommendations.map((item) => {
                       const isBalanceItem = recommendationGroups.balance.some((balance) => balance.id === item.id);
+                      const itemEmotionMeta = getEmotionMeta(item.emotion);
                       return (
                         <button
                           key={item.id}
@@ -549,21 +567,25 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                             onSelectArticle?.(item);
                             scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="text-left rounded-2xl border border-white/80 bg-white/78 hover:bg-white transition-colors overflow-hidden shadow-sm"
+                          className="flex items-stretch gap-3 md:block md:gap-0 text-left rounded-2xl border overflow-hidden shadow-sm transition-all hover:shadow-md"
+                          style={{
+                            borderColor: `${itemEmotionMeta.color}55`,
+                            backgroundColor: `${itemEmotionMeta.color}12`,
+                          }}
                         >
                           {item.image && (
-                            <img src={item.image} alt={item.title} className="w-full aspect-[4/3] object-cover" />
+                            <img src={item.image} alt={item.title} className="w-20 h-20 sm:w-24 sm:h-24 md:w-full md:h-auto md:aspect-[4/3] object-cover shrink-0" />
                           )}
-                          <div className="p-3">
-                            <div className="flex items-center justify-between gap-2 mb-1">
+                          <div className="p-3 flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-1.5">
                               <p className="text-[11px] text-gray-500">{item.category || '일반 뉴스'}</p>
                               <span
                                 className="text-[10px] px-2 py-0.5 rounded-full border"
                                 style={isBalanceItem
                                   ? {
-                                      color: getEmotionMeta(item.emotion).color,
-                                      borderColor: `${getEmotionMeta(item.emotion).color}77`,
-                                      backgroundColor: `${getEmotionMeta(item.emotion).color}22`,
+                                      color: itemEmotionMeta.color,
+                                      borderColor: `${itemEmotionMeta.color}88`,
+                                      backgroundColor: `${itemEmotionMeta.color}26`,
                                     }
                                   : {
                                       color: '#4b5563',
@@ -574,7 +596,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                                 {isBalanceItem ? '균형 추천' : '연결 추천'}
                               </span>
                             </div>
-                            <p className="text-sm font-semibold text-gray-800 line-clamp-2">{item.title}</p>
+                            <p className="text-sm font-semibold text-gray-800 line-clamp-1 md:line-clamp-2">{item.title}</p>
+                            <p className="mt-1 text-xs text-gray-600 line-clamp-1">{item.summary}</p>
                           </div>
                         </button>
                       );
@@ -583,13 +606,13 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 </div>
               )}
 
+              </div>
+
             </div>
 
             {/* Footer Action Buttons (scroll-end or hover reveal) */}
             <div
-              onMouseEnter={() => setShowFooterActions(true)}
-              onMouseLeave={() => setShowFooterActions(false)}
-              className={`absolute left-3 sm:left-4 right-3 sm:right-4 bottom-3 sm:bottom-4 p-3 border border-white/50 bg-white/72 backdrop-blur z-20 rounded-2xl transition-all duration-300 opacity-100 translate-y-0 ${showFooterActions ? 'md:opacity-100 md:translate-y-0 md:pointer-events-auto' : 'md:opacity-0 md:translate-y-4 md:pointer-events-none'}`}
+              className="absolute left-1/2 -translate-x-1/2 bottom-3 sm:bottom-4 w-[calc(100%-2rem)] max-w-4xl p-2.5 border border-white/45 bg-white/68 backdrop-blur z-20 rounded-2xl"
             >
               <div className="flex items-center gap-2 flex-wrap">
                 <Button
