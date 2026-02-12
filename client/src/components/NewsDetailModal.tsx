@@ -127,7 +127,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     const node = scrollContainerRef.current;
     if (!node) return;
     const nearBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - 80;
-    setShowFooterActions(nearBottom);
+    setShowFooterActions(true);
 
     const maxScroll = Math.max(node.scrollHeight - node.clientHeight, 1);
     const progress = Math.max(0, Math.min(1, node.scrollTop / maxScroll));
@@ -506,7 +506,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
-                  className="mb-10 pt-16 pb-14 text-center"
+                  className="mb-10 pt-16 pb-14 text-left"
                 >
                   <button
                     type="button"
@@ -519,7 +519,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               )}
 
               {hasRecommendations && !interactiveArticle && (
-                <div ref={recommendationSectionRef} className="mt-10">
+                <div ref={recommendationSectionRef} className="mt-10 bg-white/92 rounded-2xl p-4 md:p-5">
                   <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                     <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -595,9 +595,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
             {/* Footer Action Buttons (scroll-end or hover reveal) */}
             <div
-              onMouseEnter={() => setShowFooterActions(true)}
-              onMouseLeave={() => setShowFooterActions(false)}
-              className={`absolute left-1/2 -translate-x-1/2 bottom-3 sm:bottom-4 w-[calc(100%-2rem)] max-w-4xl p-2.5 border border-white/45 bg-white/68 backdrop-blur z-20 rounded-2xl transition-all duration-300 opacity-100 ${showFooterActions ? 'md:opacity-100 md:translate-y-0 md:pointer-events-auto' : 'md:opacity-0 md:translate-y-4 md:pointer-events-none'}`}
+              className="absolute left-1/2 -translate-x-1/2 bottom-3 sm:bottom-4 w-[calc(100%-2rem)] max-w-4xl p-2.5 border border-white/45 bg-white/68 backdrop-blur z-20 rounded-2xl"
             >
               <div className="flex items-center gap-2 flex-wrap">
                 <Button

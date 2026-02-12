@@ -191,24 +191,49 @@ export default function EmotionPage() {
 
   const getCardDepthPalette = (baseHex: string, depth: number) => {
     const { h, s } = hexToHsl(baseHex);
+    const normalizedDepth = Math.max(0, Math.min(100, depth));
+    const isNeutral = s < 8;
 
-    if (depth <= 60) {
+    if (isNeutral) {
+      if (normalizedDepth <= 60) {
+        return {
+          background: 'linear-gradient(165deg, #e5e5e5 0%, #dddddd 100%)',
+          border: '#bababa',
+        };
+      }
+
+      if (normalizedDepth <= 70) {
+        return {
+          background: 'linear-gradient(165deg, #d0d0d0 0%, #c3c3c3 100%)',
+          border: '#ababab',
+        };
+      }
+
       return {
-        background: `linear-gradient(165deg, hsl(${h} ${Math.max(45, s - 12)}% 82%) 0%, hsl(${h} ${Math.max(40, s - 18)}% 78%) 100%)`,
-        border: `hsl(${h} ${Math.max(40, s - 10)}% 66%)`,
+        background: 'linear-gradient(165deg, #bababa 0%, #a8a8a8 100%)',
+        border: '#999898',
       };
     }
 
-    if (depth <= 70) {
+    const softSat = Math.max(36, Math.min(58, s));
+
+    if (normalizedDepth <= 60) {
       return {
-        background: `linear-gradient(165deg, hsl(${h} ${Math.max(55, s - 4)}% 56%) 0%, hsl(${h} ${Math.max(55, s - 6)}% 48%) 100%)`,
-        border: `hsl(${h} ${Math.max(55, s - 2)}% 40%)`,
+        background: `linear-gradient(165deg, hsl(${h} ${softSat}% 82%) 0%, hsl(${h} ${Math.max(32, softSat - 6)}% 78%) 100%)`,
+        border: `hsl(${h} ${Math.max(30, softSat - 8)}% 66%)`,
+      };
+    }
+
+    if (normalizedDepth <= 70) {
+      return {
+        background: `linear-gradient(165deg, hsl(${h} ${Math.min(62, softSat + 2)}% 68%) 0%, hsl(${h} ${softSat}% 62%) 100%)`,
+        border: `hsl(${h} ${Math.max(36, softSat - 2)}% 54%)`,
       };
     }
 
     return {
-      background: `linear-gradient(165deg, hsl(${h} ${Math.max(60, s)}% 36%) 0%, hsl(${h} ${Math.max(58, s - 2)}% 30%) 100%)`,
-      border: `hsl(${h} ${Math.max(60, s)}% 24%)`,
+      background: `linear-gradient(165deg, hsl(${h} ${Math.min(64, softSat + 4)}% 58%) 0%, hsl(${h} ${Math.min(62, softSat + 2)}% 52%) 100%)`,
+      border: `hsl(${h} ${Math.max(40, softSat)}% 46%)`,
     };
   };
 
