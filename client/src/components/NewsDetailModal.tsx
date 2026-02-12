@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check, RefreshCcw, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const [showFooterActions, setShowFooterActions] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
+  const shouldReduceMotion = useReducedMotion();
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
   const articleEmotionConfig = EMOTION_CONFIG.find((entry) => entry.type === article?.emotion) || emotionConfig;
@@ -290,21 +291,21 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
           <motion.div
             layoutId={layoutId}
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 16 }}
             animate={{
               opacity: 1,
-              scale: 1,
-              y: 0,
+              scale: shouldReduceMotion ? 1 : 1,
+              y: shouldReduceMotion ? 0 : 0,
             }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: 12 }}
             transition={{
-              duration: 0.4,
-              type: "spring",
+              duration: shouldReduceMotion ? 0.2 : 0.35,
+              type: shouldReduceMotion ? 'tween' : 'spring',
               stiffness: 300,
-              damping: 25
+              damping: 25,
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-[95vw] h-[90vh] max-w-[800px] flex flex-col overflow-hidden rounded-3xl"
+            className="relative w-full sm:w-[95vw] h-[100dvh] sm:h-[90vh] max-w-[860px] flex flex-col overflow-hidden rounded-none sm:rounded-3xl"
             style={{
               background: cardBackground || 'rgba(255,255,255,0.96)',
               backdropFilter: 'blur(24px)',
@@ -337,7 +338,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
             <div
               ref={scrollContainerRef}
               onScroll={handleContentScroll}
-              className="flex-1 overflow-y-auto px-5 md:px-7 pb-28 pt-4 z-10"
+              className="flex-1 overflow-y-auto px-4 sm:px-5 md:px-7 pb-32 pt-4 z-10"
             >
               <div className="flex justify-end mb-2">
                 <Button
@@ -371,15 +372,25 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 </span>
               </div>
 
-              <h2 className="text-3xl font-bold text-gray-900 mb-3 leading-tight">
+              <motion.h2
+                initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                transition={{ duration: 0.24, delay: shouldReduceMotion ? 0 : 0.08 }}
+                className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3 leading-tight"
+              >
                 {article.title}
-              </h2>
+              </motion.h2>
 
-              <p className="text-sm text-gray-700 mb-6 flex items-center gap-2">
+              <motion.p
+                initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
+                animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                transition={{ duration: 0.22, delay: shouldReduceMotion ? 0 : 0.14 }}
+                className="text-sm text-gray-700 mb-6 flex items-center gap-2"
+              >
                 <span className="bg-white/60 px-2 py-0.5 rounded text-xs text-gray-700">
                   {article.source?.startsWith('http') ? new URL(article.source).hostname.replace('www.', '') : article.source}
                 </span>
-              </p>
+              </motion.p>
 
               <div className="text-gray-900 text-[17px] md:text-[18px] leading-8 font-normal mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide max-w-3xl">
                 {interactiveArticle ? (
@@ -496,7 +507,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
             <div
               onMouseEnter={() => setShowFooterActions(true)}
               onMouseLeave={() => setShowFooterActions(false)}
-              className={`absolute left-4 right-4 bottom-4 p-3 border border-white/50 bg-white/72 backdrop-blur z-20 rounded-2xl transition-all duration-300 ${showFooterActions ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}
+              className={`absolute left-3 sm:left-4 right-3 sm:right-4 bottom-3 sm:bottom-4 p-3 border border-white/50 bg-white/72 backdrop-blur z-20 rounded-2xl transition-all duration-300 opacity-100 translate-y-0 ${showFooterActions ? 'md:opacity-100 md:translate-y-0 md:pointer-events-auto' : 'md:opacity-0 md:translate-y-4 md:pointer-events-none'}`}
             >
               <div className="flex items-center gap-2 flex-wrap">
                 <Button
