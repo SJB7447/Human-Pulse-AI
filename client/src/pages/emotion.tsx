@@ -560,6 +560,11 @@ export default function EmotionPage() {
           const cardBgStart = hexToRgba(cardEmotionColor, depthTone.start);
           const cardBgEnd = hexToRgba(cardEmotionColor, depthTone.end);
           setSelectedCardBg(`linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`);
+
+          if (nextArticle.emotion !== type) {
+            setLocation(`/emotion/${nextArticle.emotion}`);
+          }
+
           setSelectedArticle(nextArticle);
         }}
         onClose={() => setSelectedArticle(null)}

@@ -329,7 +329,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50"
           onClick={onClose}
         >
           <motion.div
@@ -361,17 +361,16 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               damping: 25,
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full sm:w-[95vw] h-[100dvh] sm:h-[90vh] max-w-[860px] flex flex-col overflow-hidden rounded-none sm:rounded-3xl"
+            className="relative w-full h-[100dvh] flex flex-col overflow-hidden"
             style={{
-              background: cardBackground || 'rgba(255,255,255,0.96)',
+              background: cardBackground || `linear-gradient(180deg, ${color}20 0%, rgba(250,250,252,0.98) 35%, rgba(248,248,250,0.98) 100%)`,
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
-              border: '1px solid rgba(255, 255, 255, 0.45)',
             }}
           >
-            <div className="absolute inset-0 rounded-2xl pointer-events-none z-0">
+            <div className="absolute inset-0 pointer-events-none z-0">
               <motion.div
-                className="absolute inset-0 rounded-2xl"
+                className="absolute inset-0"
                 initial={{ opacity: 0, boxShadow: 'none' }}
                 animate={{
                   opacity: isBrightEmotion ? [0.35, 0.95, 0.55, 1, 0.6] : [0, 1, 0.7, 1, 0.7],
@@ -396,6 +395,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               onScroll={handleContentScroll}
               className="flex-1 overflow-y-auto px-4 sm:px-5 md:px-7 pb-32 pt-4 z-10"
             >
+              <div className="max-w-5xl w-full mx-auto">
               <div className="flex justify-end mb-2">
                 <Button
                   variant="ghost"
@@ -506,12 +506,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
-                  className="mb-8 pt-8 pb-6 border-t border-white/60 text-center"
+                  className="mb-8 pt-14 pb-12 text-center"
                 >
                   <button
                     type="button"
                     onClick={onClose}
-                    className="inline-flex items-center justify-center rounded-full px-5 py-2 text-lg md:text-2xl font-semibold tracking-tight text-gray-700 bg-white/45 border border-white/70 hover:bg-white/70 hover:text-gray-900 transition-colors"
+                    className="text-lg md:text-2xl font-semibold tracking-tight text-teal-700 hover:text-violet-700 transition-colors"
                   >
                     목록으로 돌아가기
                   </button>
@@ -588,6 +588,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   </div>
                 </div>
               )}
+
+              </div>
 
             </div>
 
