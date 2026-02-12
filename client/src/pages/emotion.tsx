@@ -51,6 +51,47 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  const normalized = hex.replace('#', '');
+  const fullHex = normalized.length === 3
+    ? normalized.split('').map((ch) => `${ch}${ch}`).join('')
+    : normalized;
+
+  const r = parseInt(fullHex.slice(0, 2), 16) / 255;
+  const g = parseInt(fullHex.slice(2, 4), 16) / 255;
+  const b = parseInt(fullHex.slice(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      default:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+
+  return {
+    h: Math.round(h * 360),
+    s: Math.round(s * 100),
+    l: Math.round(l * 100),
+  };
+}
+
 function getRandomAuthor(id: number | string) {
   const numericId = typeof id === 'string' ? parseInt(id, 10) || 0 : id;
   return MOCK_AUTHORS[numericId % MOCK_AUTHORS.length];
@@ -95,6 +136,10 @@ export default function EmotionPage() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [type]);
+
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -109,6 +154,11 @@ export default function EmotionPage() {
       return;
     }
     setLocation(path);
+  };
+
+  const handleEmotionCategorySelect = (emotionType: EmotionType) => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setLocation(`/emotion/${emotionType}`);
   };
 
   const handleGenerateNewsWithAuth = async () => {
@@ -137,6 +187,29 @@ export default function EmotionPage() {
     if (depth >= 51) return { start: 0.33, end: 0.22, edge: 0.35 };
     if (depth >= 26) return { start: 0.24, end: 0.16, edge: 0.28 };
     return { start: 0.16, end: 0.10, edge: 0.22 };
+  };
+
+  const getCardDepthPalette = (baseHex: string, depth: number) => {
+    const { h, s } = hexToHsl(baseHex);
+
+    if (depth <= 60) {
+      return {
+        background: `linear-gradient(165deg, hsl(${h} ${Math.max(45, s - 12)}% 82%) 0%, hsl(${h} ${Math.max(40, s - 18)}% 78%) 100%)`,
+        border: `hsl(${h} ${Math.max(40, s - 10)}% 66%)`,
+      };
+    }
+
+    if (depth <= 70) {
+      return {
+        background: `linear-gradient(165deg, hsl(${h} ${Math.max(55, s - 4)}% 56%) 0%, hsl(${h} ${Math.max(55, s - 6)}% 48%) 100%)`,
+        border: `hsl(${h} ${Math.max(55, s - 2)}% 40%)`,
+      };
+    }
+
+    return {
+      background: `linear-gradient(165deg, hsl(${h} ${Math.max(60, s)}% 36%) 0%, hsl(${h} ${Math.max(58, s - 2)}% 30%) 100%)`,
+      border: `hsl(${h} ${Math.max(60, s)}% 24%)`,
+    };
   };
 
   const { data: news = [], isLoading, error } = useNews(type);
@@ -364,10 +437,9 @@ export default function EmotionPage() {
                 const depth = Math.max(0, Math.min(100, item.intensity ?? 50));
                 const cardEmotionColor = getEmotionColor(item.emotion);
                 const depthTone = getDepthTone(depth);
-                const cardBgStart = hexToRgba(cardEmotionColor, depthTone.start);
-                const cardBgEnd = hexToRgba(cardEmotionColor, depthTone.end);
-                const cardBgColor = `linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`;
-                const isLightBg = true;
+                const cardPalette = getCardDepthPalette(cardEmotionColor, depth);
+                const cardBgColor = cardPalette.background;
+                const isLightBg = depth <= 60;
                 const textColor = isLightBg ? '#232221' : '#ffffff';
                 const subTextColor = isLightBg ? '#666666' : 'rgba(255,255,255,0.8)';
                 const updatedAtLabel = formatTimeAgo(item.created_at);
@@ -396,8 +468,8 @@ export default function EmotionPage() {
                     data-testid={`card-news-${item.id}`}
                   >
                     <div
-                      className="h-full rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group-focus-visible:ring-2 group-focus-visible:ring-offset-2 group-focus-visible:ring-gray-700 flex flex-col"
-                      style={{ background: cardBgColor }}
+                      className="h-full rounded-2xl overflow-hidden border shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 group-focus-visible:ring-2 group-focus-visible:ring-offset-2 group-focus-visible:ring-gray-700 flex flex-col"
+                      style={{ background: cardBgColor, borderColor: cardPalette.border }}
                     >
                       {/* Header with category and update time */}
                       <div className="p-5 pb-0">
@@ -494,28 +566,28 @@ export default function EmotionPage() {
         >
           <div className="max-w-6xl mx-auto text-center">
             <p className="text-base md:text-lg text-human-sub mb-6 text-center font-medium" data-testid="text-explore-other">감정의 균형을 맞춰보세요</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 justify-items-stretch">
+            <div className="flex flex-wrap md:flex-nowrap justify-center gap-3 md:gap-4">
             {EMOTION_CONFIG.filter(e => e.type !== type).map((emotion) => {
               const EmotionIcon = EMOTION_ICONS[emotion.type];
               return (
-                <Link key={emotion.type} href={`/emotion/${emotion.type}`}>
-                  <button
-                    type="button"
-                    className="w-full rounded-2xl border p-4 md:p-5 min-h-[104px] text-left hover:shadow-lg hover:-translate-y-0.5 transition-all"
-                    style={{
-                      backgroundColor: `${emotion.color}14`,
-                      borderColor: `${emotion.color}44`,
-                      color: emotion.color,
-                    }}
-                    data-testid={`button-emotion-${emotion.type}`}
-                  >
-                    <span className="inline-flex w-9 h-9 rounded-xl items-center justify-center mb-3" style={{ backgroundColor: `${emotion.color}1f` }}>
-                      <EmotionIcon className="w-5 h-5" />
-                    </span>
-                    <p className="text-sm font-semibold leading-tight">{emotion.labelKo}</p>
-                    <p className="text-[11px] opacity-80 mt-1">{emotion.label}</p>
-                  </button>
-                </Link>
+                <button
+                  key={emotion.type}
+                  type="button"
+                  onClick={() => handleEmotionCategorySelect(emotion.type)}
+                  className="w-[118px] h-[118px] rounded-2xl border p-4 flex flex-col justify-between text-left hover:shadow-lg hover:-translate-y-0.5 transition-all"
+                  style={{
+                    backgroundColor: `${emotion.color}14`,
+                    borderColor: `${emotion.color}44`,
+                    color: emotion.color,
+                  }}
+                  data-testid={`button-emotion-${emotion.type}`}
+                >
+                  <span className="inline-flex w-9 h-9 rounded-xl items-center justify-center mb-3" style={{ backgroundColor: `${emotion.color}1f` }}>
+                    <EmotionIcon className="w-5 h-5" />
+                  </span>
+                  <p className="text-sm font-semibold leading-tight">{emotion.labelKo}</p>
+                  <p className="text-[10px] opacity-80 mt-1 leading-tight line-clamp-1">{emotion.label}</p>
+                </button>
               );
             })}
             </div>
@@ -547,10 +619,13 @@ export default function EmotionPage() {
         onSelectArticle={(nextArticle) => {
           const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
           const cardEmotionColor = getEmotionColor(nextArticle.emotion);
-          const depthTone = getDepthTone(depth);
-          const cardBgStart = hexToRgba(cardEmotionColor, depthTone.start);
-          const cardBgEnd = hexToRgba(cardEmotionColor, depthTone.end);
-          setSelectedCardBg(`linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`);
+          const cardPalette = getCardDepthPalette(cardEmotionColor, depth);
+          setSelectedCardBg(cardPalette.background);
+
+          if (nextArticle.emotion !== type) {
+            setLocation(`/emotion/${nextArticle.emotion}`);
+          }
+
           setSelectedArticle(nextArticle);
         }}
         onClose={() => setSelectedArticle(null)}
