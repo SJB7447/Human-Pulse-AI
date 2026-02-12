@@ -506,27 +506,15 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
-                  className="mb-6 rounded-2xl border border-white/70 bg-white/65 p-4 md:p-5"
+                  className="mb-6 pt-2 border-t border-white/60"
                 >
-                  <p className="text-sm md:text-[15px] text-gray-700 mb-3">이 기사 요약은 여기까지예요. 다음 콘텐츠를 이어서 탐색할까요?</p>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="text-gray-700 bg-white/70 border border-white/80 hover:bg-white"
-                      onClick={() => recommendationSectionRef.current?.scrollIntoView({ behavior: shouldReduceMotion ? 'auto' : 'smooth', block: 'start' })}
-                    >
-                      다음 추천 보기
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="text-gray-700 border-gray-300 bg-white/55 hover:bg-white"
-                      onClick={onClose}
-                    >
-                      목록으로 돌아가기
-                    </Button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="text-base md:text-xl font-semibold tracking-tight text-gray-700 hover:text-gray-900 underline underline-offset-4"
+                  >
+                    목록으로 돌아가기
+                  </button>
                 </motion.div>
               )}
 
