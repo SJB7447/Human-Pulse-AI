@@ -95,6 +95,10 @@ export default function EmotionPage() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' });
+  }, [type]);
+
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -109,6 +113,11 @@ export default function EmotionPage() {
       return;
     }
     setLocation(path);
+  };
+
+  const handleEmotionCategorySelect = (emotionType: EmotionType) => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setLocation(`/emotion/${emotionType}`);
   };
 
   const handleGenerateNewsWithAuth = async () => {
@@ -494,28 +503,28 @@ export default function EmotionPage() {
         >
           <div className="max-w-6xl mx-auto text-center">
             <p className="text-base md:text-lg text-human-sub mb-6 text-center font-medium" data-testid="text-explore-other">감정의 균형을 맞춰보세요</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 justify-items-stretch">
+            <div className="flex flex-wrap md:flex-nowrap justify-center gap-3 md:gap-4">
             {EMOTION_CONFIG.filter(e => e.type !== type).map((emotion) => {
               const EmotionIcon = EMOTION_ICONS[emotion.type];
               return (
-                <Link key={emotion.type} href={`/emotion/${emotion.type}`}>
-                  <button
-                    type="button"
-                    className="w-full rounded-2xl border p-4 md:p-5 min-h-[104px] text-left hover:shadow-lg hover:-translate-y-0.5 transition-all"
-                    style={{
-                      backgroundColor: `${emotion.color}14`,
-                      borderColor: `${emotion.color}44`,
-                      color: emotion.color,
-                    }}
-                    data-testid={`button-emotion-${emotion.type}`}
-                  >
-                    <span className="inline-flex w-9 h-9 rounded-xl items-center justify-center mb-3" style={{ backgroundColor: `${emotion.color}1f` }}>
-                      <EmotionIcon className="w-5 h-5" />
-                    </span>
-                    <p className="text-sm font-semibold leading-tight">{emotion.labelKo}</p>
-                    <p className="text-[11px] opacity-80 mt-1">{emotion.label}</p>
-                  </button>
-                </Link>
+                <button
+                  key={emotion.type}
+                  type="button"
+                  onClick={() => handleEmotionCategorySelect(emotion.type)}
+                  className="w-[118px] h-[118px] rounded-2xl border p-4 flex flex-col justify-between text-left hover:shadow-lg hover:-translate-y-0.5 transition-all"
+                  style={{
+                    backgroundColor: `${emotion.color}14`,
+                    borderColor: `${emotion.color}44`,
+                    color: emotion.color,
+                  }}
+                  data-testid={`button-emotion-${emotion.type}`}
+                >
+                  <span className="inline-flex w-9 h-9 rounded-xl items-center justify-center mb-3" style={{ backgroundColor: `${emotion.color}1f` }}>
+                    <EmotionIcon className="w-5 h-5" />
+                  </span>
+                  <p className="text-sm font-semibold leading-tight">{emotion.labelKo}</p>
+                  <p className="text-[10px] opacity-80 mt-1 leading-tight line-clamp-1">{emotion.label}</p>
+                </button>
               );
             })}
             </div>
@@ -551,6 +560,11 @@ export default function EmotionPage() {
           const cardBgStart = hexToRgba(cardEmotionColor, depthTone.start);
           const cardBgEnd = hexToRgba(cardEmotionColor, depthTone.end);
           setSelectedCardBg(`linear-gradient(165deg, ${cardBgStart} 0%, ${cardBgEnd} 100%)`);
+
+          if (nextArticle.emotion !== type) {
+            setLocation(`/emotion/${nextArticle.emotion}`);
+          }
+
           setSelectedArticle(nextArticle);
         }}
         onClose={() => setSelectedArticle(null)}
