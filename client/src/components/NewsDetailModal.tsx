@@ -393,10 +393,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
             <div
               ref={scrollContainerRef}
               onScroll={handleContentScroll}
-              className="flex-1 overflow-y-auto px-4 sm:px-5 md:px-7 pb-32 pt-4 z-10"
+              className="flex-1 overflow-y-auto px-5 sm:px-7 md:px-10 pb-36 pt-8 z-10"
             >
-              <div className="max-w-5xl w-full mx-auto">
-              <div className="flex justify-end mb-2">
+              <div className="max-w-4xl w-full mx-auto">
+              <div className="flex justify-end mb-4">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -408,8 +408,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 </Button>
               </div>
               {article.image && (
-                <div className="mb-5">
-                  <div className="max-w-[800px] w-full mx-auto rounded-2xl overflow-hidden bg-white/60 border border-white/70 aspect-video">
+                <div className="mb-8">
+                  <div className="max-w-3xl w-full rounded-2xl overflow-hidden bg-white/60 border border-white/70 aspect-video">
                     <img
                       src={article.image}
                       alt={article.title}
@@ -432,7 +432,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
                 animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                 transition={{ duration: 0.24, delay: shouldReduceMotion ? 0 : 0.08 }}
-                className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3 leading-tight"
+                className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 leading-tight"
               >
                 {article.title}
               </motion.h2>
@@ -448,7 +448,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                 </span>
               </motion.p>
 
-              <div className="text-gray-900 text-[17px] md:text-[18px] leading-8 font-normal mb-8 min-h-[100px] whitespace-pre-wrap tracking-wide max-w-3xl">
+              <div className="text-gray-900 text-[17px] md:text-[18px] leading-8 font-normal mb-12 min-h-[120px] whitespace-pre-wrap tracking-wide">
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
@@ -506,12 +506,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
-                  className="mb-8 pt-14 pb-12 text-center"
+                  className="mb-10 pt-16 pb-14 text-center"
                 >
                   <button
                     type="button"
                     onClick={onClose}
-                    className="text-lg md:text-2xl font-semibold tracking-tight text-teal-700 hover:text-violet-700 transition-colors"
+                    className="text-lg md:text-2xl font-weight:400 tracking-tight text-teal-700 hover:text-violet-700 transition-colors"
                   >
                     목록으로 돌아가기
                   </button>
@@ -519,7 +519,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               )}
 
               {hasRecommendations && !interactiveArticle && (
-                <div ref={recommendationSectionRef} className="mt-8">
+                <div ref={recommendationSectionRef} className="mt-10">
                   <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                     <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
                     <div className="flex items-center gap-2 flex-wrap">

@@ -503,7 +503,7 @@ export default function EmotionPage() {
         >
           <div className="max-w-6xl mx-auto text-center">
             <p className="text-base md:text-lg text-human-sub mb-6 text-center font-medium" data-testid="text-explore-other">감정의 균형을 맞춰보세요</p>
-            <div className="flex flex-wrap justify-center gap-3 md:gap-4">
+            <div className="flex flex-wrap md:flex-nowrap justify-center gap-3 md:gap-4">
             {EMOTION_CONFIG.filter(e => e.type !== type).map((emotion) => {
               const EmotionIcon = EMOTION_ICONS[emotion.type];
               return (
@@ -511,7 +511,7 @@ export default function EmotionPage() {
                   key={emotion.type}
                   type="button"
                   onClick={() => handleEmotionCategorySelect(emotion.type)}
-                  className="w-full max-w-[220px] rounded-2xl border p-4 md:p-5 min-h-[104px] text-left hover:shadow-lg hover:-translate-y-0.5 transition-all"
+                  className="w-[118px] h-[118px] rounded-2xl border p-4 flex flex-col justify-between text-left hover:shadow-lg hover:-translate-y-0.5 transition-all"
                   style={{
                     backgroundColor: `${emotion.color}14`,
                     borderColor: `${emotion.color}44`,
@@ -523,7 +523,7 @@ export default function EmotionPage() {
                     <EmotionIcon className="w-5 h-5" />
                   </span>
                   <p className="text-sm font-semibold leading-tight">{emotion.labelKo}</p>
-                  <p className="text-[11px] opacity-80 mt-1">{emotion.label}</p>
+                  <p className="text-[10px] opacity-80 mt-1 leading-tight line-clamp-1">{emotion.label}</p>
                 </button>
               );
             })}
