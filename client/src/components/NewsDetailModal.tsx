@@ -41,6 +41,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const [showFooterActions, setShowFooterActions] = useState(false);
   const [bgTransitionProgress, setBgTransitionProgress] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const recommendationSectionRef = useRef<HTMLDivElement | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
   const shouldReduceMotion = useReducedMotion();
 
@@ -518,7 +519,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               )}
 
               {hasRecommendations && !interactiveArticle && (
-                <div className="mt-8">
+                <div ref={recommendationSectionRef} className="mt-8">
                   <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                     <h4 className="text-sm font-semibold text-gray-700">추천 뉴스</h4>
                     <div className="flex items-center gap-2 flex-wrap">
