@@ -506,12 +506,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
-                  className="mb-6 pt-2 border-t border-white/60"
+                  className="mb-8 pt-5 pb-3 border-t border-white/60 text-center"
                 >
                   <button
                     type="button"
                     onClick={onClose}
-                    className="text-base md:text-xl font-semibold tracking-tight text-gray-700 hover:text-gray-900 underline underline-offset-4"
+                    className="text-lg md:text-2xl font-extrabold tracking-tight text-gray-700 hover:text-gray-900 underline underline-offset-4"
                   >
                     목록으로 돌아가기
                   </button>
