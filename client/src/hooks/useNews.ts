@@ -31,11 +31,34 @@ function toNewsItem(item: any): NewsItem {
 
 async function safeFetchJson(url: string): Promise<any[]> {
     try {
-        const response = await fetch(url);
+        let response = await fetch(url, {
+            cache: 'no-cache',
+            headers: { Accept: 'application/json' },
+        });
+
+        // Some CDNs/proxies can respond 304 to conditional GET; retry once with cache-busting.
+        if (response.status === 304) {
+            const separator = url.includes('?') ? '&' : '?';
+            response = await fetch(`${url}${separator}_=${Date.now()}`, {
+                cache: 'no-store',
+                headers: { Accept: 'application/json' },
+            });
+        }
+
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        const bodyText = await response.text();
+
         if (!response.ok) {
             throw new Error(`API ${response.status}: ${url}`);
         }
-        return response.json();
+
+        const looksLikeJson = contentType.includes('application/json') || /^[\s]*[\[{]/.test(bodyText);
+        if (!looksLikeJson) {
+            const preview = bodyText.slice(0, 120).replace(/\s+/g, ' ').trim();
+            throw new Error(`API returned non-JSON for ${url}: ${preview}`);
+        }
+
+        return JSON.parse(bodyText);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const isNetworkFailure =
