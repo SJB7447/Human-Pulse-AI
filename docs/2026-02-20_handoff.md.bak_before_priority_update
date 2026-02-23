@@ -1,0 +1,75 @@
+﻿# 2026-02-20 Handoff
+
+## 1) 오늘 작업 요약
+- 기자 포털 기사 생성 파이프라인을 `contract/tickets` 기준으로 T1~T6까지 1차 구현 완료.
+- 생성 품질 게이트(스키마/유사도/컴플라이언스)와 1회 재생성, 관리자 운영 지표까지 연결.
+- 기자 포털 UI에서 게이트 실패 사유를 코드 기반으로 명확히 안내하도록 개선.
+
+## 2) 반영된 변경 (핵심)
+### A. Prompt/Mode 계약 강화
+- 파일: `server/services/articlePrompt.ts`
+  - 프롬프트 모듈 재구성.
+  - 한글 우선 + JSON only + 모드별 제약(quick/interactive-longform) 반영.
+- 파일: `server/routes.ts`
+  - `normalizeDraftMode` 적용.
+  - 모드별 검증(`validateDraftByMode`) 추가.
+  - 실패 코드: `AI_DRAFT_SCHEMA_INVALID`.
+
+### B. Similarity Gate + Retry
+- 파일: `server/routes.ts`
+  - 제목 exact/overlap, 도입 구조 유사도 휴리스틱 추가.
+  - 유사도 실패 시 1회 재생성 지시 후 재검증.
+  - 최종 차단 코드: `AI_DRAFT_SIMILARITY_BLOCKED`.
+
+### C. Compliance Gate 연동
+- 파일: `server/routes.ts`
+  - 공통 평가기 `assessCompliance` 추가.
+  - 초안 성공 응답에 `compliance` 포함.
+  - 고위험 차단 코드: `AI_DRAFT_COMPLIANCE_BLOCKED` (HTTP 409).
+
+### D. Journalist UI 정렬 (게이트 UX)
+- 파일: `client/src/services/gemini.ts`
+  - `AIServiceError`에 `code/issues/compliance/mode` 보존.
+- 파일: `client/src/pages/journalist.tsx`
+  - 차단 코드별 안내문/라벨/권장 조치 노출.
+  - 이슈 최대 4개 표시.
+  - 컴플라이언스 카드 riskLevel(low/medium/high) 톤 분리.
+  - 초안 성공 시 compliance 자동 반영.
+
+### E. Telemetry + Admin Dashboard
+- 파일: `server/routes.ts`
+  - in-memory draft ops counters 추가:
+    - requests, success, retries, fallbackRecoveries,
+    - parseFailures, schemaBlocks, similarityBlocks, complianceBlocks, modelEmpty
+  - `/api/admin/stats`에 `aiDraftOps` 스냅샷 포함.
+- 파일: `client/src/pages/admin.tsx`
+  - AI 기사 생성 운영 지표 카드 추가.
+  - 모드별(quick/longform) 요청/성공/재시도 노출.
+
+## 3) 테스트/검증 결과
+- `npm run lint` 통과.
+- `npm test` 통과.
+
+## 4) 생성 실패 코드 맵 (기자 포털 공통)
+- `AI_DRAFT_MODEL_EMPTY`: 모델 응답 비어 있음
+- `AI_DRAFT_PARSE_BLOCKED`: JSON 파싱 실패
+- `AI_DRAFT_EMPTY_BLOCKED`: 필수 텍스트 비어 있음
+- `AI_DRAFT_SCHEMA_INVALID`: 모드별 계약 미충족
+- `AI_DRAFT_SIMILARITY_BLOCKED`: 참고 기사 유사도 과다
+- `AI_DRAFT_COMPLIANCE_BLOCKED`: 컴플라이언스 고위험
+
+## 5) 다음 작업 권장 (우선순위)
+1. Telemetry 영속화
+- 현재 `aiDraftOps`는 서버 메모리 기반이라 재시작 시 초기화됨.
+- DB 테이블 또는 로그 파이프라인(일 단위 rollup)으로 전환 권장.
+
+2. Gate 임계치 운영 설정화
+- similarity/schema 임계치를 env 또는 admin 설정값으로 외부화.
+- 운영 환경별 튜닝 가능하도록 분리.
+
+3. E2E 회귀 시나리오 추가
+- quick/longform 각각 success + block 시나리오 자동 테스트 권장.
+
+## 6) 참고 문서
+- `docs/article_generation_contract_v1.md`
+- `docs/article_generation_tickets_v1.md`

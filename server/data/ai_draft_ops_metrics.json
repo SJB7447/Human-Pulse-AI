@@ -1,0 +1,44 @@
+{
+  "promptVersion": "article_generation_contract_v1",
+  "startedAt": "2026-02-23T01:37:41.379Z",
+  "updatedAt": "2026-02-23T01:56:09.983Z",
+  "persistence": {
+    "mode": "file",
+    "hydrated": true
+  },
+  "totals": {
+    "requests": 16,
+    "success": 8,
+    "retries": 0,
+    "fallbackRecoveries": 0,
+    "parseFailures": 0,
+    "schemaBlocks": 8,
+    "similarityBlocks": 0,
+    "complianceBlocks": 0,
+    "modelEmpty": 0
+  },
+  "byMode": {
+    "draft": {
+      "requests": 8,
+      "success": 4,
+      "retries": 0,
+      "fallbackRecoveries": 0,
+      "parseFailures": 0,
+      "schemaBlocks": 4,
+      "similarityBlocks": 0,
+      "complianceBlocks": 0,
+      "modelEmpty": 0
+    },
+    "interactive-longform": {
+      "requests": 8,
+      "success": 4,
+      "retries": 0,
+      "fallbackRecoveries": 0,
+      "parseFailures": 0,
+      "schemaBlocks": 4,
+      "similarityBlocks": 0,
+      "complianceBlocks": 0,
+      "modelEmpty": 0
+    }
+  }
+}

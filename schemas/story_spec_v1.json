@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://human-pulse-ai.local/schemas/story_spec_v1.json",
+  "title": "Interactive Story Spec v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "specVersion",
+    "articleMeta",
+    "storyBlocks",
+    "scrollMap",
+    "highlights",
+    "interactionHints",
+    "qualityMeta"
+  ],
+  "properties": {
+    "specVersion": {
+      "type": "string",
+      "const": "interactive-generation.v1"
+    },
+    "articleMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "topic",
+        "tone",
+        "targetAudience",
+        "platform",
+        "interactionIntensity"
+      ],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "subtitle": { "type": "string" },
+        "topic": { "type": "string", "minLength": 1 },
+        "tone": {
+          "type": "string",
+          "enum": ["neutral", "analytical", "urgent", "empathetic", "investigative"]
+        },
+        "targetAudience": { "type": "string", "minLength": 1 },
+        "platform": {
+          "type": "string",
+          "enum": ["web", "mobile", "immersive"]
+        },
+        "interactionIntensity": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        }
+      }
+    },
+    "storyBlocks": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "intent", "text"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "intent": {
+            "type": "string",
+            "enum": ["intro", "context", "tension", "interpretation", "closure"]
+          },
+          "text": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "scrollMap": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["blockId", "start", "end"],
+        "properties": {
+          "blockId": { "type": "string", "minLength": 1 },
+          "start": { "type": "number", "minimum": 0, "maximum": 100 },
+          "end": { "type": "number", "minimum": 0, "maximum": 100 }
+        }
+      }
+    },
+    "highlights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "blockId", "type", "label", "anchorText", "payload"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "blockId": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "enum": ["issue", "emotion"] },
+          "label": { "type": "string", "minLength": 1 },
+          "anchorText": { "type": "string", "minLength": 1 },
+          "payload": { "type": "object" }
+        }
+      }
+    },
+    "interactionHints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "blockId", "trigger", "action", "target"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "blockId": { "type": "string", "minLength": 1 },
+          "trigger": { "type": "string", "enum": ["scroll", "click", "hover"] },
+          "action": {
+            "type": "string",
+            "enum": ["reveal", "focus", "annotate", "cameraMove3d", "objectPulse3d"]
+          },
+          "target": { "type": "string", "minLength": 1 },
+          "params": { "type": "object" }
+        }
+      }
+    },
+    "qualityMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "intentCoverage",
+        "readabilitySafe",
+        "immersionSafe",
+        "highlightDensity",
+        "validationPassed",
+        "notes"
+      ],
+      "properties": {
+        "intentCoverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["intro", "context", "tension", "interpretation", "closure"],
+          "properties": {
+            "intro": { "type": "boolean" },
+            "context": { "type": "boolean" },
+            "tension": { "type": "boolean" },
+            "interpretation": { "type": "boolean" },
+            "closure": { "type": "boolean" }
+          }
+        },
+        "readabilitySafe": { "type": "boolean" },
+        "immersionSafe": { "type": "boolean" },
+        "highlightDensity": { "type": "number", "minimum": 0 },
+        "validationPassed": { "type": "boolean" },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "version": "emotion_mapping_v3_2026_02_23",
+  "startedAt": "2026-02-23T04:09:38.858Z",
+  "updatedAt": "2026-02-23T09:25:43.787Z",
+  "persistence": {
+    "mode": "file",
+    "hydrated": true
+  },
+  "totals": {
+    "requests": 15,
+    "success": 7,
+    "fallbackRecoveries": 8,
+    "parseFailures": 1,
+    "qualityBlocks": 0,
+    "modelEmpty": 7,
+    "rssFallbacks": 0
+  },
+  "byEmotion": {
+    "vibrance": {
+      "requests": 7,
+      "success": 3,
+      "fallbackRecoveries": 4,
+      "parseFailures": 0,
+      "qualityBlocks": 0,
+      "modelEmpty": 4,
+      "rssFallbacks": 0
+    },
+    "immersion": {
+      "requests": 1,
+      "success": 1,
+      "fallbackRecoveries": 0,
+      "parseFailures": 0,
+      "qualityBlocks": 0,
+      "modelEmpty": 0,
+      "rssFallbacks": 0
+    },
+    "clarity": {
+      "requests": 5,
+      "success": 2,
+      "fallbackRecoveries": 3,
+      "parseFailures": 1,
+      "qualityBlocks": 0,
+      "modelEmpty": 2,
+      "rssFallbacks": 0
+    },
+    "gravity": {
+      "requests": 0,
+      "success": 0,
+      "fallbackRecoveries": 0,
+      "parseFailures": 0,
+      "qualityBlocks": 0,
+      "modelEmpty": 0,
+      "rssFallbacks": 0
+    },
+    "serenity": {
+      "requests": 2,
+      "success": 1,
+      "fallbackRecoveries": 1,
+      "parseFailures": 0,
+      "qualityBlocks": 0,
+      "modelEmpty": 1,
+      "rssFallbacks": 0
+    },
+    "spectrum": {
+      "requests": 0,
+      "success": 0,
+      "fallbackRecoveries": 0,
+      "parseFailures": 0,
+      "qualityBlocks": 0,
+      "modelEmpty": 0,
+      "rssFallbacks": 0
+    }
+  }
+}
