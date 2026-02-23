@@ -2446,15 +2446,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/news", async (req, res) => {
-    const includeHidden = req.query.all === "true";
-    const news = await storage.getAllNews(includeHidden);
-    res.json(news);
+    try {
+      const includeHidden = req.query.all === "true";
+      const news = await storage.getAllNews(includeHidden);
+      res.json(news);
+    } catch (error: any) {
+      console.error("[API] /api/news failed:", error);
+      res.status(200).json([]);
+    }
   });
 
   app.get("/api/news/:emotion", async (req, res) => {
-    const emotion = toEmotion(req.params.emotion);
-    const news = await storage.getNewsByEmotion(emotion);
-    res.json(news);
+    try {
+      const emotion = toEmotion(req.params.emotion);
+      const news = await storage.getNewsByEmotion(emotion);
+      res.json(news);
+    } catch (error: any) {
+      console.error("[API] /api/news/:emotion failed:", error);
+      res.status(200).json([]);
+    }
   });
 
   app.get("/api/community", async (req, res) => {
@@ -3962,9 +3972,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/articles", async (req, res) => {
-    const includeHidden = req.query.all === "true";
-    const news = await storage.getAllNews(includeHidden);
-    res.json(news);
+    try {
+      const includeHidden = req.query.all === "true";
+      const news = await storage.getAllNews(includeHidden);
+      res.json(news);
+    } catch (error: any) {
+      console.error("[API] /api/articles failed:", error);
+      res.status(200).json([]);
+    }
   });
 
   app.post("/api/interact/view/:id", async (req, res) => {
