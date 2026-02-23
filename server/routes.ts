@@ -4,16 +4,16 @@ import { randomUUID } from "crypto";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { storage } from "./storage";
-import { runAutoNewsUpdate } from "./services/newsCron";
-import { emotionTypes, type EmotionType } from "../shared/schema";
-import { buildDraftGenerationPrompt, normalizeDraftMode, type DraftMode } from "./services/articlePrompt";
+import { storage } from "./storage.js";
+import { runAutoNewsUpdate } from "./services/newsCron.js";
+import { emotionTypes, type EmotionType } from "../shared/schema.js";
+import { buildDraftGenerationPrompt, normalizeDraftMode, type DraftMode } from "./services/articlePrompt.js";
 import {
   type InteractiveArticle,
   type InteractiveGenerationInput,
   type StoryBlockIntent,
   validateInteractiveArticle,
-} from "../shared/interactiveArticle";
+} from "../shared/interactiveArticle.js";
 
 function getEmotionColor(emotion: EmotionType): string {
   const colors: Record<EmotionType, string> = {

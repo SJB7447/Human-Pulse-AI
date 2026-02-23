@@ -1,7 +1,7 @@
 ﻿import Parser from 'rss-parser';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { supabase } from "../supabase";
-import { EmotionType } from "../../shared/schema";
+import { supabase } from "../supabase.js";
+import { EmotionType } from "../../shared/schema.js";
 
 const parser = new Parser({
     customFields: {

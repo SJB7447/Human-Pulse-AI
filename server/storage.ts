@@ -1,5 +1,5 @@
 
-import { type User, type InsertUser, type NewsItem, type InsertNewsItem, type EmotionType, type Report, type ArticleReview, type InsertUserConsent, type UserConsent, type AdminActionLog } from "../shared/schema";
+import { type User, type InsertUser, type NewsItem, type InsertNewsItem, type EmotionType, type Report, type ArticleReview, type InsertUserConsent, type UserConsent, type AdminActionLog } from "../shared/schema.js";
 import { randomUUID } from "crypto";
 
 const isUuidLike = (value: unknown): value is string =>
@@ -471,7 +471,7 @@ export class MemStorage implements IStorage {
   }
 }
 
-import { supabase } from "./supabase";
+import { supabase } from "./supabase.js";
 
 export class SupabaseStorage implements IStorage {
   private fallbackNews: Map<string, NewsItem> = new Map();

@@ -1,6 +1,7 @@
 import { createServer } from "http";
 import express from "express";
-import { registerRoutes } from "../server/routes";
+import type { Server } from "http";
+import type { Express } from "express";
 
 const app = express();
 const httpServer = createServer(app);
@@ -13,6 +14,30 @@ app.use(express.urlencoded({ extended: false }));
 // We need to await this, but Vercel handler is sync/async.
 // We can wrap it.
 let routesRegistered = false;
+let registerRoutesFn: ((httpServer: Server, app: Express) => Promise<Server>) | null = null;
+
+async function loadRegisterRoutes(): Promise<(httpServer: Server, app: Express) => Promise<Server>> {
+    if (registerRoutesFn) return registerRoutesFn;
+
+    const candidates = ["../server/routes.js", "../server/routes.ts", "../server/routes"];
+    const errors: string[] = [];
+
+    for (const specifier of candidates) {
+        try {
+            const mod: any = await import(specifier);
+            if (typeof mod?.registerRoutes === "function") {
+                const loaded = mod.registerRoutes as (httpServer: Server, app: Express) => Promise<Server>;
+                registerRoutesFn = loaded;
+                return loaded;
+            }
+            errors.push(`${specifier}: registerRoutes export not found`);
+        } catch (error: any) {
+            errors.push(`${specifier}: ${String(error?.message || error)}`);
+        }
+    }
+
+    throw new Error(`Failed to load registerRoutes. ${errors.join(" | ")}`);
+}
 
 export default async function handler(req: any, res: any) {
     console.log(`API Request: ${req.method} ${req.url}`);
@@ -24,6 +49,7 @@ export default async function handler(req: any, res: any) {
 
     if (!routesRegistered) {
         try {
+            const registerRoutes = await loadRegisterRoutes();
             await registerRoutes(httpServer, app);
             routesRegistered = true;
             console.log("Routes registered successfully");
