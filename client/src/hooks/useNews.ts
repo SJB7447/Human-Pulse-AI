@@ -15,13 +15,14 @@ export interface NewsItem {
 }
 
 function toNewsItem(item: any): NewsItem {
+    const resolvedImage = item.image || item.image_url || item.thumbnail_url || null;
     return {
         id: String(item.id),
         title: item.title,
         summary: item.summary,
         content: item.content,
         source: item.source || 'Unknown Source',
-        image: item.image || null,
+        image: resolvedImage,
         category: item.category || null,
         emotion: item.emotion as EmotionType,
         intensity: item.intensity || 50,

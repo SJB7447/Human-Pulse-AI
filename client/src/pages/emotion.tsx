@@ -4,6 +4,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, Search } from 'lucide-react';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { NewsDetailModal } from '@/components/NewsDetailModal';
 import { useNews, type NewsItem } from '@/hooks/useNews';
 import { useToast } from '@/hooks/use-toast';
@@ -38,6 +39,33 @@ function formatTimeAgo(date: Date | string | null | undefined): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}d ago`;
+}
+
+function buildCardExcerpt(text: string, maxChars: number): string {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '...';
+
+  const withoutEllipsis = normalized.replace(/(\.{3}|…)+$/, '').trim();
+  if (!withoutEllipsis) return '...';
+
+  if (withoutEllipsis.length <= maxChars) {
+    return `${withoutEllipsis}...`;
+  }
+
+  const sliced = withoutEllipsis.slice(0, maxChars);
+  const boundary = Math.max(
+    sliced.lastIndexOf(' '),
+    sliced.lastIndexOf('.'),
+    sliced.lastIndexOf('!'),
+    sliced.lastIndexOf('?'),
+    sliced.lastIndexOf('。'),
+    sliced.lastIndexOf('！'),
+    sliced.lastIndexOf('？'),
+  );
+
+  const cutoff = boundary >= Math.floor(maxChars * 0.6) ? boundary : maxChars;
+  const preview = sliced.slice(0, cutoff).trim();
+  return `${preview || sliced.trim()}...`;
 }
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -177,13 +205,6 @@ export default function EmotionPage() {
   const getEmotionColor = (emotionType?: EmotionType | null) => {
     const config = EMOTION_CONFIG.find((entry) => entry.type === emotionType);
     return config?.color || emotionConfig?.color || '#999898';
-  };
-
-  const getDepthTone = (depth: number) => {
-    if (depth >= 76) return { start: 0.42, end: 0.30, edge: 0.42 };
-    if (depth >= 51) return { start: 0.33, end: 0.22, edge: 0.35 };
-    if (depth >= 26) return { start: 0.24, end: 0.16, edge: 0.28 };
-    return { start: 0.16, end: 0.10, edge: 0.22 };
   };
 
   const getCardDepthPalette = (_baseHex: string, depth: number, emotionType?: EmotionType | null) => {
@@ -625,11 +646,10 @@ export default function EmotionPage() {
               </div>
             ) : (
             <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-7 lg:gap-8 pb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 justify-items-center gap-6 sm:gap-7 lg:gap-8 pb-8">
               {visibleNews.map((item, index) => {
                 const depth = Math.max(0, Math.min(100, item.intensity ?? 50));
                 const cardEmotionColor = getEmotionColor(item.emotion);
-                const depthTone = getDepthTone(depth);
                 const cardPalette = getCardDepthPalette(cardEmotionColor, depth, item.emotion);
                 const cardBgColor = cardPalette.background;
                 const isLowDepthBg = depth <= 50;
@@ -641,6 +661,8 @@ export default function EmotionPage() {
                   : (isLightBg ? '#787674' : 'rgba(255,255,255,0.84)');
                 const updatedAtLabel = formatTimeAgo(item.created_at);
                 const detailCategory = item.category || EMOTION_CONFIG.find((e) => e.type === item.emotion)?.labelKo || emotionConfig.labelKo;
+                const cardImage = String(item.image || '').trim();
+                const hasCardImage = cardImage.length > 0;
                 const plainContent = String(item.content || '')
                   .replace(/<!-- HUEBRIEF_META_START -->[\s\S]*?<!-- HUEBRIEF_META_END -->\s*/g, '')
                   .replace(/\s+/g, ' ')
@@ -660,6 +682,7 @@ export default function EmotionPage() {
                   }
                 }
                 const cardBodyText = [summaryPlain, continuationFlow].filter(Boolean).join(' ');
+                const cardBodyPreview = buildCardExcerpt(cardBodyText, hasCardImage ? 118 : 208);
 
                 return (
                   <motion.article
@@ -680,75 +703,85 @@ export default function EmotionPage() {
                     tabIndex={0}
                     role="button"
                     aria-label={`${item.title} 상세 보기`}
-                    className="w-full group cursor-pointer min-w-0 h-full"
+                    className="group cursor-pointer h-[540px] w-full max-w-[342px]"
                     data-testid={`card-news-${item.id}`}
                   >
                     <div
-                      className="h-[520px] sm:h-[540px] rounded-3xl overflow-hidden shadow-[0_3px_12px_rgba(35,34,33,0.1)] hover:shadow-[0_6px_16px_rgba(35,34,33,0.12)] transition-all duration-300 group-focus-visible:ring-2 group-focus-visible:ring-offset-2 group-focus-visible:ring-gray-700 flex flex-col"
+                      className="relative h-[540px] w-full rounded-3xl overflow-hidden shadow-[0_3px_12px_rgba(35,34,33,0.1)] hover:shadow-[0_6px_16px_rgba(35,34,33,0.12)] transition-all duration-300 group-focus-visible:ring-2 group-focus-visible:ring-offset-2 group-focus-visible:ring-gray-700"
                       style={{ background: cardBgColor }}
                     >
-                      {/* Header with category and update time */}
-                      <div className="p-4 sm:p-5 pb-0">
-                        <div className="flex items-start justify-between gap-2 mb-4">
-                          <span
-                            className="text-xs font-semibold px-3 py-1 rounded-full max-w-[65%] truncate"
-                            style={{
-                              backgroundColor: isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)',
-                              color: textColor,
-                            }}
-                          >
+                      {hasCardImage && (
+                        <div className="absolute inset-x-0 top-[340px] bottom-0 z-0">
+                          <img
+                            src={cardImage}
+                            alt={item.title}
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-black/10 to-transparent" />
+                        </div>
+                      )}
+
+                      <div className="absolute left-5 right-5 top-5 z-10 flex items-start justify-between gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span
+                              className="text-xs font-semibold px-3 py-1 rounded-full max-w-[64%] truncate"
+                              style={{
+                                backgroundColor: isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)',
+                                color: textColor,
+                              }}
+                            >
+                              {detailCategory}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent className="border-transparent text-white bg-gray-900">
                             {detailCategory}
-                          </span>
-                          <span className="text-[11px] sm:text-xs shrink-0 pt-1" style={{ color: subTextColor }}>
-                            업데이트 {updatedAtLabel}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 mb-3 sm:mb-4">
-                          <span
-                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{
-                              backgroundColor: hexToRgba(cardEmotionColor, depthTone.edge),
-                              color: textColor,
-                            }}
-                          >
-                            감정 깊이 {depth}
-                          </span>
-                        </div>
-
-                        {/* Title */}
-                        <h3
-                          className="font-serif text-xl sm:text-2xl font-bold leading-tight mb-3 sm:mb-4 line-clamp-3"
-                          style={{ color: titleTextColor }}
-                          data-testid={`text-title-${item.id}`}
-                        >
-                          {item.title}
-                        </h3>
-
-                        <p
-                          className="text-sm leading-7 mb-4 sm:mb-5 h-[15.5rem] sm:h-[16rem]"
-                          style={{
-                            color: subTextColor,
-                            display: '-webkit-box',
-                            WebkitBoxOrient: 'vertical',
-                            WebkitLineClamp: 8,
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {cardBodyText}
-                        </p>
+                          </TooltipContent>
+                        </Tooltip>
+                        <span className="text-[11px] shrink-0 pt-1" style={{ color: subTextColor }}>
+                          업로드 {updatedAtLabel}
+                        </span>
                       </div>
-                      <div className="flex-1" />
-                      {/* Audio/Read indicator */}
-                      <div className="px-4 sm:px-5 pb-5 sm:pb-6">
-                        <div
-                          className="w-10 h-10 rounded-full flex items-center justify-center ml-auto"
+
+                      <div className="absolute left-5 right-5 top-[66px] z-10">
+                        <span
+                          className="text-xs font-semibold px-2.5 py-1 rounded-full"
                           style={{
-                            backgroundColor: isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)',
+                            backgroundColor: hexToRgba(cardEmotionColor, 0.22),
+                            color: textColor,
                           }}
                         >
-                          <ArrowRight className="w-5 h-5" style={{ color: textColor }} />
-                        </div>
+                          감정 깊이 {depth}
+                        </span>
+                      </div>
+
+                      <h3
+                        className="absolute left-5 right-5 top-[104px] z-10 h-[64px] font-serif text-2xl font-bold leading-[1.35] line-clamp-2"
+                        style={{ color: titleTextColor }}
+                        data-testid={`text-title-${item.id}`}
+                      >
+                        {item.title}
+                      </h3>
+
+                      <p
+                        className={`absolute left-5 right-5 top-[184px] z-10 overflow-hidden break-words text-sm ${hasCardImage ? 'h-[116px] leading-6' : 'h-[270px] leading-7'}`}
+                        style={{
+                          color: subTextColor,
+                        }}
+                      >
+                        {cardBodyPreview}
+                      </p>
+
+                      <div
+                        className="absolute right-5 top-[476px] z-20 h-10 w-10 rounded-full flex items-center justify-center"
+                        style={{
+                          backgroundColor: hasCardImage
+                            ? 'rgba(255,255,255,0.88)'
+                            : (isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)'),
+                        }}
+                      >
+                        <ArrowRight className="w-5 h-5" style={{ color: hasCardImage ? '#1f2937' : textColor }} />
                       </div>
                     </div>
                   </motion.article>

@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
-import { DBService } from '@/services/DBService';
+import { DBService, type ApiHealthPayload } from '@/services/DBService';
 import { useEmotionStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
@@ -380,6 +380,7 @@ export default function AdminPage() {
   });
   const [opsAlerts, setOpsAlerts] = useState<OpsAlert[]>([]);
   const [opsAlertSummary, setOpsAlertSummary] = useState<OpsAlertSummary | null>(null);
+  const [apiHealth, setApiHealth] = useState<ApiHealthPayload | null>(null);
   const [triggeringAlertTest, setTriggeringAlertTest] = useState(false);
   const [aiNewsTimeoutMs, setAiNewsTimeoutMs] = useState<number>(24000);
   const [savingAiNewsSettings, setSavingAiNewsSettings] = useState(false);
@@ -410,7 +411,10 @@ export default function AdminPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [articlesData, statsData, reviewsData, reportsData, exportHistoryData, exportScheduleData, opsAlertsData, opsAlertSummaryData] = await Promise.all([
+      const baseHealth = await DBService.getApiHealth().catch(() => null);
+      setApiHealth((baseHealth || null) as ApiHealthPayload | null);
+
+      const settled = await Promise.allSettled([
         DBService.getAdminDashboardData(),
         DBService.getAdminStats(),
         DBService.getAdminReviews(),
@@ -420,6 +424,42 @@ export default function AdminPage() {
         DBService.getAdminAlerts(8),
         DBService.getAdminAlertSummary(),
       ]);
+      const [
+        articlesResult,
+        statsResult,
+        reviewsResult,
+        reportsResult,
+        exportHistoryResult,
+        exportScheduleResult,
+        opsAlertsResult,
+        opsAlertSummaryResult,
+      ] = settled;
+
+      const rejected = settled.filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected');
+      const authRejection = rejected.find((entry) => {
+        const status = (entry.reason as any)?.status;
+        return status === 401 || status === 403;
+      });
+
+      if (authRejection) {
+        toast({
+          title: '로그인이 필요합니다',
+          description: '관리자 화면 접근을 위해 로그인해 주세요.',
+          variant: 'destructive',
+        });
+        setLocation(`/login?redirect=${encodeURIComponent('/admin')}`);
+        return;
+      }
+
+      const articlesData = articlesResult.status === 'fulfilled' ? articlesResult.value : [];
+      const statsData = statsResult.status === 'fulfilled' ? statsResult.value : null;
+      const reviewsData = reviewsResult.status === 'fulfilled' ? reviewsResult.value : [];
+      const reportsData = reportsResult.status === 'fulfilled' ? reportsResult.value : [];
+      const exportHistoryData = exportHistoryResult.status === 'fulfilled' ? exportHistoryResult.value : [];
+      const exportScheduleData = exportScheduleResult.status === 'fulfilled' ? exportScheduleResult.value : exportSchedule;
+      const opsAlertsData = opsAlertsResult.status === 'fulfilled' ? opsAlertsResult.value : [];
+      const opsAlertSummaryData = opsAlertSummaryResult.status === 'fulfilled' ? opsAlertSummaryResult.value : null;
+
       setArticles(((articlesData || []) as any[]).map(normalizeAdminArticle));
       setStats((statsData || null) as AdminStatsPayload | null);
       setReviewMap(buildReviewMap((reviewsData || []) as AdminReviewPayload[]));
@@ -430,17 +470,23 @@ export default function AdminPage() {
       setOpsAlertSummary((opsAlertSummaryData || null) as OpsAlertSummary | null);
       const timeoutFromStats = Number((statsData as AdminStatsPayload | null)?.aiNewsSettings?.values?.modelTimeoutMs ?? 24000);
       setAiNewsTimeoutMs(Number.isFinite(timeoutFromStats) ? timeoutFromStats : 24000);
-    } catch (error: any) {
-      const status = error?.status;
-      if (status === 401 || status === 403) {
-        toast({
-          title: '로그인이 필요합니다',
-          description: '관리자 화면 접근을 위해 로그인해 주세요.',
-          variant: 'destructive',
-        });
-        setLocation(`/login?redirect=${encodeURIComponent('/admin')}`);
-        return;
+
+      if (rejected.length > 0) {
+        const healthAfterFailure = await DBService.getApiHealth().catch(() => null);
+        setApiHealth((healthAfterFailure || baseHealth || null) as ApiHealthPayload | null);
+        if ((healthAfterFailure as ApiHealthPayload | null)?.mode === 'fallback') {
+          toast({
+            title: 'Fallback 모드 감지',
+            description: '일부 관리자 API가 제한되어 기본 데이터만 표시됩니다. 상단 API 상태를 확인해 주세요.',
+          });
+        } else {
+          toast({
+            title: '일부 데이터 로딩 실패',
+            description: '일부 운영 패널이 비어 있을 수 있습니다. 새로고침 후 다시 확인해 주세요.',
+          });
+        }
       }
+    } catch (error: any) {
       toast({
         title: '오류',
         description: error?.message || '관리자 데이터를 불러오지 못했습니다.',
@@ -1259,6 +1305,18 @@ export default function AdminPage() {
     });
   }, [newsOpsByEmotion]);
   const maxAiEmotionRequests = Math.max(1, ...aiEmotionChartRows.map((row) => row.requests));
+  const apiMode = (apiHealth?.mode || 'lightweight') as 'full' | 'fallback' | 'lightweight';
+  const apiModeLabel = apiMode === 'full' ? 'FULL' : apiMode === 'fallback' ? 'FALLBACK' : 'LIGHTWEIGHT';
+  const apiModeTone: 'gray' | 'emerald' | 'amber' = apiMode === 'full' ? 'emerald' : apiMode === 'fallback' ? 'amber' : 'gray';
+  const apiModeBadgeClass =
+    apiMode === 'full'
+      ? 'bg-emerald-50 text-emerald-700'
+      : apiMode === 'fallback'
+        ? 'bg-amber-50 text-amber-700'
+        : 'bg-gray-100 text-gray-700';
+  const apiHealthCheckedAt = apiHealth?.timestamp ? new Date(apiHealth.timestamp).toLocaleTimeString() : '상태 미확인';
+  const apiBootstrapError = String(apiHealth?.routeBootstrapError || '').trim();
+  const apiBootstrapErrorPreview = apiBootstrapError ? apiBootstrapError.slice(0, 220) : '';
 
   if (loading) {
     return (
@@ -1344,6 +1402,15 @@ export default function AdminPage() {
           <p className="text-gray-500 mt-2">
             {showOpsTab ? '운영 체계와 통계 지표를 관리합니다.' : '기사 상태, 분류, 검수, 이슈를 관리합니다.'}
           </p>
+          <div className={`mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${apiModeBadgeClass}`}>
+            <span>API {apiModeLabel}</span>
+            <span className="text-[11px] font-medium opacity-80">{apiHealthCheckedAt}</span>
+          </div>
+          {apiBootstrapErrorPreview ? (
+            <p className="mt-2 max-w-[520px] text-[11px] text-amber-700 break-words">
+              bootstrap: {apiBootstrapErrorPreview}
+            </p>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-3 gap-2 w-full md:w-auto">
@@ -1449,11 +1516,12 @@ export default function AdminPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
             <QuickInfo label="검수 완료" value={`${topStats.reviewCompletedCount ?? summary.reviewedCount}건`} tone="emerald" />
             <QuickInfo label="검수 대기" value={`${topStats.reviewPendingCount ?? summary.reviewPendingCount}건`} tone="gray" />
             <QuickInfo label="전체 조회수" value={`${topStats.totalViews ?? summary.totalViews}`} tone="gray" />
             <QuickInfo label="전체 저장수" value={`${topStats.totalSaves ?? summary.totalSaves}`} tone="gray" />
+            <QuickInfo label="API 모드" value={apiModeLabel} tone={apiModeTone} />
           </div>
 
           <div ref={opsChartRef} className="grid grid-cols-1 xl:grid-cols-2 gap-4">

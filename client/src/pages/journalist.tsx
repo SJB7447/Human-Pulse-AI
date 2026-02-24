@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'wouter';
 import { Header } from '@/components/Header';
@@ -38,6 +38,8 @@ import { GlassButton } from '@/components/ui/glass-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EMOTION_CONFIG } from '@/lib/store';
 import { GeminiService, AIServiceError, type KeywordNewsArticle } from '@/services/gemini';
 import { getSupabase } from '@/services/supabaseClient';
@@ -180,6 +182,34 @@ const ensureGeneratedTitleDiffers = (title: string, fallbackSeed: string, index:
   return trimmed;
 };
 
+const extractCategoryTokens = (value: unknown): string[] => {
+  const text = String(value || '').trim();
+  if (!text) return [];
+  const tokens = text
+    .split(/[,\s]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  return Array.from(new Set(tokens));
+};
+
+const getEmotionVisual = (emotionRaw: unknown): { key: string; label: string; color: string } => {
+  const key = String(emotionRaw || '').trim().toLowerCase();
+  const config = EMOTION_CONFIG.find((row) => row.type === key);
+  if (config) {
+    return {
+      key,
+      label: config.labelKo || key.toUpperCase(),
+      color: config.color || '#64748b',
+    };
+  }
+
+  return {
+    key: key || 'spectrum',
+    label: key ? key.toUpperCase() : 'SPECTRUM',
+    color: '#64748b',
+  };
+};
+
 type WizardSnapshot = {
   searchKeyword: string;
   searchResults: { topics: string[]; context: string } | null;
@@ -255,6 +285,10 @@ export default function JournalistPage() {
   const [view, setView] = useState<'write' | 'list'>('write');
   const [myArticles, setMyArticles] = useState<any[]>([]);
   const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
+  const [previewArticle, setPreviewArticle] = useState<any | null>(null);
+  const [articleSearchQuery, setArticleSearchQuery] = useState('');
+  const [articleCategoryFilter, setArticleCategoryFilter] = useState('all');
+  const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(new Set());
 
   const [searchKeyword, setSearchKeyword] = useState('');
   const [articleOutline, setArticleOutline] = useState('');
@@ -971,13 +1005,71 @@ export default function JournalistPage() {
     toast({ title: '발행 감정 모드를 자동으로 변경했습니다' });
   };
 
+  const updateJournalistViewHistory = (
+    nextView: 'write' | 'list',
+    options?: { replace?: boolean; editId?: string | null },
+  ) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('view', nextView);
+    if (nextView === 'write' && options?.editId) {
+      url.searchParams.set('edit', options.editId);
+    } else {
+      url.searchParams.delete('edit');
+    }
+
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    if (options?.replace) {
+      window.history.replaceState(window.history.state, '', nextUrl);
+      return;
+    }
+    window.history.pushState(window.history.state, '', nextUrl);
+  };
+
+  const applyViewFromUrl = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const nextView = params.get('view') === 'list' ? 'list' : 'write';
+    setView(nextView);
+    if (nextView === 'list') {
+      setEditingArticleId(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    applyViewFromUrl();
+    const handlePopState = () => {
+      applyViewFromUrl();
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [applyViewFromUrl]);
+
   // --- Start of My Articles Handlers ---
   const fetchMyArticles = useCallback(async () => {
     setIsLoadingArticles(true);
     try {
       const user = await DBService.getCurrentUser();
       if (user) {
-        const articles = await DBService.getMyArticles(user.id);
+        const profile = (user as any)?.profile || {};
+        const metadata = (user as any)?.user_metadata || {};
+        const email = String((user as any)?.email || profile?.email || '').trim();
+        const emailLocal = email.includes('@') ? email.split('@')[0] : '';
+        const authorNames = [
+          profile?.username,
+          metadata?.name,
+          (user as any)?.name,
+          emailLocal,
+          email,
+        ]
+          .map((value) => String(value || '').trim())
+          .filter(Boolean);
+
+        const articles = await DBService.getMyArticles(String((user as any)?.id || ''), {
+          authorNames,
+          authorEmails: [email],
+        });
         setMyArticles(articles);
       }
     } catch (error) {
@@ -992,6 +1084,114 @@ export default function JournalistPage() {
       fetchMyArticles();
     }
   }, [view, fetchMyArticles]);
+
+  useEffect(() => {
+    setSelectedArticleIds((prev) => {
+      if (prev.size === 0) return prev;
+      const validIds = new Set(myArticles.map((article) => String(article.id)));
+      const next = new Set(Array.from(prev).filter((id) => validIds.has(String(id))));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [myArticles]);
+
+  const articleCategoryOptions = useMemo(
+    () =>
+      EMOTION_CONFIG
+        .filter((emotion) => emotion.type !== 'spectrum')
+        .map((emotion) => ({
+          value: emotion.type,
+          label: emotion.labelKo || emotion.type.toUpperCase(),
+        })),
+    [],
+  );
+
+  const filteredMyArticles = useMemo(() => {
+    const query = articleSearchQuery.trim().toLowerCase();
+    return myArticles.filter((article) => {
+      if (articleCategoryFilter !== 'all') {
+        const emotion = String(article?.emotion || '').trim().toLowerCase();
+        if (emotion !== articleCategoryFilter) {
+          return false;
+        }
+      }
+
+      if (!query) return true;
+      const haystack = [
+        article?.title,
+        article?.summary,
+        article?.content,
+        article?.source,
+        article?.category,
+        article?.emotion,
+      ]
+        .map((value) => String(value || '').toLowerCase())
+        .join(' ');
+      return haystack.includes(query);
+    });
+  }, [myArticles, articleCategoryFilter, articleSearchQuery]);
+
+  const selectedFilteredCount = useMemo(
+    () => filteredMyArticles.filter((article) => selectedArticleIds.has(String(article.id))).length,
+    [filteredMyArticles, selectedArticleIds],
+  );
+
+  const allFilteredSelected = filteredMyArticles.length > 0 && selectedFilteredCount === filteredMyArticles.length;
+
+  const toggleSelectArticle = (articleId: string) => {
+    setSelectedArticleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(articleId)) next.delete(articleId);
+      else next.add(articleId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFiltered = () => {
+    setSelectedArticleIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredMyArticles.forEach((article) => next.delete(String(article.id)));
+      } else {
+        filteredMyArticles.forEach((article) => next.add(String(article.id)));
+      }
+      return next;
+    });
+  };
+
+  const handleBulkDeleteSelected = async () => {
+    const targetIds = filteredMyArticles
+      .map((article) => String(article.id))
+      .filter((id) => selectedArticleIds.has(id));
+
+    if (targetIds.length === 0) {
+      toast({ title: '선택된 기사가 없습니다.', variant: 'destructive' });
+      return;
+    }
+
+    if (!confirm(`선택한 기사 ${targetIds.length}건을 삭제하시겠습니까?`)) return;
+
+    const results = await Promise.allSettled(targetIds.map((id) => DBService.deleteArticle(id)));
+    const successCount = results.filter((row) => row.status === 'fulfilled').length;
+    const failedCount = results.length - successCount;
+
+    if (successCount > 0) {
+      toast({ title: '일괄 삭제 완료', description: `${successCount}건 삭제했습니다.` });
+    }
+    if (failedCount > 0) {
+      toast({
+        title: '일부 삭제 실패',
+        description: `${failedCount}건 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.`,
+        variant: 'destructive',
+      });
+    }
+
+    setSelectedArticleIds((prev) => {
+      const next = new Set(prev);
+      targetIds.forEach((id) => next.delete(id));
+      return next;
+    });
+    await fetchMyArticles();
+  };
 
   const handleDeleteArticle = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1009,6 +1209,7 @@ export default function JournalistPage() {
     setPendingWizardSnapshot(null);
     setShowRestoreDraftBanner(false);
     setEditingArticleId(article.id);
+    setPreviewArticle(null);
     setSearchKeyword(article.title);
     setArticleOutline('');
     const parsed = parseArticleMeta(article.content || '');
@@ -1020,7 +1221,9 @@ export default function JournalistPage() {
     if (article.category) {
       setGeneratedHashtags(article.category.split(' '));
     }
+    setActiveComposeStage('author');
     setView('write');
+    updateJournalistViewHistory('write', { editId: String(article.id || '') });
   };
 
   const handleClearForm = () => {
@@ -1947,7 +2150,8 @@ export default function JournalistPage() {
             <button
               onClick={() => {
                 handleClearForm();
-                setView('write')
+                setView('write');
+                updateJournalistViewHistory('write');
               }}
               className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'write' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'}`}
             >
@@ -1955,7 +2159,11 @@ export default function JournalistPage() {
               기사 작성
             </button>
             <button
-              onClick={() => setView('list')}
+              onClick={() => {
+                setView('list');
+                setEditingArticleId(null);
+                updateJournalistViewHistory('list');
+              }}
               className={`flex items-center px-4 py-2 rounded-md text-sm font-medium transition-colors ${view === 'list' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-50'}`}
             >
               <List className="w-4 h-4 mr-2" />
@@ -3422,39 +3630,134 @@ export default function JournalistPage() {
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-              <h2 className="text-lg font-semibold text-gray-800">내 기사 목록</h2>
-              <button onClick={fetchMyArticles} className="text-gray-500 hover:text-blue-600">
-                <RefreshCcw className={`w-4 h-4 ${isLoadingArticles ? 'animate-spin' : ''}`} />
-              </button>
+            <div className="p-6 border-b border-gray-100 space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-800">내 기사 목록</h2>
+                <button onClick={fetchMyArticles} className="text-gray-500 hover:text-blue-600" aria-label="기사 목록 새로고침">
+                  <RefreshCcw className={`w-4 h-4 ${isLoadingArticles ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)_auto] gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-600">카테고리별 보기</span>
+                  <select
+                    value={articleCategoryFilter}
+                    onChange={(e) => setArticleCategoryFilter(e.target.value)}
+                    className="h-10 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  >
+                    <option value="all">전체 감정</option>
+                    {articleCategoryOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-gray-600">검색</span>
+                  <Input
+                    value={articleSearchQuery}
+                    onChange={(e) => setArticleSearchQuery(e.target.value)}
+                    placeholder="제목, 요약, 본문, 출처 검색"
+                    className="h-10"
+                  />
+                </label>
+                <div className="flex flex-col justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant={allFilteredSelected ? 'secondary' : 'outline'}
+                    size="sm"
+                    onClick={toggleSelectAllFiltered}
+                    disabled={filteredMyArticles.length === 0}
+                  >
+                    {allFilteredSelected ? '전체 선택 해제' : '전체 선택'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleBulkDeleteSelected}
+                    disabled={selectedFilteredCount === 0}
+                  >
+                    선택 일괄 삭제
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1">
+                  필터 결과 {filteredMyArticles.length}건
+                </span>
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-blue-700">
+                  선택 {selectedFilteredCount}건
+                </span>
+              </div>
             </div>
             {isLoadingArticles ? (
               <div className="p-12 text-center text-gray-500 flex flex-col items-center">
                 <Loader2 className="w-8 h-8 animate-spin mb-4 text-blue-500" />
                 <p>기사 목록을 불러오는 중...</p>
               </div>
-            ) : myArticles.length === 0 ? (
+            ) : filteredMyArticles.length === 0 ? (
               <div className="p-12 text-center text-gray-500">
-                <p>작성한 기사가 없습니다.</p>
+                <p>조건에 맞는 기사가 없습니다.</p>
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
-                {myArticles.map(article => (
+                {filteredMyArticles.map((article) => {
+                  const articleId = String(article.id || '');
+                  const createdAt = article.created_at || article.createdAt;
+                  const emotionVisual = getEmotionVisual(article.emotion);
+                  const categoryTokens = extractCategoryTokens(article.category);
+                  return (
                   <div key={article.id} className="p-6 flex flex-col md:flex-row items-start justify-between hover:bg-gray-50 transition-colors group">
-                    <div className="flex-1">
+                    <div className="flex w-full gap-3">
+                      <label className="mt-1 inline-flex h-5 w-5 items-center justify-center">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          checked={selectedArticleIds.has(articleId)}
+                          onChange={() => toggleSelectArticle(articleId)}
+                          aria-label={`${article.title} 선택`}
+                        />
+                      </label>
+                      <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${article.is_published !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                           {article.is_published !== false ? '발행됨' : '숨김'}
                         </span>
-                        <span className="text-xs text-gray-400">{new Date(article.created_at).toLocaleDateString()}</span>
+                        <span className="text-xs text-gray-400">{createdAt ? new Date(createdAt).toLocaleDateString() : '-'}</span>
                         {article.emotion && (
-                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-600">
-                            {article.emotion}
-                          </span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className="px-2 py-0.5 rounded text-xs font-medium cursor-default"
+                                style={{ backgroundColor: `${emotionVisual.color}22`, color: emotionVisual.color }}
+                              >
+                                {emotionVisual.label}
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="border-transparent text-white" style={{ backgroundColor: emotionVisual.color }}>
+                              {emotionVisual.label}
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                       </div>
-                      <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">{article.title}</h3>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewArticle(article)}
+                        className="text-left text-lg font-bold text-gray-900 mb-2 group-hover:text-blue-600 hover:text-blue-600 transition-colors"
+                      >
+                        {article.title}
+                      </button>
+                      {categoryTokens.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          {categoryTokens.slice(0, 5).map((token) => (
+                            <span key={`${articleId}-${token}`} className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[11px] font-medium">
+                              {token}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       <p className="text-gray-600 text-sm line-clamp-2">{article.summary || article.content}</p>
+                    </div>
                     </div>
                     <div className="flex items-center gap-2 mt-4 md:mt-0 md:ml-4">
                       <Button variant="outline" size="sm" onClick={() => handleEditArticle(article)}>
@@ -3465,13 +3768,113 @@ export default function JournalistPage() {
                       </Button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
         )
         }
       </main >
+
+      <Dialog open={Boolean(previewArticle)} onOpenChange={(open) => !open && setPreviewArticle(null)}>
+        <DialogContent className="max-w-3xl max-h-[88vh] overflow-hidden">
+          {previewArticle && (() => {
+            const createdAt = previewArticle.created_at || previewArticle.createdAt;
+            const parsed = parseArticleMeta(previewArticle.content || '');
+            const plainText = String(parsed.plainText || previewArticle.content || '').trim();
+            const emotionVisual = getEmotionVisual(previewArticle.emotion);
+            const categoryTokens = extractCategoryTokens(previewArticle.category);
+            const paragraphs = plainText
+              .split(/\n\s*\n/g)
+              .map((paragraph) => paragraph.trim())
+              .filter(Boolean);
+            const views = Number(previewArticle.views || 0);
+            const saves = Number(previewArticle.saves || 0);
+            const insightRate = views > 0 ? Math.round((saves / views) * 1000) / 10 : 0;
+            const intensity = Number(previewArticle.intensity || 0);
+            const contentChars = plainText.replace(/\s+/g, '').length;
+
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="pr-8 text-xl leading-snug">{previewArticle.title}</DialogTitle>
+                  <DialogDescription>
+                    {createdAt ? new Date(createdAt).toLocaleString() : '-'} · {previewArticle.source || '출처 미지정'}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="max-h-[64vh] overflow-y-auto space-y-4 pr-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          className="px-2.5 py-1 rounded text-xs font-semibold cursor-default"
+                          style={{ backgroundColor: `${emotionVisual.color}22`, color: emotionVisual.color }}
+                        >
+                          {emotionVisual.label}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="border-transparent text-white" style={{ backgroundColor: emotionVisual.color }}>
+                        {emotionVisual.label}
+                      </TooltipContent>
+                    </Tooltip>
+                    {categoryTokens.map((token) => (
+                      <span key={`preview-category-${token}`} className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[11px] font-medium">
+                        {token}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="space-y-3 text-sm leading-7 text-gray-800">
+                    {(paragraphs.length > 0 ? paragraphs : [plainText]).map((paragraph, idx) => (
+                      <p key={`preview-paragraph-${idx}`}>{paragraph}</p>
+                    ))}
+                  </div>
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs font-semibold text-gray-700 mb-2">기사 통계</p>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                      <div className="rounded-lg bg-white px-2.5 py-2 border border-gray-100">
+                        <p className="text-[11px] text-gray-500">조회수</p>
+                        <p className="text-sm font-bold text-gray-800">{views}</p>
+                      </div>
+                      <div className="rounded-lg bg-white px-2.5 py-2 border border-gray-100">
+                        <p className="text-[11px] text-gray-500">저장수</p>
+                        <p className="text-sm font-bold text-gray-800">{saves}</p>
+                      </div>
+                      <div className="rounded-lg bg-white px-2.5 py-2 border border-gray-100">
+                        <p className="text-[11px] text-gray-500">인사이트</p>
+                        <p className="text-sm font-bold text-gray-800">{insightRate}%</p>
+                      </div>
+                      <div className="rounded-lg bg-white px-2.5 py-2 border border-gray-100">
+                        <p className="text-[11px] text-gray-500">감정 강도</p>
+                        <p className="text-sm font-bold text-gray-800">{Math.max(0, Math.min(100, intensity))}</p>
+                      </div>
+                      <div className="rounded-lg bg-white px-2.5 py-2 border border-gray-100">
+                        <p className="text-[11px] text-gray-500">본문 길이</p>
+                        <p className="text-sm font-bold text-gray-800">{contentChars}자</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setPreviewArticle(null);
+                      handleEditArticle(previewArticle);
+                    }}
+                  >
+                    <Edit className="w-4 h-4 mr-1" />
+                    수정하기
+                  </Button>
+                  <Button variant="secondary" onClick={() => setPreviewArticle(null)}>
+                    닫기
+                  </Button>
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* 숨김 file input for local uploads */}
       < input

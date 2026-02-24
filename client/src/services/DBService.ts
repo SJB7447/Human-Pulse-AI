@@ -14,6 +14,12 @@ type AdminReviewPayload = {
 type ReportStatus = 'reported' | 'in_review' | 'resolved' | 'rejected';
 type ReportSanction = 'none' | 'hide_article' | 'delete_article' | 'warn_author';
 type ExportFormat = 'excel' | 'pdf';
+export type ApiHealthPayload = {
+    status?: string;
+    mode?: 'full' | 'fallback' | 'lightweight';
+    routeBootstrapError?: string | null;
+    timestamp?: string;
+};
 
 const createApiError = async (response: Response, fallbackMessage: string): Promise<ApiError> => {
     let message = fallbackMessage;
@@ -45,6 +51,18 @@ const buildActorHeaders = (): Record<string, string> => {
         'x-actor-id': String(actor.id || '').slice(0, 128),
         'x-actor-role': String(actor.role || 'admin').slice(0, 32),
     };
+};
+
+const normalizeOwnerToken = (value: unknown): string =>
+    String(value || '').trim().toLowerCase();
+
+const uniqueNormalized = (values: unknown[]): Set<string> => {
+    const out = new Set<string>();
+    for (const value of values || []) {
+        const normalized = normalizeOwnerToken(value);
+        if (normalized) out.add(normalized);
+    }
+    return out;
 };
 
 export const DBService = {
@@ -142,11 +160,37 @@ export const DBService = {
         return true;
     },
 
-    async getMyArticles(authorId: string) {
+    async getMyArticles(authorId: string, options?: { authorNames?: string[]; authorEmails?: string[] }) {
         const response = await fetch('/api/articles?all=true');
         if (!response.ok) throw await createApiError(response, 'Failed to fetch articles');
         const allArticles = await response.json();
-        return allArticles.filter((a: any) => a.authorId === authorId || a.author_id === authorId);
+
+        const normalizedAuthorId = normalizeOwnerToken(authorId);
+        const nameCandidates = uniqueNormalized(options?.authorNames || []);
+        const emailCandidates = uniqueNormalized(options?.authorEmails || []);
+        const emailLocalParts = uniqueNormalized(Array.from(emailCandidates).map((email) => email.split('@')[0]));
+
+        return allArticles.filter((a: any) => {
+            const articleAuthorId = normalizeOwnerToken(a.authorId || a.author_id);
+            if (articleAuthorId && normalizedAuthorId && articleAuthorId === normalizedAuthorId) {
+                return true;
+            }
+
+            // Backward compatibility for rows created when author_id was stored as null.
+            if (!articleAuthorId) {
+                const articleAuthorName = normalizeOwnerToken(a.authorName || a.author_name);
+                if (
+                    articleAuthorName &&
+                    (nameCandidates.has(articleAuthorName) ||
+                        emailCandidates.has(articleAuthorName) ||
+                        emailLocalParts.has(articleAuthorName))
+                ) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
     },
 
     async saveGeneratedContent(articleId: number, generatedText: string) {
@@ -176,6 +220,12 @@ export const DBService = {
     async getAdminStats() {
         const response = await fetch('/api/admin/stats');
         if (!response.ok) throw await createApiError(response, 'Failed to fetch admin stats');
+        return await response.json();
+    },
+
+    async getApiHealth(): Promise<ApiHealthPayload> {
+        const response = await fetch('/api/health', { cache: 'no-store' });
+        if (!response.ok) throw await createApiError(response, 'Failed to fetch API health');
         return await response.json();
     },
 

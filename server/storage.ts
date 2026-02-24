@@ -2,10 +2,6 @@
 import { type User, type InsertUser, type NewsItem, type InsertNewsItem, type EmotionType, type Report, type ArticleReview, type InsertUserConsent, type UserConsent, type AdminActionLog } from "../shared/schema.js";
 import { randomUUID } from "crypto";
 
-const isUuidLike = (value: unknown): value is string =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-
 const isPublishedVisible = (row: any): boolean => {
   if (typeof row?.isPublished === "boolean") return row.isPublished;
   if (typeof row?.is_published === "boolean") return row.is_published;
@@ -640,7 +636,7 @@ export class SupabaseStorage implements IStorage {
   }
 
   async createNewsItem(item: InsertNewsItem): Promise<NewsItem> {
-    const safeAuthorId = isUuidLike(item.authorId) ? item.authorId : null;
+    const safeAuthorId = String(item.authorId || "").trim().slice(0, 128);
 
     const payload = {
       title: item.title,
@@ -651,7 +647,7 @@ export class SupabaseStorage implements IStorage {
       category: item.category ?? null,
       emotion: item.emotion,
       intensity: item.intensity ?? 50,
-      author_id: safeAuthorId,
+      author_id: safeAuthorId || null,
       author_name: item.authorName ?? null,
       platforms: ['interactive'],
       is_published: true,

@@ -43,6 +43,17 @@
 2. What changed (max 3 lines)
 3. Test/Verification (1-3 lines)
 
+### 역할 플레이북 분리 운영 / Role Playbook Split Operation
+- 역할 상세 지침은 아래 문서를 단일 참조로 사용합니다.
+- Use the following documents as the single detailed source by role.
+  - `docs/agents/README.md`
+  - `docs/agents/pm.md`
+  - `docs/agents/ux.md`
+  - `docs/agents/builder.md`
+  - `docs/agents/qa.md`
+- 이 AGENTS는 공통 원칙과 우선순위를 정의하고, 역할별 실행 디테일은 `docs/agents/*`에 위임합니다.
+- This AGENTS defines global policy; role execution details are delegated to `docs/agents/*`.
+
 ---
 
 ## 3) 역할 기준 / Role Expectations
@@ -183,20 +194,33 @@
 - category/depth 컬러는 `docs/color_reference.md`를 단일 기준으로 유지합니다.
 - low/mid/high depth에서 텍스트 대비 점검을 릴리즈 체크리스트에 포함합니다.
 
+### 11.4 News Card Freeze Baseline
+- 뉴스 카드 고정 스펙 단일 기준 문서: `docs/ui/news-card-spec.md`
+- Single source of truth for frozen news-card geometry/UI: `docs/ui/news-card-spec.md`
+- 카드 레이아웃/좌표/텍스트 컷오프 변경 시 아래 3가지를 반드시 동시 업데이트합니다.
+- On any card geometry/cutoff change, update all three in the same change:
+1. `docs/ui/news-card-spec.md`
+2. 구현 코드 상수/레이아웃 (`client/src/pages/emotion.tsx` 또는 후속 카드 컴포넌트)
+3. 시각 회귀 기준(스크린샷/스냅샷) 및 검증 기록
+- 위 3개 중 하나라도 누락되면 변경 완료로 간주하지 않습니다.
+- Any missing item means the change is incomplete.
+
 ---
 
 ## 12) Prompt Planning & Governance Baseline
 ### 12.1 Source of Truth
 - 기사 생성 계약 기준 문서:
+  - `docs/article_generation_total_2026-02-23.md` (통합본 / consolidated)
   - `docs/article_generation_contract_v1.md`
   - `docs/article_generation_tickets_v1.md`
 - 구현은 계약 문서의 용어/코드/게이트 정의와 동기화합니다.
 
 ### 12.2 Prompt Change Rule
-- 프롬프트 변경 시 아래 3가지를 함께 업데이트합니다.
+- 프롬프트 변경 시 아래 4가지를 함께 업데이트합니다.
 1. Prompt version string
-2. Contract/Ticket 문서
-3. Regression test notes (cause/workaround/impact)
+2. 통합본 문서: `docs/article_generation_total_2026-02-23.md`
+3. Contract/Ticket 문서
+4. Regression test notes (cause/workaround/impact)
 
 ### 12.3 Gate Rule
 - 최소 게이트: parse -> schema -> similarity -> compliance.
@@ -208,3 +232,15 @@
   - requests, success, retries, fallbackRecoveries
   - parseFailures, schemaBlocks, similarityBlocks, complianceBlocks, modelEmpty
 - 관리자 대시보드에서 즉시 확인 가능해야 하며, 주간 추세 추적이 가능해야 합니다.
+
+---
+
+## 13) Agent Invocation Rule
+- 역할 호출은 작업 요청 문장에 태그를 명시해 수행합니다.
+- Invoke role behavior by adding tags in the request.
+  - `[PM]` 요구사항 분해/AC 우선
+  - `[UX]` 인터랙션/레이아웃/반응형 우선
+  - `[BUILDER]` 구현/리팩터링/의존성 영향 최소화 우선
+  - `[QA]` 회귀/리스크/검증 로그 우선
+- 태그가 없으면 기본 순서: `BUILDER -> QA` 로 처리합니다.
+- If no tag is provided, default execution order is `BUILDER -> QA`.
