@@ -1,7 +1,7 @@
 ﻿import type { Express } from "express";
 import type { Server } from "http";
 import { randomUUID } from "crypto";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { storage } from "./storage.js";
@@ -178,10 +178,196 @@ const DRAFT_PROMPT_VERSION = "article_generation_contract_v1";
 const AI_DRAFT_METRIC_ACTION = "ai_draft_metric_v1";
 const AI_DRAFT_OPS_METRICS_PATH = path.join(process.cwd(), "server", "data", "ai_draft_ops_metrics.json");
 const AI_NEWS_OPS_METRICS_PATH = path.join(process.cwd(), "server", "data", "ai_news_ops_metrics.json");
+const AI_NEWS_COMPARE_LOG_PATH = path.join(process.cwd(), "server", "data", "ai_news_model_compare.jsonl");
+const AI_NEWS_PARSE_FAIL_LOG_PATH = path.join(process.cwd(), "server", "data", "ai_news_parse_failures.jsonl");
+const FIXED_GEMINI_NEWS_TEXT_MODEL = "gemini-3-flash-preview";
 let draftOpsHydrated = false;
 let draftOpsPersistScheduled = false;
 let aiNewsOpsHydrated = false;
 let aiNewsOpsPersistScheduled = false;
+
+type ShareShortLinkRecord = {
+  slug: string;
+  targetUrl: string;
+  createdAt: string;
+  updatedAt: string;
+  hits: number;
+};
+
+const SHARE_SHORT_LINKS_PATH = path.join(process.cwd(), "server", "data", "share_short_links_v1.json");
+const shareShortLinksBySlug = new Map<string, ShareShortLinkRecord>();
+const shareShortLinksByTarget = new Map<string, string>();
+let shareShortLinksHydrated = false;
+let shareShortLinksPersistScheduled = false;
+const SHORT_LINK_PATH_PREFIX = String(process.env.SHARE_SHORT_PATH_PREFIX || "").trim().replace(/^\/+|\/+$/g, "");
+const SHORT_LINK_SLUG_LENGTH = Math.max(4, Math.min(Number(process.env.SHARE_SHORT_SLUG_LENGTH || 6), 12));
+const SHORT_LINK_DISPLAY_MAX_LENGTH = 20;
+
+function normalizeShortLinkSlug(value: unknown): string {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 32);
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function normalizeReferenceUrl(value: string): string {
+  const text = String(value || "").trim();
+  if (!/^https?:\/\//i.test(text)) return "";
+  try {
+    const parsed = new URL(text);
+    parsed.hash = "";
+    if (/news\.google\./i.test(parsed.hostname)) {
+      parsed.searchParams.delete("oc");
+    }
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return text.replace(/\/+$/, "");
+  }
+}
+
+function createRandomShortSlug(): string {
+  const alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const seed = randomUUID().replace(/-/g, "");
+  let out = "";
+  for (let i = 0; i < SHORT_LINK_SLUG_LENGTH; i += 1) {
+    const pair = seed.slice((i * 2) % seed.length, ((i * 2) % seed.length) + 2);
+    const value = parseInt(pair || "0", 16);
+    out += alphabet[value % alphabet.length];
+  }
+  return out;
+}
+
+async function hydrateShareShortLinks(): Promise<void> {
+  if (shareShortLinksHydrated) return;
+  shareShortLinksHydrated = true;
+
+  try {
+    const raw = await readFile(SHARE_SHORT_LINKS_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    const rows = Array.isArray(parsed?.links) ? parsed.links : [];
+    for (const row of rows) {
+      const slug = normalizeShortLinkSlug(row?.slug);
+      const targetUrl = String(row?.targetUrl || "").trim();
+      if (!slug || !targetUrl || !isValidHttpUrl(targetUrl)) continue;
+
+      const createdAt = new Date(row?.createdAt || Date.now()).toISOString();
+      const updatedAt = new Date(row?.updatedAt || createdAt).toISOString();
+      const hits = Number.isFinite(Number(row?.hits)) ? Math.max(0, Number(row.hits)) : 0;
+
+      const record: ShareShortLinkRecord = { slug, targetUrl, createdAt, updatedAt, hits };
+      shareShortLinksBySlug.set(slug, record);
+      if (!shareShortLinksByTarget.has(targetUrl)) {
+        shareShortLinksByTarget.set(targetUrl, slug);
+      }
+    }
+  } catch {
+    // ignore hydration failures and continue with empty map
+  }
+}
+
+function scheduleShareShortLinksPersistence(): void {
+  if (shareShortLinksPersistScheduled) return;
+  shareShortLinksPersistScheduled = true;
+
+  setTimeout(async () => {
+    shareShortLinksPersistScheduled = false;
+    try {
+      const links = Array.from(shareShortLinksBySlug.values()).sort((a, b) => {
+        return b.updatedAt.localeCompare(a.updatedAt);
+      });
+      await mkdir(path.dirname(SHARE_SHORT_LINKS_PATH), { recursive: true });
+      await writeFile(
+        SHARE_SHORT_LINKS_PATH,
+        JSON.stringify(
+          {
+            updatedAt: new Date().toISOString(),
+            links,
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+    } catch (error) {
+      console.warn("[SHARE_SHORT_LINK] persist failed:", error);
+    }
+  }, 80);
+}
+
+function resolveOrCreateShareShortLink(targetUrl: string): ShareShortLinkRecord {
+  const existingSlug = shareShortLinksByTarget.get(targetUrl);
+  if (existingSlug) {
+    const existing = shareShortLinksBySlug.get(existingSlug);
+    if (existing) return existing;
+  }
+
+  let slug = createRandomShortSlug();
+  while (shareShortLinksBySlug.has(slug)) {
+    slug = createRandomShortSlug();
+  }
+
+  const now = new Date().toISOString();
+  const record: ShareShortLinkRecord = {
+    slug,
+    targetUrl,
+    createdAt: now,
+    updatedAt: now,
+    hits: 0,
+  };
+
+  shareShortLinksBySlug.set(slug, record);
+  shareShortLinksByTarget.set(targetUrl, slug);
+  scheduleShareShortLinksPersistence();
+  return record;
+}
+
+function resolveRequestBaseUrl(req: any): string {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const forwardedHost = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+  const host = forwardedHost || String(req.get("host") || "");
+  const protocol = forwardedProto || req.protocol || "http";
+  return `${protocol}://${host}`;
+}
+
+function normalizeBaseUrl(input: unknown): string {
+  const text = String(input || "").trim();
+  if (!text) return "";
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function resolveShortLinkBaseUrl(req: any): string {
+  const custom = normalizeBaseUrl(process.env.SHARE_SHORT_BASE_URL);
+  if (custom) return custom;
+  return resolveRequestBaseUrl(req);
+}
+
+function buildShortLinkPath(slug: string): string {
+  if (SHORT_LINK_PATH_PREFIX) {
+    return `/${SHORT_LINK_PATH_PREFIX}/${slug}`;
+  }
+  return `/${slug}`;
+}
+
+function toShortDisplayUrl(shortUrl: string): string {
+  const withoutProtocol = shortUrl.replace(/^https?:\/\//i, "");
+  if (withoutProtocol.length <= SHORT_LINK_DISPLAY_MAX_LENGTH) return withoutProtocol;
+  const head = withoutProtocol.slice(0, 12);
+  const tail = withoutProtocol.slice(-5);
+  return `${head}...${tail}`;
+}
 
 function createDraftOpsCounters(): DraftOpsCounters {
   return {
@@ -377,6 +563,51 @@ function scheduleAiNewsOpsPersistence(): void {
   }, 350);
 }
 
+type AiNewsCompareLogEntry = {
+  ts: string;
+  emotion: EmotionType;
+  model: string;
+  status: "success" | "blocked" | "fallback" | "error";
+  reasonCode?: string;
+  latencyMs?: number;
+  keywords: string[];
+  selectedIssueCount: number;
+  issueFetches: Array<{
+    keyword: string;
+    fallbackUsed: boolean;
+    diagnostics?: string;
+  }>;
+};
+
+async function appendAiNewsCompareLog(entry: AiNewsCompareLogEntry): Promise<void> {
+  try {
+    await mkdir(path.dirname(AI_NEWS_COMPARE_LOG_PATH), { recursive: true });
+    await appendFile(AI_NEWS_COMPARE_LOG_PATH, `${JSON.stringify(entry)}\n`, "utf8");
+  } catch (error) {
+    console.warn("[AI_NEWS_COMPARE_LOG] append failed:", error);
+  }
+}
+
+type AiNewsParseFailLogEntry = {
+  ts: string;
+  emotion: EmotionType;
+  model: string;
+  reasonCode: string;
+  latencyMs?: number;
+  promptPreview: string;
+  modelTextPreview: string;
+  repairedTextPreview?: string;
+};
+
+async function appendAiNewsParseFailLog(entry: AiNewsParseFailLogEntry): Promise<void> {
+  try {
+    await mkdir(path.dirname(AI_NEWS_PARSE_FAIL_LOG_PATH), { recursive: true });
+    await appendFile(AI_NEWS_PARSE_FAIL_LOG_PATH, `${JSON.stringify(entry)}\n`, "utf8");
+  } catch (error) {
+    console.warn("[AI_NEWS_PARSE_FAIL_LOG] append failed:", error);
+  }
+}
+
 async function hydrateDraftOpsMetrics(): Promise<void> {
   if (draftOpsHydrated) return;
   draftOpsHydrated = true;
@@ -541,7 +772,7 @@ function normalizeAiDraftGateSettings(raw: Partial<AiDraftGateSettings>): AiDraf
 
 function normalizeAiNewsSettings(raw: Partial<AiNewsSettings>): AiNewsSettings {
   const merged: AiNewsSettings = {
-    modelTimeoutMs: readEnvNumber("AI_NEWS_MODEL_TIMEOUT_MS", 24000, 8000, 45000, 0),
+    modelTimeoutMs: readEnvNumber("AI_NEWS_MODEL_TIMEOUT_MS", 36000, 8000, 45000, 0),
     ...raw,
   };
   merged.modelTimeoutMs = Math.max(8000, Math.min(45000, Math.floor(merged.modelTimeoutMs)));
@@ -844,6 +1075,15 @@ function evaluateDraftSimilarity(input: {
     });
   }
 
+  if (hasLongCopiedSpan(refTitle, input.generatedTitle, 10)) {
+    issues.push({
+      type: "headline_overlap",
+      score: 1,
+      threshold: 1,
+      message: "생성 제목이 참고 기사 제목 문구를 그대로 재사용했습니다.",
+    });
+  }
+
   const generatedLead = String(input.generatedContent || "")
     .split(/\n{2,}/)
     .map((line) => line.trim())
@@ -872,6 +1112,18 @@ function evaluateDraftSimilarity(input: {
       score,
       threshold: aiDraftGateSettings.similarityCombinedThreshold,
       message: "도입 문단의 어휘/문장 전개가 참고 기사와 유사합니다.",
+    });
+  }
+
+  if (
+    hasLongCopiedSpan(refTitle, input.generatedContent, 16) ||
+    hasLongCopiedSpan(refSummary, input.generatedContent, 24)
+  ) {
+    issues.push({
+      type: "structure_overlap",
+      score: 1,
+      threshold: 1,
+      message: "생성 본문이 참고 기사 문장을 그대로 재사용했습니다.",
     });
   }
 
@@ -1078,7 +1330,12 @@ function parseJsonFromModelText<T>(raw: string): T | null {
   return null;
 }
 
-const FIXED_GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
+const FIXED_GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image-002";
+const GEMINI_IMAGE_MODEL_FALLBACKS = [
+  FIXED_GEMINI_IMAGE_MODEL,
+  "gemini-2.5-flash-image",
+  "gemini-2.5-flash-image-001",
+] as const;
 
 function buildNarrativeImagePrompts(articleContent: string, count: number, customPrompt?: string): string[] {
   const cleaned = String(articleContent || "")
@@ -1143,13 +1400,17 @@ function buildNarrativeImagePrompts(articleContent: string, count: number, custo
   });
 }
 
-async function generateGeminiImageFromPrompt(prompt: string, timeoutMs: number = 25000): Promise<string> {
+async function generateGeminiImageFromPrompt(
+  prompt: string,
+  timeoutMs: number = 25000,
+  model: string = FIXED_GEMINI_IMAGE_MODEL,
+): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY || "";
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is missing");
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${FIXED_GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
@@ -1162,6 +1423,10 @@ async function generateGeminiImageFromPrompt(prompt: string, timeoutMs: number =
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           responseModalities: ["TEXT", "IMAGE"],
+          imageConfig: {
+            aspectRatio: "16:9",
+            imageSize: "1K",
+          },
         },
       }),
     });
@@ -1194,6 +1459,68 @@ async function generateGeminiImageFromPrompt(prompt: string, timeoutMs: number =
   return `data:${mimeType};base64,${data}`;
 }
 
+function extractImageDimensionsFromDataUrl(dataUrl: string): { width: number; height: number } | null {
+  const match = String(dataUrl || "").match(/^data:([^;]+);base64,([\s\S]+)$/i);
+  if (!match) return null;
+  const mime = String(match[1] || "").toLowerCase();
+  const base64 = match[2] || "";
+  if (!base64) return null;
+
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(base64, "base64");
+  } catch {
+    return null;
+  }
+  if (!bytes || bytes.length < 24) return null;
+
+  // PNG IHDR width/height
+  if (mime.includes("png")) {
+    const isPngSig = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+    if (!isPngSig || bytes.length < 24) return null;
+    const width = bytes.readUInt32BE(16);
+    const height = bytes.readUInt32BE(20);
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+
+  // JPEG SOF marker scan
+  if (mime.includes("jpeg") || mime.includes("jpg")) {
+    if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+    let offset = 2;
+    while (offset + 9 < bytes.length) {
+      if (bytes[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = bytes[offset + 1];
+      const isStartOfFrame =
+        (marker >= 0xc0 && marker <= 0xc3) ||
+        (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) ||
+        (marker >= 0xcd && marker <= 0xcf);
+      const segmentLength = bytes.readUInt16BE(offset + 2);
+      if (isStartOfFrame && offset + 8 < bytes.length) {
+        const height = bytes.readUInt16BE(offset + 5);
+        const width = bytes.readUInt16BE(offset + 7);
+        return width > 0 && height > 0 ? { width, height } : null;
+      }
+      if (!Number.isFinite(segmentLength) || segmentLength <= 0) break;
+      offset += 2 + segmentLength;
+    }
+    return null;
+  }
+
+  return null;
+}
+
+function isSixteenByNineLike(dataUrl: string, tolerance: number = 0.06): boolean {
+  const dims = extractImageDimensionsFromDataUrl(dataUrl);
+  if (!dims) return false;
+  const ratio = dims.width / Math.max(1, dims.height);
+  const target = 16 / 9;
+  return Math.abs(ratio - target) <= tolerance;
+}
+
 function isRetryableImageError(error: unknown): boolean {
   const message = String((error as any)?.message || "").toLowerCase();
   return (
@@ -1201,23 +1528,49 @@ function isRetryableImageError(error: unknown): boolean {
     message.includes("503") ||
     message.includes("504") ||
     message.includes("overloaded") ||
+    message.includes("high demand") ||
+    message.includes("try again later") ||
+    message.includes("resource exhausted") ||
     message.includes("quota") ||
     message.includes("timed out") ||
-    message.includes("abort")
+    message.includes("abort") ||
+    message.includes("aspect ratio")
   );
 }
 
-async function generateGeminiImageWithRetry(prompt: string, maxAttempts: number = 2): Promise<string> {
+async function generateGeminiImageWithRetry(
+  prompt: string,
+  maxAttempts: number = 3,
+): Promise<{ dataUrl: string; model: string }> {
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      const timeoutMs = attempt === 1 ? 25000 : 40000;
-      return await generateGeminiImageFromPrompt(prompt, timeoutMs);
+      const timeoutMs = attempt === 1 ? 28000 : 42000;
+      let modelError: unknown = null;
+      for (const model of GEMINI_IMAGE_MODEL_FALLBACKS) {
+        try {
+          const imageDataUrl = await generateGeminiImageFromPrompt(prompt, timeoutMs, model);
+          return { dataUrl: imageDataUrl, model };
+        } catch (error) {
+          modelError = error;
+          const message = String((error as any)?.message || "").toLowerCase();
+          const unsupported =
+            message.includes("not found") ||
+            message.includes("not supported for generatecontent") ||
+            message.includes("model is not found");
+          if (!unsupported) {
+            // If this is not model-availability issue, still try the next model once.
+            continue;
+          }
+        }
+      }
+      throw modelError || new Error("image model fallback exhausted");
     } catch (error) {
       lastError = error;
       const retryable = isRetryableImageError(error);
       if (!retryable || attempt === maxAttempts) break;
-      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      const backoffMs = Math.min(2500 * attempt, 6000) + Math.floor(Math.random() * 400);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
     }
   }
   throw lastError;
@@ -1305,6 +1658,113 @@ function buildOutlineFallback(keyword: string, topics: string[] = []): { outline
     `${list.length + 2}. 결론 및 다음 신호`,
   ].join("\n");
   return { outline, topics: list };
+}
+
+const SHARE_KEYWORD_STOPWORDS = new Set([
+  "그리고", "그러나", "하지만", "또한", "이번", "지난", "현재", "최근", "오늘", "내일", "오전", "오후",
+  "대한", "통해", "관련", "경우", "때문", "대한민국", "기자", "뉴스", "기사", "보도", "사진", "내용",
+  "있다", "했다", "된다", "위해", "에서", "에게", "으로", "하다", "위한", "가장", "정도", "대해",
+  "the", "and", "for", "with", "this", "that", "from", "into", "about", "news", "report",
+  "www", "http", "https", "com", "net", "org",
+]);
+
+function normalizeShareToken(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^[^0-9a-z가-힣]+|[^0-9a-z가-힣]+$/gi, "")
+    .replace(/(?:은|는|이|가|을|를|의|에|로|으로|와|과|도|만|에서|에게|부터|까지)$/, "");
+}
+
+function sanitizeShareTokens(values: unknown, min: number, max: number): string[] {
+  if (!Array.isArray(values)) return [];
+  const normalized = values
+    .map((value) => normalizeShareToken(String(value || "")))
+    .filter((token) => token.length >= 2 && token.length <= 20)
+    .filter((token) => !SHARE_KEYWORD_STOPWORDS.has(token))
+    .filter((token) => !/^\d+$/.test(token));
+  const deduped = Array.from(new Set(normalized));
+  return deduped.slice(0, Math.max(min, max));
+}
+
+function extractRepresentativeKeywords(content: string, summary: string, title: string): string[] {
+  const scoreMap = new Map<string, number>();
+  const body = String(content || "").replace(/\s+/g, " ").trim();
+  const paragraphs = body.split(/\n{2,}/).map((line) => line.trim()).filter(Boolean);
+  const analysisBlocks = paragraphs.length > 0 ? paragraphs : [body];
+
+  analysisBlocks.forEach((block, blockIdx) => {
+    const tokens = (block.match(/[0-9a-zA-Z가-힣]{2,}/g) || [])
+      .map((token) => normalizeShareToken(token))
+      .filter((token) => token.length >= 2 && token.length <= 20)
+      .filter((token) => !SHARE_KEYWORD_STOPWORDS.has(token))
+      .filter((token) => !/^\d+$/.test(token));
+
+    const blockWeight = blockIdx < 2 ? 1.4 : 1.0;
+    tokens.forEach((token) => {
+      scoreMap.set(token, (scoreMap.get(token) || 0) + blockWeight);
+    });
+  });
+
+  const summaryTokens = (String(summary || "").match(/[0-9a-zA-Z가-힣]{2,}/g) || [])
+    .map((token) => normalizeShareToken(token))
+    .filter((token) => token.length >= 2 && token.length <= 20)
+    .filter((token) => !SHARE_KEYWORD_STOPWORDS.has(token))
+    .slice(0, 10);
+  summaryTokens.forEach((token) => scoreMap.set(token, (scoreMap.get(token) || 0) + 1.2));
+
+  const titleTokens = (String(title || "").match(/[0-9a-zA-Z가-힣]{2,}/g) || [])
+    .map((token) => normalizeShareToken(token))
+    .filter((token) => token.length >= 2 && token.length <= 20)
+    .filter((token) => !SHARE_KEYWORD_STOPWORDS.has(token))
+    .slice(0, 8);
+  titleTokens.forEach((token) => scoreMap.set(token, (scoreMap.get(token) || 0) + 0.35));
+
+  return Array.from(scoreMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([token]) => token)
+    .slice(0, 8);
+}
+
+function buildViralHashtags(
+  representativeKeywords: string[],
+  category: string,
+  emotion: string,
+): string[] {
+  const categoryToken = normalizeShareToken(category);
+  const emotionToken = normalizeShareToken(emotion);
+  const broad = ["핵심이슈", "이슈브리핑", "뉴스요약", "트렌드체크", "지금주목"];
+  const niche = representativeKeywords.slice(0, 6).map((token) => normalizeShareToken(token));
+  const contextual = [categoryToken, emotionToken, "심층분석", "쟁점정리"]
+    .filter((token) => token.length >= 2);
+  return Array.from(new Set([...niche, ...contextual, ...broad]))
+    .filter((token) => token.length >= 2 && token.length <= 20)
+    .slice(0, 10);
+}
+
+function buildShareKeywordPackFallback(input: {
+  title: string;
+  summary: string;
+  content: string;
+  category: string;
+  emotion: string;
+}): { representativeKeywords: string[]; viralHashtags: string[] } {
+  const representativeKeywords = extractRepresentativeKeywords(input.content, input.summary, input.title);
+  const fallbackKeywords = representativeKeywords.length > 0
+    ? representativeKeywords
+    : extractRepresentativeKeywords(input.summary, "", input.title);
+  const paddedKeywords = fallbackKeywords.length >= 5
+    ? fallbackKeywords
+    : Array.from(new Set([...fallbackKeywords, "핵심쟁점", "정책변화", "시장반응", "이해관계", "영향분석"])).slice(0, 8);
+  const viralHashtags = buildViralHashtags(paddedKeywords, input.category, input.emotion);
+  const paddedViral = viralHashtags.length >= 5
+    ? viralHashtags
+    : Array.from(new Set([...viralHashtags, "핵심이슈", "뉴스요약", "지금주목", "트렌드체크", "브리핑"])).slice(0, 10);
+
+  return {
+    representativeKeywords: paddedKeywords.slice(0, 8),
+    viralHashtags: paddedViral.slice(0, 10),
+  };
 }
 
 type DraftMediaSlot = {
@@ -1402,6 +1862,15 @@ function stripHtmlTags(input: string): string {
     .trim();
 }
 
+function normalizeRssLink(raw: string): string {
+  const decoded = decodeHtmlEntities(String(raw || ""))
+    .replace(/<!\[CDATA\[/gi, "")
+    .replace(/\]\]>/gi, "")
+    .trim();
+  const matched = decoded.match(/https?:\/\/[^\s<>"']+/i);
+  return matched ? matched[0].trim() : "";
+}
+
 function normalizeNewsSummary(raw: string, title: string, source: string): string {
   const cleaned = stripHtmlTags(raw)
     .replace(/google news|google 뉴스/gi, " ")
@@ -1417,7 +1886,10 @@ function parseGoogleNewsRss(xml: string): KeywordNewsArticle[] {
     const title = stripHtmlTags((item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/i)?.[1])
       || (item.match(/<title>([\s\S]*?)<\/title>/i)?.[1])
       || "");
-    const link = stripHtmlTags(item.match(/<link>([\s\S]*?)<\/link>/i)?.[1] || "");
+    const linkRaw = (item.match(/<link><!\[CDATA\[([\s\S]*?)\]\]><\/link>/i)?.[1])
+      || (item.match(/<link>([\s\S]*?)<\/link>/i)?.[1])
+      || "";
+    const link = normalizeRssLink(linkRaw);
     const descriptionRaw = (item.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/i)?.[1])
       || (item.match(/<description>([\s\S]*?)<\/description>/i)?.[1])
       || "";
@@ -1457,6 +1929,39 @@ type KeywordNewsFetchResult = {
   };
 };
 
+type KeywordNewsCacheEntry = {
+  updatedAt: number;
+  articles: KeywordNewsArticle[];
+};
+
+const KEYWORD_NEWS_CACHE_TTL_MS = 30 * 60 * 1000;
+const keywordNewsCache = new Map<string, KeywordNewsCacheEntry>();
+
+function readKeywordNewsCache(keyword: string): KeywordNewsArticle[] | null {
+  const key = String(keyword || "").trim().toLowerCase();
+  if (!key) return null;
+  const row = keywordNewsCache.get(key);
+  if (!row) return null;
+  if (Date.now() - row.updatedAt > KEYWORD_NEWS_CACHE_TTL_MS) {
+    keywordNewsCache.delete(key);
+    return null;
+  }
+  return row.articles.slice();
+}
+
+function writeKeywordNewsCache(keyword: string, articles: KeywordNewsArticle[]): void {
+  const key = String(keyword || "").trim().toLowerCase();
+  if (!key || !Array.isArray(articles) || articles.length === 0) return;
+  const valid = articles
+    .filter((row) => /^https?:\/\//i.test(String(row?.url || "").trim()))
+    .slice(0, 8);
+  if (valid.length === 0) return;
+  keywordNewsCache.set(key, {
+    updatedAt: Date.now(),
+    articles: valid,
+  });
+}
+
 async function fetchKeywordNewsArticles(
   keyword: string,
   limit: number = 5,
@@ -1475,37 +1980,117 @@ async function fetchKeywordNewsArticles(
     };
   }
 
-  const query = encodeURIComponent(`${safeKeyword}`);
-  const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=ko&gl=KR&ceid=KR:ko`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(rssUrl, {
-      signal: controller.signal,
-      headers: {
-        "User-Agent": "HueBrief/1.0 (+keyword-news-search)",
-        "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.7,en;q=0.5",
-        "Cache-Control": "no-cache",
-      },
-    });
+  const buildQueryVariants = (source: string): string[] => {
+    const tokens = source
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2);
+    const candidates = [
+      source,
+      `${source} 뉴스`,
+      tokens.slice(0, 2).join(" "),
+      tokens.slice(0, 2).join(" ") ? `${tokens.slice(0, 2).join(" ")} 뉴스` : "",
+      tokens[0] || "",
+      tokens[0] ? `${tokens[0]} 뉴스` : "",
+    ]
+      .map((row) => row.trim())
+      .filter(Boolean);
+    return Array.from(new Set(candidates));
+  };
 
-    if (!response.ok) {
-      return {
-        keyword: safeKeyword,
-        articles: buildNewsRecommendationFallback(safeKeyword),
-        fallbackUsed: true,
-        diagnostics: {
-          stage: "external_fetch",
-          reason: `rss status ${response.status}`,
-          status: response.status,
-        },
-      };
+  const queryVariants = buildQueryVariants(safeKeyword);
+  const fallbackRssUrl = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko";
+  const keywordTokens = safeKeyword
+    .split(/\s+/)
+    .map((token) => token.trim().toLowerCase())
+    .filter((token) => token.length >= 2);
+  const browserLikeHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.7,en;q=0.5",
+    "Cache-Control": "no-cache",
+  } as const;
+
+  const fetchAndParseWithTimeout = async (url: string, reasonTag: string): Promise<KeywordNewsArticle[]> => {
+    const safeTimeoutMs = Number.isFinite(timeoutMs) ? Math.max(5000, Math.min(timeoutMs, 15000)) : 9000;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), safeTimeoutMs);
+      try {
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: browserLikeHeaders,
+        });
+        if (!response.ok) {
+          throw new Error(`${reasonTag}: rss status ${response.status}`);
+        }
+        const xml = await response.text();
+        return parseGoogleNewsRss(xml);
+      } catch (error: any) {
+        const isLast = attempt >= 2;
+        if (isLast) throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    return [];
+  };
+
+  try {
+    // 1) keyword search feed with query variants
+    for (const queryText of queryVariants) {
+      const query = encodeURIComponent(queryText);
+      const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=ko&gl=KR&ceid=KR:ko`;
+      try {
+        const parsed = await fetchAndParseWithTimeout(rssUrl, "search");
+        const relevant = parsed.filter((article) => {
+          if (keywordTokens.length === 0) return true;
+          const hay = `${article.title || ""} ${article.summary || ""}`.toLowerCase();
+          return keywordTokens.some((token) => hay.includes(token));
+        });
+        const resolved = (relevant.length > 0 ? relevant : parsed)
+          .slice(0, Math.max(1, Math.min(limit, 8)));
+        if (resolved.length > 0) {
+          writeKeywordNewsCache(safeKeyword, resolved);
+          return {
+            keyword: safeKeyword,
+            articles: resolved,
+            fallbackUsed: false,
+            diagnostics: relevant.length > 0
+              ? undefined
+              : {
+                  stage: "rss_parse",
+                  reason: "search_variant_returned_but_keyword_overlap_low",
+                },
+          };
+        }
+      } catch {
+        // keep trying next variant
+      }
     }
 
-    const xml = await response.text();
-    const parsed = parseGoogleNewsRss(xml).slice(0, Math.max(1, Math.min(limit, 8)));
-    if (parsed.length === 0) {
+    // 2) general KR feed fallback + keyword filter
+    const generalParsed = await fetchAndParseWithTimeout(fallbackRssUrl, "top");
+    const filtered = generalParsed.filter((article) => {
+      if (keywordTokens.length === 0) return true;
+      const hay = `${article.title || ""} ${article.summary || ""}`.toLowerCase();
+      return keywordTokens.some((token) => hay.includes(token));
+    });
+    const resolved = (filtered.length > 0 ? filtered : generalParsed)
+      .slice(0, Math.max(1, Math.min(limit, 8)));
+    if (resolved.length === 0) {
+      const cached = readKeywordNewsCache(safeKeyword);
+      if (cached && cached.length > 0) {
+        return {
+          keyword: safeKeyword,
+          articles: cached.slice(0, Math.max(1, Math.min(limit, 8))),
+          fallbackUsed: false,
+          diagnostics: {
+            stage: "rss_parse",
+            reason: "parsed_empty_recovered_from_cache",
+          },
+        };
+      }
       return {
         keyword: safeKeyword,
         articles: buildNewsRecommendationFallback(safeKeyword),
@@ -1516,16 +2101,34 @@ async function fetchKeywordNewsArticles(
         },
       };
     }
-
+    writeKeywordNewsCache(safeKeyword, resolved);
     return {
       keyword: safeKeyword,
-      articles: parsed,
+      articles: resolved,
       fallbackUsed: false,
+      diagnostics: filtered.length > 0
+        ? undefined
+        : {
+            stage: "rss_parse",
+            reason: "keyword_filter_empty_fallback_to_top_feed",
+          },
     };
   } catch (error: any) {
     const isAbort = error?.name === "AbortError";
     const reason = isAbort ? "rss timeout" : String(error?.message || "unknown error");
     console.warn("[AI] keyword news fetch failed:", error);
+    const cached = readKeywordNewsCache(safeKeyword);
+    if (cached && cached.length > 0) {
+      return {
+        keyword: safeKeyword,
+        articles: cached.slice(0, Math.max(1, Math.min(limit, 8))),
+        fallbackUsed: false,
+        diagnostics: {
+          stage: "external_fetch",
+          reason: `${reason}_recovered_from_cache`,
+        },
+      };
+    }
     return {
       keyword: safeKeyword,
       articles: buildNewsRecommendationFallback(safeKeyword),
@@ -1535,8 +2138,6 @@ async function fetchKeywordNewsArticles(
         reason,
       },
     };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -1544,7 +2145,21 @@ type NewsGeminiResult = {
   text: string | null;
   reasonCode?: "AI_NEWS_KEY_MISSING" | "AI_NEWS_MODEL_TIMEOUT" | "AI_NEWS_MODEL_ERROR";
   latencyMs: number;
+  modelUsed?: string;
 };
+
+function isRetryableNewsModelError(message: string): boolean {
+  const text = String(message || "").toLowerCase();
+  return (
+    text.includes("503") ||
+    text.includes("service unavailable") ||
+    text.includes("high demand") ||
+    text.includes("429") ||
+    text.includes("resource_exhausted") ||
+    text.includes("unavailable") ||
+    text.includes("timeout")
+  );
+}
 
 async function generateGeminiNewsText(
   prompt: string,
@@ -1557,49 +2172,96 @@ async function generateGeminiNewsText(
       text: null,
       reasonCode: "AI_NEWS_KEY_MISSING",
       latencyMs: Date.now() - startedAt,
+      modelUsed: FIXED_GEMINI_NEWS_TEXT_MODEL,
     };
   }
 
-  const safeTimeoutMs = Number.isFinite(timeoutMs) ? Math.max(8000, Math.min(timeoutMs, 45000)) : 24000;
-  const geminiTextModel = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
-  const model = geminiClient.getGenerativeModel({ model: geminiTextModel });
+  const safeTimeoutMs = Number.isFinite(timeoutMs)
+    ? Math.max(36000, Math.min(timeoutMs, 45000))
+    : 36000;
+  const modelChain = [FIXED_GEMINI_NEWS_TEXT_MODEL, "gemini-2.5-flash"];
+  let lastErrorMessage = "";
+  let lastReasonCode: NewsGeminiResult["reasonCode"] = "AI_NEWS_MODEL_ERROR";
+  let lastModel = FIXED_GEMINI_NEWS_TEXT_MODEL;
 
-  // Low-latency profile for short trend/breaking briefs while keeping the same model.
-  const generationTask = model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      maxOutputTokens: 1200,
-      temperature: 0.35,
-      topP: 0.85,
-      topK: 24,
-      thinkingConfig: { thinkingBudget: 0 },
-    } as any,
-  });
+  for (const modelName of modelChain) {
+    const maxAttempts = modelName === FIXED_GEMINI_NEWS_TEXT_MODEL ? 2 : 1;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      lastModel = modelName;
+      const model = geminiClient.getGenerativeModel({ model: modelName });
+      const generationTask = model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          maxOutputTokens: 2200,
+          temperature: 0.25,
+          topP: 0.85,
+          topK: 24,
+          thinkingConfig: { thinkingBudget: 0 },
+        } as any,
+      });
+      const timeoutTask = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("AI_NEWS_MODEL_TIMEOUT")), safeTimeoutMs);
+      });
 
-  const timeoutTask = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error("AI_NEWS_MODEL_TIMEOUT")), safeTimeoutMs);
-  });
-
-  try {
-    const result = await Promise.race([generationTask, timeoutTask]) as Awaited<typeof generationTask>;
-    const text = result?.response?.text?.() || "";
-    return {
-      text: text.trim() || null,
-      latencyMs: Date.now() - startedAt,
-    };
-  } catch (error: any) {
-    const message = String(error?.message || "");
-    const reasonCode = message.includes("AI_NEWS_MODEL_TIMEOUT")
-      ? "AI_NEWS_MODEL_TIMEOUT"
-      : "AI_NEWS_MODEL_ERROR";
-    console.warn("[AI] generateGeminiNewsText failed:", { reasonCode, message });
-    return {
-      text: null,
-      reasonCode,
-      latencyMs: Date.now() - startedAt,
-    };
+      try {
+        const result = await Promise.race([generationTask, timeoutTask]) as Awaited<typeof generationTask>;
+        const text = result?.response?.text?.() || "";
+        return {
+          text: text.trim() || null,
+          latencyMs: Date.now() - startedAt,
+          modelUsed: modelName,
+        };
+      } catch (error: any) {
+        const message = String(error?.message || "");
+        lastErrorMessage = message;
+        lastReasonCode = message.includes("AI_NEWS_MODEL_TIMEOUT")
+          ? "AI_NEWS_MODEL_TIMEOUT"
+          : "AI_NEWS_MODEL_ERROR";
+        const retryable = isRetryableNewsModelError(message);
+        const isLastAttempt = attempt >= maxAttempts;
+        if (!isLastAttempt && retryable) {
+          await new Promise((resolve) => setTimeout(resolve, 900 + attempt * 450));
+          continue;
+        }
+        break;
+      }
+    }
   }
+
+  console.warn("[AI] generateGeminiNewsText failed:", {
+    reasonCode: lastReasonCode,
+    message: lastErrorMessage,
+    modelTried: lastModel,
+  });
+  return {
+    text: null,
+    reasonCode: lastReasonCode,
+    latencyMs: Date.now() - startedAt,
+    modelUsed: lastModel,
+  };
+}
+
+async function repairGeminiNewsJson(
+  rawModelText: string,
+  timeoutMs: number = 12000,
+): Promise<NewsGeminiResult> {
+  const source = String(rawModelText || "").trim();
+  if (!source) {
+    return { text: null, reasonCode: "AI_NEWS_MODEL_ERROR", latencyMs: 0 };
+  }
+  const repairPrompt = [
+    "You are a JSON repairer.",
+    "Convert the following model output into strict JSON only.",
+    "Do not add new facts. Preserve original meaning.",
+    "Target schema:",
+    '{"items":[{"title":"string","summary":"string","content":"string","source":"string","sourceCitation":[{"title":"string","url":"string","source":"string"}]}]}',
+    "Return JSON only without markdown.",
+    "MODEL_OUTPUT_START",
+    source.slice(0, 12000),
+    "MODEL_OUTPUT_END",
+  ].join("\n");
+  return generateGeminiNewsText(repairPrompt, timeoutMs);
 }
 
 const EMOTION_NEWS_CATEGORY_PROFILE: Record<EmotionType, {
@@ -1662,6 +2324,39 @@ const EMOTION_NEWS_CATEGORY_PROFILE: Record<EmotionType, {
   },
 };
 
+const EMOTION_KEYWORD_SYNONYMS: Record<EmotionType, string[]> = {
+  vibrance: ["선행", "미담", "지역 축제", "문화 행사", "스포츠 화제", "라이프스타일 트렌드", "커뮤니티 훈훈"],
+  immersion: ["정치 이슈", "사회 갈등", "정책 충돌", "속보", "시위", "노동 쟁점", "공적 논쟁"],
+  clarity: ["심층 분석", "정책 해설", "경제 분석", "데이터 리포트", "산업 동향", "기술 해설", "시장 구조"],
+  gravity: ["사건 사고", "재난", "사회 안전", "범죄 수사", "원인 분석", "위험 경보", "비상 대응"],
+  serenity: ["환경", "기후", "웰빙", "건강", "회복", "지역 돌봄", "휴먼 스토리"],
+  spectrum: ["정책", "산업", "사회", "경제", "기술", "커뮤니티"],
+};
+
+function buildEmotionKeywordQueryList(
+  emotion: EmotionType,
+  baseKeywords: string[],
+  maxCount: number = 8,
+): string[] {
+  const rows = [
+    ...baseKeywords,
+    ...EMOTION_KEYWORD_SYNONYMS[emotion],
+  ]
+    .map((row) => String(row || "").trim())
+    .filter(Boolean);
+
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const normalized = row.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(row);
+    if (out.length >= maxCount) break;
+  }
+  return out;
+}
+
 type EmotionNewsCitation = {
   title: string;
   url: string;
@@ -1680,11 +2375,47 @@ type EmotionGeneratedNewsItem = {
   reasonCode?: string;
 };
 
+function pickFirstNonEmptyString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = String(record[key] ?? "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function toEmotionNewsCandidates(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "object") return [];
+  const rec = raw as Record<string, unknown>;
+  const keys = ["items", "news", "articles", "results", "data"];
+  for (const key of keys) {
+    const value = rec[key];
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === "object") {
+      const nested = value as Record<string, unknown>;
+      if (Array.isArray(nested.items)) return nested.items;
+      if (Array.isArray(nested.articles)) return nested.articles;
+      if (Array.isArray(nested.news)) return nested.news;
+    }
+  }
+  return [];
+}
+
 function normalizeEmotionNewsCitations(
   raw: unknown,
   issueArticles: KeywordNewsArticle[],
   fallbackSource: string,
 ): EmotionNewsCitation[] {
+  const issueRows = issueArticles
+    .map((issue) => ({
+      title: String(issue.title || "").trim().slice(0, 180),
+      source: String(issue.source || "").trim().slice(0, 120),
+      url: String(issue.url || "").trim().slice(0, 600),
+      urlKey: normalizeReferenceUrl(String(issue.url || "")),
+    }))
+    .filter((issue) => issue.title && issue.source && /^https?:\/\//i.test(issue.url));
+  const issueUrlKeySet = new Set(issueRows.map((row) => row.urlKey).filter(Boolean));
+
   const input = Array.isArray(raw) ? raw : (raw ? [raw] : []);
   const fromModel = input
     .map((entry) => {
@@ -1692,7 +2423,29 @@ function normalizeEmotionNewsCitations(
       const url = String((entry as any)?.url || "").trim().slice(0, 600);
       const source = String((entry as any)?.source || fallbackSource || "HueBrief AI").trim().slice(0, 120);
       if (!title || !source || !/^https?:\/\//i.test(url)) return null;
-      return { title, url, source } as EmotionNewsCitation;
+      const urlKey = normalizeReferenceUrl(url);
+      if (urlKey && issueUrlKeySet.has(urlKey)) {
+        return { title, url, source } as EmotionNewsCitation;
+      }
+
+      const titleTokens = tokenizeSimilarity(title);
+      let bestIssue: (typeof issueRows)[number] | null = null;
+      let bestScore = 0;
+      for (const issue of issueRows) {
+        const score = jaccardSimilarity(titleTokens, tokenizeSimilarity(issue.title));
+        if (score > bestScore) {
+          bestScore = score;
+          bestIssue = issue;
+        }
+      }
+      if (bestIssue && bestScore >= 0.35) {
+        return {
+          title: bestIssue.title,
+          url: bestIssue.url,
+          source: bestIssue.source || source,
+        } as EmotionNewsCitation;
+      }
+      return null;
     })
     .filter((entry): entry is EmotionNewsCitation => Boolean(entry));
 
@@ -1756,11 +2509,11 @@ function buildEmotionNewsFallback(
   const profile = baseByEmotion[emotion];
   if (issueArticles.length > 0) {
     return issueArticles.slice(0, 3).map((issue, idx) => ({
-      title: `${issue.title}`.slice(0, 120),
-      summary: `${issue.source} 보도를 바탕으로 핵심 쟁점을 정리한 AI 브리핑 (${now})`.slice(0, 220),
+      title: `[참고기반] ${profile.themes[idx % profile.themes.length]} 브리핑 ${idx + 1}`.slice(0, 120),
+      summary: `${issue.source} 레퍼런스를 기반으로 핵심 쟁점만 재구성한 임시 브리핑 (${now})`.slice(0, 220),
       content: [
-        `${issue.title}`,
-        `${issue.summary}`,
+        `${issue.source}에서 확인된 이슈를 기준으로 핵심 사실과 파급 포인트를 재구성한 임시 브리핑입니다.`,
+        `원문 문장/제목을 그대로 복제하지 않으며, 후속 생성에서 레퍼런스 기반으로 문장을 다시 구성해야 합니다.`,
       ].join("\n\n"),
       source: issue.source || "HueBrief AI",
       emotion,
@@ -1790,28 +2543,38 @@ function normalizeEmotionGeneratedNewsItems(
   emotion: EmotionType,
   issueArticles: KeywordNewsArticle[],
 ): EmotionGeneratedNewsItem[] | null {
-  const candidates = Array.isArray(raw)
-    ? raw
-    : (raw && typeof raw === "object" && Array.isArray((raw as any).items))
-      ? (raw as any).items
-      : [];
+  const candidates = toEmotionNewsCandidates(raw);
   if (!Array.isArray(candidates) || candidates.length === 0) return null;
 
   const normalized = candidates
     .slice(0, 3)
     .map((item, idx) => {
-      const title = String((item as any)?.title || "").replace(/\s+/g, " ").trim().slice(0, 120);
-      const summary = String((item as any)?.summary || "").replace(/\s+/g, " ").trim().slice(0, 220);
-      const content = String((item as any)?.content || "").trim();
-      const sourceRaw = String((item as any)?.source || "").trim();
-      const sourceCitation = normalizeEmotionNewsCitations((item as any)?.sourceCitation, issueArticles, sourceRaw || "HueBrief AI");
+      const record = ((item && typeof item === "object") ? item : {}) as Record<string, unknown>;
+      const title = pickFirstNonEmptyString(record, ["title", "headline", "newsTitle", "제목"])
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 120);
+      const summary = pickFirstNonEmptyString(record, ["summary", "deck", "lead", "요약"])
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 220);
+      const content = pickFirstNonEmptyString(record, ["content", "body", "article", "본문"]).trim();
+      const sourceRaw = pickFirstNonEmptyString(record, ["source", "publisher", "출처"]).trim();
+      const sourceCitationRaw =
+        record.sourceCitation ??
+        record.citations ??
+        record.references ??
+        record.sources ??
+        null;
+      const sourceCitation = normalizeEmotionNewsCitations(sourceCitationRaw, issueArticles, sourceRaw || "HueBrief AI");
 
       if (!title || !summary || !content || sourceCitation.length === 0) return null;
+      const resolvedSource = String(sourceCitation[0]?.source || sourceRaw || "HueBrief AI").trim();
       return {
         title,
         summary,
         content,
-        source: sourceRaw && !/demo/i.test(sourceRaw) ? sourceRaw : "HueBrief AI",
+        source: resolvedSource && !/demo/i.test(resolvedSource) ? resolvedSource : "HueBrief AI",
         emotion,
         sourceCitation,
         fallbackUsed: false,
@@ -1837,6 +2600,96 @@ function evaluateEmotionNewsQuality(items: EmotionGeneratedNewsItem[]): { pass: 
     const citationOk = item.sourceCitation.some((citation) => /^https?:\/\//i.test(String(citation.url || "")));
     if (!citationOk) return { pass: false, reasonCode: "AI_NEWS_SOURCE_CITATION_INVALID" };
   }
+  return { pass: true };
+}
+
+function hasLongCopiedSpan(source: string, target: string, minLen: number = 18): boolean {
+  const src = normalizeSimilarityText(source).replace(/\s+/g, "");
+  const dst = normalizeSimilarityText(target).replace(/\s+/g, "");
+  if (!src || !dst || src.length < minLen || dst.length < minLen) return false;
+  for (let i = 0; i <= src.length - minLen; i += 3) {
+    const segment = src.slice(i, i + minLen);
+    if (segment && dst.includes(segment)) return true;
+  }
+  return false;
+}
+
+function countTokenIntersection(left: string, right: string): number {
+  const leftSet = new Set(tokenizeSimilarity(left));
+  const rightSet = new Set(tokenizeSimilarity(right));
+  let count = 0;
+  for (const token of Array.from(leftSet)) {
+    if (rightSet.has(token)) count += 1;
+  }
+  return count;
+}
+
+function evaluateEmotionNewsReferencePolicy(
+  items: EmotionGeneratedNewsItem[],
+  issueArticles: KeywordNewsArticle[],
+): { pass: boolean; reasonCode?: string } {
+  if (!Array.isArray(issueArticles) || issueArticles.length === 0) {
+    return { pass: false, reasonCode: "AI_NEWS_REFERENCE_REQUIRED" };
+  }
+  const issueByUrl = new Map<string, KeywordNewsArticle>();
+  const issueUrlSet = new Set(
+    issueArticles
+      .map((issue) => {
+        const url = normalizeReferenceUrl(String(issue.url || "").trim());
+        if (url) issueByUrl.set(url, issue);
+        return url;
+      })
+      .filter((url) => Boolean(url)),
+  );
+  if (issueUrlSet.size === 0) {
+    return { pass: false, reasonCode: "AI_NEWS_REFERENCE_REQUIRED" };
+  }
+
+  for (const item of items) {
+    const citations = Array.isArray(item.sourceCitation) ? item.sourceCitation : [];
+    if (citations.length === 0) {
+      return { pass: false, reasonCode: "AI_NEWS_SOURCE_CITATION_MISSING" };
+    }
+    const groundedRefs: KeywordNewsArticle[] = [];
+    for (const citation of citations) {
+      const key = normalizeReferenceUrl(String(citation.url || ""));
+      if (!key || !issueUrlSet.has(key)) continue;
+      const issue = issueByUrl.get(key);
+      if (issue) groundedRefs.push(issue);
+    }
+    const hasGroundedCitation = groundedRefs.length > 0;
+    if (!hasGroundedCitation) {
+      return { pass: false, reasonCode: "AI_NEWS_REFERENCE_OUT_OF_SCOPE" };
+    }
+
+    const itemText = `${item.title} ${item.summary} ${item.content}`;
+    const isGroundedToReference = groundedRefs.some((ref) => {
+      const refText = `${ref.title} ${ref.summary}`;
+      const overlapCount = countTokenIntersection(itemText, refText);
+      const overlapRatio = jaccardSimilarity(tokenizeSimilarity(itemText), tokenizeSimilarity(refText));
+      return overlapCount >= 2 || overlapRatio >= 0.08;
+    });
+    if (!isGroundedToReference) {
+      return { pass: false, reasonCode: "AI_NEWS_REFERENCE_WEAK_GROUNDING" };
+    }
+
+    for (const ref of issueArticles) {
+      const refTitle = String(ref.title || "");
+      const refSummary = String(ref.summary || "");
+      const titleOverlap = jaccardSimilarity(tokenizeSimilarity(item.title), tokenizeSimilarity(refTitle));
+      if (titleOverlap >= 0.85 || hasLongCopiedSpan(refTitle, item.title, 10)) {
+        return { pass: false, reasonCode: "AI_NEWS_TITLE_COPY_DETECTED" };
+      }
+      if (
+        hasLongCopiedSpan(refTitle, item.content, 16) ||
+        hasLongCopiedSpan(refSummary, item.content, 24) ||
+        hasLongCopiedSpan(refSummary, item.summary, 18)
+      ) {
+        return { pass: false, reasonCode: "AI_NEWS_CONTENT_COPY_DETECTED" };
+      }
+    }
+  }
+
   return { pass: true };
 }
 
@@ -2706,6 +3559,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/ai/generate-news", async (req, res) => {
+    const requestStartedAt = Date.now();
     const emotion = toEmotion(req.body?.emotion);
     const roleHeader = typeof req.headers?.["x-actor-role"] === "string"
       ? String(req.headers["x-actor-role"]).trim().toLowerCase()
@@ -2720,10 +3574,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     trackAiNewsMetric(emotion, "requests");
 
     const profile = EMOTION_NEWS_CATEGORY_PROFILE[emotion];
-    const keywordList = emotion === "spectrum"
+    const baseKeywordList = emotion === "spectrum"
       ? (["immersion", "clarity", "serenity", "vibrance", "gravity"] as EmotionType[])
         .flatMap((emotionKey) => EMOTION_NEWS_CATEGORY_PROFILE[emotionKey].keywords.slice(0, 1))
       : profile.keywords.slice(0, 3);
+    const keywordList = buildEmotionKeywordQueryList(emotion, baseKeywordList, emotion === "spectrum" ? 10 : 8);
     const issueFetches = await Promise.all(
       keywordList.map((keyword) => fetchKeywordNewsArticles(keyword, 3, 7000)),
     );
@@ -2731,17 +3586,50 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (rssFallbackCount > 0) {
       trackAiNewsMetric(emotion, "rssFallbacks", rssFallbackCount);
     }
-    const issuePool: KeywordNewsArticle[] = [];
+    const groundedIssuePool: KeywordNewsArticle[] = [];
     const seenIssueKeys = new Set<string>();
     for (const fetched of issueFetches) {
+      const shouldExcludeForGeneration =
+        fetched.fallbackUsed ||
+        String(fetched.diagnostics?.reason || "").includes("keyword_filter_empty_fallback_to_top_feed");
+      if (shouldExcludeForGeneration) continue;
       for (const article of fetched.articles || []) {
         const key = `${article.url || ""}|${article.title || ""}`.toLowerCase();
         if (!key.trim() || seenIssueKeys.has(key)) continue;
         seenIssueKeys.add(key);
-        issuePool.push(article);
+        if (/^https?:\/\//i.test(String(article.url || "").trim())) {
+          groundedIssuePool.push(article);
+        }
       }
     }
-    const selectedIssues = issuePool.slice(0, 3);
+    const selectedIssues = groundedIssuePool.slice(0, 3);
+    if (selectedIssues.length === 0) {
+      void appendAiNewsCompareLog({
+        ts: new Date().toISOString(),
+        emotion,
+        model: FIXED_GEMINI_NEWS_TEXT_MODEL,
+        status: "blocked",
+        reasonCode: "AI_NEWS_REFERENCE_UNAVAILABLE",
+        latencyMs: Date.now() - requestStartedAt,
+        keywords: keywordList,
+        selectedIssueCount: 0,
+        issueFetches: issueFetches.map((row) => ({
+          keyword: row.keyword,
+          fallbackUsed: row.fallbackUsed,
+          diagnostics: row.diagnostics?.reason,
+        })),
+      });
+      console.warn("[AI] generate-news reference unavailable:", {
+        emotion,
+        keywords: keywordList,
+        diagnostics: issueFetches.map((row) => ({ keyword: row.keyword, fallbackUsed: row.fallbackUsed, diagnostics: row.diagnostics })),
+      });
+      return res.status(503).json({
+        error: "신뢰 가능한 레퍼런스 뉴스 수집에 실패해 AI 생성을 중단했습니다. 잠시 후 다시 시도해 주세요.",
+        code: "AI_NEWS_REFERENCE_UNAVAILABLE",
+        retryable: true,
+      });
+    }
     const issueContext = selectedIssues.map((issue, idx) => ({
       idx: idx + 1,
       title: issue.title,
@@ -2765,37 +3653,162 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       "제약:",
       "- title: 18~58자 권장",
       "- summary: 45~120자 (짧고 명료하게)",
-      "- content: 2개 짧은 문단, 총 220~520자",
+      "- content: 2개 짧은 문단, 총 180~360자",
       "- source: 'HueBrief AI' 또는 신뢰 가능한 출처명",
-      "- sourceCitation: 1~3개, 각 항목은 title/url/source를 모두 포함",
+      "- sourceCitation: 각 기사당 정확히 1개, title/url/source를 모두 포함",
+      "- sourceCitation.url은 반드시 realtimeIssues에 제공된 URL만 사용",
+      "- realtimeIssues 제목/요약 문장을 그대로 복사하지 말고 재서술(패러프레이즈)할 것",
+      "- 기사 제목/본문에서 레퍼런스 제목/요약의 문장 구조를 그대로 모사하지 말 것",
       "- 기사마다 다른 이슈를 중심으로 작성하고, 중복 서술을 피하세요.",
     ].join("\n");
 
     try {
       const modelResult = await generateGeminiNewsText(prompt);
+      const loggedModel = modelResult.modelUsed || FIXED_GEMINI_NEWS_TEXT_MODEL;
       const text = modelResult.text;
       if (!text) {
+        void appendAiNewsCompareLog({
+          ts: new Date().toISOString(),
+          emotion,
+          model: loggedModel,
+          status: "fallback",
+          reasonCode: modelResult.reasonCode || "AI_NEWS_MODEL_EMPTY",
+          latencyMs: Date.now() - requestStartedAt,
+          keywords: keywordList,
+          selectedIssueCount: selectedIssues.length,
+          issueFetches: issueFetches.map((row) => ({
+            keyword: row.keyword,
+            fallbackUsed: row.fallbackUsed,
+            diagnostics: row.diagnostics?.reason,
+          })),
+        });
         trackAiNewsMetric(emotion, "modelEmpty");
         trackAiNewsMetric(emotion, "fallbackRecoveries");
         return res.json(buildEmotionNewsFallback(emotion, selectedIssues, modelResult.reasonCode || "AI_NEWS_MODEL_EMPTY"));
       }
       const parsed = parseJsonFromModelText<{ items?: unknown }>(text);
-      const normalized = normalizeEmotionGeneratedNewsItems(parsed || text, emotion, selectedIssues);
+      let normalized = normalizeEmotionGeneratedNewsItems(parsed || text, emotion, selectedIssues);
+      let repairedTextPreview = "";
       if (!normalized || normalized.length === 0) {
+        const repairResult = await repairGeminiNewsJson(text, Math.min(16000, Math.max(10000, aiNewsSettings.modelTimeoutMs - 8000)));
+        const repairedText = String(repairResult.text || "").trim();
+        repairedTextPreview = repairedText.slice(0, 600);
+        if (repairedText) {
+          const repairedParsed = parseJsonFromModelText<{ items?: unknown }>(repairedText);
+          normalized = normalizeEmotionGeneratedNewsItems(repairedParsed || repairedText, emotion, selectedIssues);
+        }
+      }
+      if (!normalized || normalized.length === 0) {
+        console.warn("[AI] generate-news parse fallback:", {
+          emotion,
+          parsedType: parsed ? (Array.isArray(parsed) ? "array" : typeof parsed) : "null",
+          textPreview: String(text || "").slice(0, 600),
+        });
+        void appendAiNewsParseFailLog({
+          ts: new Date().toISOString(),
+          emotion,
+          model: loggedModel,
+          reasonCode: "AI_NEWS_PARSE_FALLBACK",
+          latencyMs: Date.now() - requestStartedAt,
+          promptPreview: prompt.slice(0, 1200),
+          modelTextPreview: String(text || "").slice(0, 2000),
+          repairedTextPreview,
+        });
+        void appendAiNewsCompareLog({
+          ts: new Date().toISOString(),
+          emotion,
+          model: loggedModel,
+          status: "fallback",
+          reasonCode: "AI_NEWS_PARSE_FALLBACK",
+          latencyMs: Date.now() - requestStartedAt,
+          keywords: keywordList,
+          selectedIssueCount: selectedIssues.length,
+          issueFetches: issueFetches.map((row) => ({
+            keyword: row.keyword,
+            fallbackUsed: row.fallbackUsed,
+            diagnostics: row.diagnostics?.reason,
+          })),
+        });
         trackAiNewsMetric(emotion, "parseFailures");
         trackAiNewsMetric(emotion, "fallbackRecoveries");
         return res.json(buildEmotionNewsFallback(emotion, selectedIssues, "AI_NEWS_PARSE_FALLBACK"));
       }
       const quality = evaluateEmotionNewsQuality(normalized);
       if (!quality.pass) {
+        void appendAiNewsCompareLog({
+          ts: new Date().toISOString(),
+          emotion,
+          model: loggedModel,
+          status: "blocked",
+          reasonCode: quality.reasonCode || "AI_NEWS_QUALITY_BLOCKED",
+          latencyMs: Date.now() - requestStartedAt,
+          keywords: keywordList,
+          selectedIssueCount: selectedIssues.length,
+          issueFetches: issueFetches.map((row) => ({
+            keyword: row.keyword,
+            fallbackUsed: row.fallbackUsed,
+            diagnostics: row.diagnostics?.reason,
+          })),
+        });
         trackAiNewsMetric(emotion, "qualityBlocks");
         trackAiNewsMetric(emotion, "fallbackRecoveries");
         return res.json(buildEmotionNewsFallback(emotion, selectedIssues, quality.reasonCode || "AI_NEWS_QUALITY_BLOCKED"));
       }
+      const referencePolicy = evaluateEmotionNewsReferencePolicy(normalized, selectedIssues);
+      if (!referencePolicy.pass) {
+        void appendAiNewsCompareLog({
+          ts: new Date().toISOString(),
+          emotion,
+          model: loggedModel,
+          status: "blocked",
+          reasonCode: referencePolicy.reasonCode || "AI_NEWS_REFERENCE_POLICY_BLOCKED",
+          latencyMs: Date.now() - requestStartedAt,
+          keywords: keywordList,
+          selectedIssueCount: selectedIssues.length,
+          issueFetches: issueFetches.map((row) => ({
+            keyword: row.keyword,
+            fallbackUsed: row.fallbackUsed,
+            diagnostics: row.diagnostics?.reason,
+          })),
+        });
+        trackAiNewsMetric(emotion, "qualityBlocks");
+        trackAiNewsMetric(emotion, "fallbackRecoveries");
+        return res.json(buildEmotionNewsFallback(emotion, selectedIssues, referencePolicy.reasonCode || "AI_NEWS_REFERENCE_POLICY_BLOCKED"));
+      }
+      void appendAiNewsCompareLog({
+        ts: new Date().toISOString(),
+        emotion,
+        model: loggedModel,
+        status: "success",
+        reasonCode: repairedTextPreview ? "AI_NEWS_PARSE_REPAIRED" : undefined,
+        latencyMs: Date.now() - requestStartedAt,
+        keywords: keywordList,
+        selectedIssueCount: selectedIssues.length,
+        issueFetches: issueFetches.map((row) => ({
+          keyword: row.keyword,
+          fallbackUsed: row.fallbackUsed,
+          diagnostics: row.diagnostics?.reason,
+        })),
+      });
       trackAiNewsMetric(emotion, "success");
       return res.json(normalized);
     } catch (error) {
       console.warn("[AI] generate-news failed, fallback used:", error);
+      void appendAiNewsCompareLog({
+        ts: new Date().toISOString(),
+        emotion,
+        model: FIXED_GEMINI_NEWS_TEXT_MODEL,
+        status: "error",
+        reasonCode: "AI_NEWS_RUNTIME_FALLBACK",
+        latencyMs: Date.now() - requestStartedAt,
+        keywords: keywordList,
+        selectedIssueCount: selectedIssues.length,
+        issueFetches: issueFetches.map((row) => ({
+          keyword: row.keyword,
+          fallbackUsed: row.fallbackUsed,
+          diagnostics: row.diagnostics?.reason,
+        })),
+      });
       trackAiNewsMetric(emotion, "fallbackRecoveries");
       return res.json(buildEmotionNewsFallback(emotion, selectedIssues, "AI_NEWS_RUNTIME_FALLBACK"));
     }
@@ -3070,6 +4083,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         source: String(req.body.selectedArticle.source || "").trim(),
       }
       : null;
+    if (
+      !selectedArticle ||
+      !selectedArticle.title ||
+      !selectedArticle.summary ||
+      !selectedArticle.url ||
+      !selectedArticle.source ||
+      !/^https?:\/\//i.test(selectedArticle.url)
+    ) {
+      return res.status(400).json({
+        error: "레퍼런스 기사(제목/요약/출처/URL)가 없으면 AI 기사 생성을 진행할 수 없습니다.",
+        code: "AI_DRAFT_REFERENCE_REQUIRED",
+        retryable: false,
+      });
+    }
     const regressionEnabled =
       process.env.ENABLE_AI_DRAFT_TEST_SCENARIO === "1" &&
       process.env.NODE_ENV !== "production";
@@ -3440,6 +4467,75 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ correctedText: content, errors: [] });
   });
 
+  app.post("/api/ai/share-keyword-pack", async (req, res) => {
+    const title = String(req.body?.title || "").trim();
+    const summary = String(req.body?.summary || "").trim();
+    const content = String(req.body?.content || "").trim();
+    const category = String(req.body?.category || "").trim();
+    const emotion = String(req.body?.emotion || "").trim();
+
+    if (!title && !summary && !content) {
+      return res.status(400).json({ error: "title/summary/content 중 최소 1개가 필요합니다." });
+    }
+
+    const fallback = buildShareKeywordPackFallback({
+      title,
+      summary,
+      content,
+      category,
+      emotion,
+    });
+
+    const prompt = [
+      "아래 기사 데이터에서 제목 편향을 최소화하고 본문 중심으로 키워드/해시태그를 생성하세요.",
+      "출력은 반드시 JSON 객체 1개만 반환합니다.",
+      `입력 제목: ${title || "(없음)"}`,
+      `입력 요약: ${summary || "(없음)"}`,
+      `입력 본문: ${(content || "").slice(0, 5000) || "(없음)"}`,
+      `카테고리: ${category || "(없음)"}`,
+      `감정 라벨: ${emotion || "(없음)"}`,
+      "요구사항:",
+      "1) representativeKeywords: 본문 전체를 대표하는 핵심 키워드 5~8개, 일반명사 남발 금지",
+      "2) viralHashtags: SNS 노출 증대를 위한 해시태그용 토큰 7~10개, broad+niche+context 혼합",
+      "3) 각 항목은 문자열 배열로 반환, '#' 없이 토큰만 반환",
+      "4) 중복/불용어/숫자-only 토큰 제거",
+      "JSON Schema:",
+      '{"representativeKeywords": ["..."], "viralHashtags": ["..."]}',
+    ].join("\n");
+
+    try {
+      const modelText = await generateGeminiText(prompt);
+      const parsed = parseJsonFromModelText<{
+        representativeKeywords?: unknown;
+        viralHashtags?: unknown;
+      }>(String(modelText || ""));
+
+      const representativeKeywords = sanitizeShareTokens(parsed?.representativeKeywords, 5, 8);
+      const viralHashtags = sanitizeShareTokens(parsed?.viralHashtags, 7, 10);
+
+      const normalizedKeywords = representativeKeywords.length >= 5
+        ? representativeKeywords.slice(0, 8)
+        : fallback.representativeKeywords;
+      const normalizedViral = viralHashtags.length >= 7
+        ? viralHashtags.slice(0, 10)
+        : fallback.viralHashtags;
+
+      const fallbackUsed = !modelText || representativeKeywords.length < 5 || viralHashtags.length < 7;
+      return res.json({
+        representativeKeywords: normalizedKeywords,
+        viralHashtags: normalizedViral,
+        fallbackUsed,
+      });
+    } catch (error) {
+      console.warn("[AI] share-keyword-pack failed, fallback used:", error);
+      return res.json({
+        representativeKeywords: fallback.representativeKeywords,
+        viralHashtags: fallback.viralHashtags,
+        fallbackUsed: true,
+      });
+    }
+  });
+
   app.post("/api/ai/generate-hashtags", async (req, res) => {
     const content = String(req.body?.content || "");
     const base = content.split(" ").filter(Boolean).slice(0, 3);
@@ -3498,19 +4594,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       prompt: string;
       provider: string;
       model: string;
+      width: number | null;
+      height: number | null;
+      aspectRatioObserved: string;
     }> = [];
     const failures: Array<{ index: number; detail: string; prompt: string }> = [];
 
     for (let i = 0; i < prompts.length; i += 1) {
       const prompt = prompts[i];
       try {
-        const imageUrl = await generateGeminiImageWithRetry(prompt, 2);
+        const generatedImage = await generateGeminiImageWithRetry(prompt, 3);
+        const dims = extractImageDimensionsFromDataUrl(generatedImage.dataUrl);
+        const ratio = dims ? (dims.width / Math.max(1, dims.height)) : null;
         images.push({
-          url: imageUrl,
+          url: generatedImage.dataUrl,
           description: `흐름 이미지 ${i + 1} (${["도입", "배경", "영향", "결론"][Math.min(i, 3)]})`,
           prompt,
           provider: "gemini",
-          model: FIXED_GEMINI_IMAGE_MODEL,
+          model: generatedImage.model,
+          width: dims?.width ?? null,
+          height: dims?.height ?? null,
+          aspectRatioObserved: ratio ? ratio.toFixed(4) : "unknown",
         });
       } catch (error: any) {
         failures.push({
@@ -3522,19 +4626,40 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     if (images.length === 0) {
-      return res.status(502).json({
-        error: "Gemini 이미지 생성에 실패했습니다.",
+      const detail = String(failures[0]?.detail || "unknown");
+      const lowerDetail = detail.toLowerCase();
+      const isOverloaded =
+        lowerDetail.includes("high demand") ||
+        lowerDetail.includes("overloaded") ||
+        lowerDetail.includes("try again later") ||
+        lowerDetail.includes("resource exhausted") ||
+        lowerDetail.includes("429") ||
+        lowerDetail.includes("503");
+      const isTemporaryFailure =
+        isOverloaded ||
+        lowerDetail.includes("abort") ||
+        lowerDetail.includes("timed out") ||
+        lowerDetail.includes("timeout") ||
+        lowerDetail.includes("deadline") ||
+        lowerDetail.includes("unavailable");
+      return res.status(isTemporaryFailure ? 503 : 502).json({
+        error: isTemporaryFailure
+          ? "이미지 생성 요청이 일시적으로 실패했습니다. 잠시 후 다시 시도해 주세요."
+          : "Gemini 이미지 생성에 실패했습니다.",
         code: "AI_IMAGE_GENERATION_FAILED",
         model: FIXED_GEMINI_IMAGE_MODEL,
-        detail: failures[0]?.detail || "unknown",
+        modelFallbacks: GEMINI_IMAGE_MODEL_FALLBACKS,
+        detail,
         retryable: true,
+        retryAfterSeconds: isTemporaryFailure ? 20 : undefined,
         failures,
       });
     }
 
     return res.json({
       images,
-      model: FIXED_GEMINI_IMAGE_MODEL,
+      model: images[0]?.model || FIXED_GEMINI_IMAGE_MODEL,
+      modelFallbacks: GEMINI_IMAGE_MODEL_FALLBACKS,
       partial: failures.length > 0,
       failures,
     });
@@ -3555,6 +4680,71 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ success: true, videoUrl: "https://samplelib.com/lib/preview/mp4/sample-5s.mp4", duration: 8, aspectRatio: "9:16" });
   });
 
+  app.post("/api/share/short-links", async (req, res) => {
+    await hydrateShareShortLinks();
+
+    const targetUrl = String(req.body?.targetUrl || "").trim();
+    if (!targetUrl || !isValidHttpUrl(targetUrl)) {
+      return res.status(400).json({ error: "targetUrl must be a valid http(s) url." });
+    }
+
+    const record = resolveOrCreateShareShortLink(targetUrl);
+    const baseUrl = resolveShortLinkBaseUrl(req);
+    const shortUrl = `${baseUrl}${buildShortLinkPath(record.slug)}`;
+    return res.json({
+      slug: record.slug,
+      shortUrl,
+      shortDisplay: toShortDisplayUrl(shortUrl),
+      targetUrl: record.targetUrl,
+      createdAt: record.createdAt,
+      hits: record.hits,
+    });
+  });
+
+  const handleShortRedirect = async (req: any, res: any, next?: () => void) => {
+    await hydrateShareShortLinks();
+
+    const slug = normalizeShortLinkSlug(req.params.slug);
+    if (!slug) {
+      if (next) return next();
+      return res.status(404).send("Short link not found.");
+    }
+
+    const record = shareShortLinksBySlug.get(slug);
+    if (!record) {
+      if (next) return next();
+      return res.status(404).send("Short link not found.");
+    }
+
+    record.hits += 1;
+    record.updatedAt = new Date().toISOString();
+    shareShortLinksBySlug.set(slug, record);
+    scheduleShareShortLinksPersistence();
+
+    return res.redirect(302, record.targetUrl);
+  };
+
+  if (SHORT_LINK_PATH_PREFIX) {
+    app.get(`/${SHORT_LINK_PATH_PREFIX}/:slug`, async (req, res) => {
+      await handleShortRedirect(req, res);
+    });
+  } else {
+    app.get("/:slug", async (req, res, next) => {
+      const slug = normalizeShortLinkSlug(req.params.slug);
+      if (!/^[0-9a-z_-]{4,12}$/i.test(slug)) {
+        return next();
+      }
+      await handleShortRedirect(req, res, next);
+    });
+  }
+
+  // Legacy compatibility for already-issued /s/{slug} links.
+  if (SHORT_LINK_PATH_PREFIX !== "s") {
+    app.get("/s/:slug", async (req, res) => {
+      await handleShortRedirect(req, res);
+    });
+  }
+
   app.get("/api/admin/stats", async (_req, res) => {
     const stats = await storage.getAdminStats();
     res.json({
@@ -3567,9 +4757,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/admin/ai/news-health", async (_req, res) => {
-    const model = process.env.GEMINI_TEXT_MODEL || "gemini-2.5-flash";
+    const model = FIXED_GEMINI_NEWS_TEXT_MODEL;
     const hasKey = Boolean(String(process.env.GEMINI_API_KEY || "").trim());
-    const timeoutMs = aiNewsSettings.modelTimeoutMs;
+    const timeoutMs = Math.max(36000, Math.min(aiNewsSettings.modelTimeoutMs, 45000));
 
     if (!hasKey) {
       return res.status(503).json({
@@ -3585,7 +4775,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       "Return:",
       '{"ok":true,"kind":"ai_news_probe"}',
     ].join("\n");
-    const probe = await generateGeminiNewsText(probePrompt, Math.min(12000, Math.max(6000, timeoutMs)));
+    const probe = await generateGeminiNewsText(probePrompt, Math.min(30000, Math.max(12000, timeoutMs - 2000)));
     const ok = Boolean(probe.text);
     return res.status(ok ? 200 : 503).json({
       ok,
@@ -3941,20 +5131,65 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  const deriveArticleSource = (payload: any): string => {
+    const direct = String(payload?.source || "").trim();
+    if (direct) return direct.slice(0, 240);
+
+    const content = String(payload?.content || "");
+    const sourceMatch = content.match(/\[출처\]([\s\S]*)$/i);
+    if (sourceMatch?.[1]) {
+      const firstLine = sourceMatch[1]
+        .split("\n")
+        .map((line) => line.replace(/^[\-\u2022]\s*/, "").trim())
+        .find(Boolean) || "";
+      const url = firstLine.match(/https?:\/\/[^\s)]+/i)?.[0] || "";
+      const withoutUrl = firstLine.replace(/https?:\/\/[^\s)]+/ig, "").replace(/[()]/g, "").trim();
+      const extracted = (withoutUrl || url).trim();
+      if (extracted) return extracted.slice(0, 240);
+    }
+
+    return "출처 확인 필요";
+  };
+
   app.post("/api/articles", async (req, res) => {
-    const articleData = req.body;
+    const articleData = {
+      ...(req.body || {}),
+      source: deriveArticleSource(req.body || {}),
+    };
     const newItem = await storage.createNewsItem(articleData);
     res.status(201).json(newItem);
   });
 
   app.put("/api/articles/:id", async (req, res) => {
-    const before = await storage.getAllNews(true);
-    const prev = before.find((row) => row.id === req.params.id);
-    const updatedItem = await storage.updateNewsItem(req.params.id, req.body || {});
+    const prev = await storage.getNewsItemById(req.params.id);
+    if (!prev) return res.status(404).json({ error: "Article not found" });
+
+    const actor = resolveActor(req);
+    const actorRole = String(actor.actorRole || "").trim().toLowerCase();
+    const actorId = String(actor.actorId || "").trim().toLowerCase();
+    const ownerId = String((prev as any).authorId ?? (prev as any).author_id ?? "").trim().toLowerCase();
+    const isAdmin = actorRole === "admin";
+    const isJournalistOwner = actorRole === "journalist" && Boolean(actorId) && actorId === ownerId;
+
+    if (!isAdmin && !isJournalistOwner) {
+      return res.status(403).json({
+        error: "수정 권한이 없습니다. 기사 작성자 또는 관리자만 수정할 수 있습니다.",
+      });
+    }
+
+    const incoming = req.body || {};
+    const updates = {
+      ...incoming,
+      ...(Object.prototype.hasOwnProperty.call(incoming, "source") || Object.prototype.hasOwnProperty.call(incoming, "content")
+        ? { source: deriveArticleSource(incoming) }
+        : {}),
+    };
+
+    const updatedItem = await storage.updateNewsItem(req.params.id, updates);
     if (!updatedItem) return res.status(404).json({ error: "Article not found" });
 
     if (Object.prototype.hasOwnProperty.call(req.body || {}, "isPublished")) {
-      const wasPublished = prev ? Boolean((prev as any).isPublished ?? (prev as any).is_published ?? true) : true;
+      const wasPublished = Boolean((prev as any).isPublished ?? (prev as any).is_published ?? true);
       const isPublished = Boolean((updatedItem as any).isPublished ?? (updatedItem as any).is_published ?? true);
       if (wasPublished !== isPublished) {
         await writeAdminActionLog(req, isPublished ? "publish" : "hide", req.params.id);

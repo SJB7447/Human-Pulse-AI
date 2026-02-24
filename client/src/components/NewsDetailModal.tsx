@@ -1,10 +1,11 @@
 ﻿import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check, RefreshCcw, AlertCircle } from 'lucide-react';
+import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check, RefreshCcw, AlertCircle, Link2, Copy, Globe, Instagram, MessageCircle, Youtube, ExternalLink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { type NewsItem } from '@/hooks/useNews';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
+import { DBService } from '@/services/DBService';
 import { AIServiceError, GeminiService } from '@/services/gemini';
 import type { InteractiveArticle } from '@shared/interactiveArticle';
 
@@ -88,6 +89,371 @@ function isSourceLikeParagraph(text: string): boolean {
   return false;
 }
 
+type SharePlatform = 'web' | 'instagram' | 'threads' | 'youtube';
+
+type SeoTitleMode = 'default' | 'recommended' | 'custom';
+
+type ShareDraft = {
+  platform: SharePlatform;
+  shareText: string;
+  sourceLink: string;
+  seoTitleDefault: string;
+  seoTitleRecommended: string;
+  seoTitleCustom: string;
+  seoTitleMode: SeoTitleMode;
+  seoDescription: string;
+  tagText: string;
+};
+
+type ShareOpenTarget = {
+  url: string;
+  supportsPrefill: boolean;
+};
+
+type SharePackage = {
+  platform: SharePlatform;
+  platformLabel: string;
+  shareText: string;
+  sourceLink: string;
+  seoTitle: string;
+  seoDescription: string;
+  tagText: string;
+};
+
+const SHARE_PLATFORM_LABEL: Record<SharePlatform, string> = {
+  web: 'Web',
+  instagram: 'Instagram',
+  threads: 'Threads',
+  youtube: 'YouTube',
+};
+
+function clampText(input: string | null | undefined, maxLength: number): string {
+  const plain = String(input || '').replace(/\s+/g, ' ').trim();
+  if (!plain) return '';
+  if (plain.length <= maxLength) return plain;
+  return `${plain.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
+function ensureSentenceEnd(input: string): string {
+  const text = String(input || '').trim();
+  if (!text) return '';
+  if (/[.!?。！？]$/.test(text)) return text;
+  return `${text}.`;
+}
+
+function parseSentences(input: string): string[] {
+  return String(input || '')
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?。！？])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function buildThreeSentenceDescription(input: string, title: string): string {
+  const sentences = parseSentences(input);
+  const picked = sentences.slice(0, 3).map(ensureSentenceEnd);
+  if (picked.length >= 3) return picked.join(' ');
+
+  const fallback = [
+    ensureSentenceEnd(clampText(title, 80) || '이 기사는 핵심 이슈를 정리합니다'),
+    '주요 배경과 쟁점을 간결하게 요약합니다.',
+    '출처 링크를 통해 원문 맥락을 추가로 확인할 수 있습니다.',
+  ];
+
+  while (picked.length < 3) {
+    picked.push(fallback[picked.length]);
+  }
+  return picked.join(' ');
+}
+
+function buildRecommendedSeoTitle(title: string): string {
+  const trimmed = String(title || '').trim();
+  if (!trimmed) return '핵심 쟁점 브리핑 | HueBrief';
+  return `${trimmed} 핵심 쟁점 브리핑 | HueBrief`;
+}
+
+function extractUrl(value: string): string | null {
+  const match = String(value || '').match(/https?:\/\/[^\s)]+/i);
+  if (!match) return null;
+  return match[0];
+}
+
+function normalizeUrl(value: string | null | undefined): string | null {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (/^https?:\/\//i.test(text)) return text;
+  if (/^[a-z0-9.-]+\.[a-z]{2,}/i.test(text)) return `https://${text}`;
+  return null;
+}
+
+function detectSourceUrl(article: NewsItem): string | null {
+  const direct = normalizeUrl(article.source || '');
+  if (direct) return direct;
+
+  const contentUrl = extractUrl(String(article.content || ''));
+  if (contentUrl) return contentUrl;
+
+  const summaryUrl = extractUrl(String(article.summary || ''));
+  if (summaryUrl) return summaryUrl;
+  return null;
+}
+
+type ShareKeywordPack = {
+  representativeKeywords: string[];
+  viralHashtags: string[];
+};
+
+const SHARE_TOKEN_STOPWORDS = new Set([
+  '그리고', '그러나', '하지만', '또한', '이번', '지난', '현재', '최근', '오늘', '내일', '오전', '오후',
+  '대한', '통해', '관련', '경우', '때문', '대한민국', '서울', '기자', '뉴스', '기사', '보도', '사진',
+  '있다', '했다', '된다', '위해', '에서', '에게', '으로', '하다', '위한', '가장', '정도', '대해',
+  'the', 'and', 'for', 'with', 'this', 'that', 'from', 'into', 'about', 'news', 'report',
+  'www', 'http', 'https', 'com', 'net', 'org',
+]);
+
+function normalizeShareToken(token: string): string {
+  return String(token || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^[^0-9a-z가-힣]+|[^0-9a-z가-힣]+$/gi, '')
+    .replace(/(?:은|는|이|가|을|를|의|에|로|으로|와|과|도|만|에서|에게|부터|까지)$/, '');
+}
+
+function sanitizeShareTokenList(values: string[], min: number, max: number): string[] {
+  const normalized = values
+    .map((value) => normalizeShareToken(value))
+    .filter((token) => token.length >= 2 && token.length <= 20)
+    .filter((token) => !SHARE_TOKEN_STOPWORDS.has(token))
+    .filter((token) => !/^\d+$/.test(token));
+  const deduped = Array.from(new Set(normalized));
+  return deduped.slice(0, Math.max(min, max));
+}
+
+function buildFallbackShareKeywordPack(article: NewsItem, emotionLabel: string): ShareKeywordPack {
+  const plainContent = stripArticleMeta(article.content);
+  const body = String(plainContent || article.summary || '').replace(/\s+/g, ' ').trim();
+  const paragraphs = body.split(/\n{2,}/).map((line) => line.trim()).filter(Boolean);
+  const blocks = paragraphs.length > 0 ? paragraphs : [body];
+  const scoreMap = new Map<string, number>();
+
+  blocks.forEach((block, blockIdx) => {
+    const tokens = (block.match(/[0-9a-zA-Z가-힣]{2,}/g) || [])
+      .map((token) => normalizeShareToken(token))
+      .filter((token) => token.length >= 2 && token.length <= 20)
+      .filter((token) => !SHARE_TOKEN_STOPWORDS.has(token))
+      .filter((token) => !/^\d+$/.test(token));
+    const weight = blockIdx < 2 ? 1.4 : 1.0;
+    tokens.forEach((token) => scoreMap.set(token, (scoreMap.get(token) || 0) + weight));
+  });
+
+  const summaryTokens = (String(article.summary || '').match(/[0-9a-zA-Z가-힣]{2,}/g) || [])
+    .map((token) => normalizeShareToken(token))
+    .filter((token) => token.length >= 2 && token.length <= 20)
+    .filter((token) => !SHARE_TOKEN_STOPWORDS.has(token))
+    .slice(0, 10);
+  summaryTokens.forEach((token) => scoreMap.set(token, (scoreMap.get(token) || 0) + 1.2));
+
+  const titleTokens = (String(article.title || '').match(/[0-9a-zA-Z가-힣]{2,}/g) || [])
+    .map((token) => normalizeShareToken(token))
+    .filter((token) => token.length >= 2 && token.length <= 20)
+    .filter((token) => !SHARE_TOKEN_STOPWORDS.has(token))
+    .slice(0, 6);
+  titleTokens.forEach((token) => scoreMap.set(token, (scoreMap.get(token) || 0) + 0.35));
+
+  const representativeKeywords = Array.from(scoreMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([token]) => token)
+    .slice(0, 8);
+  const safeKeywords = representativeKeywords.length >= 5
+    ? representativeKeywords
+    : Array.from(new Set([...representativeKeywords, '핵심쟁점', '정책변화', '시장반응', '이해관계', '영향분석'])).slice(0, 8);
+
+  const categoryToken = normalizeShareToken(String(article.category || article.emotion || ''));
+  const emotionToken = normalizeShareToken(emotionLabel);
+  const viralCandidates = [
+    ...safeKeywords.slice(0, 6),
+    categoryToken,
+    emotionToken,
+    '핵심이슈',
+    '이슈브리핑',
+    '뉴스요약',
+    '트렌드체크',
+    '지금주목',
+    '심층분석',
+  ].filter(Boolean);
+
+  const viralHashtags = sanitizeShareTokenList(viralCandidates, 7, 10);
+  const safeViral = viralHashtags.length >= 7
+    ? viralHashtags
+    : Array.from(new Set([...viralHashtags, '핵심이슈', '뉴스요약', '지금주목', '트렌드체크', '브리핑'])).slice(0, 10);
+
+  return {
+    representativeKeywords: safeKeywords.slice(0, 8),
+    viralHashtags: safeViral.slice(0, 10),
+  };
+}
+
+function normalizeShareKeywordPack(input: Partial<ShareKeywordPack> | null | undefined, fallback: ShareKeywordPack): ShareKeywordPack {
+  const representativeKeywords = sanitizeShareTokenList(input?.representativeKeywords || [], 5, 8);
+  const viralHashtags = sanitizeShareTokenList(input?.viralHashtags || [], 7, 10);
+
+  return {
+    representativeKeywords: representativeKeywords.length >= 5 ? representativeKeywords.slice(0, 8) : fallback.representativeKeywords,
+    viralHashtags: viralHashtags.length >= 7 ? viralHashtags.slice(0, 10) : fallback.viralHashtags,
+  };
+}
+
+function getTagTokensForPlatform(platform: SharePlatform, pack: ShareKeywordPack): string[] {
+  if (platform === 'instagram' || platform === 'threads') {
+    return pack.viralHashtags.slice(0, 10);
+  }
+  if (platform === 'youtube') {
+    return Array.from(new Set([...pack.representativeKeywords, ...pack.viralHashtags])).slice(0, 10);
+  }
+  return pack.representativeKeywords.slice(0, 8);
+}
+
+function parseTagTokens(input: string): string[] {
+  const tokens = String(input || '')
+    .replace(/[#\n]/g, ' ')
+    .split(/[\s,]+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => token.replace(/[^0-9a-zA-Z가-힣_]/g, ''))
+    .filter(Boolean);
+
+  return Array.from(new Set(tokens)).slice(0, 10);
+}
+
+function formatTagText(platform: SharePlatform, tokens: string[]): string {
+  if (platform === 'instagram' || platform === 'threads') {
+    return tokens.map((token) => `#${token}`).join(' ');
+  }
+  if (platform === 'youtube') {
+    return tokens.join(', ');
+  }
+  return tokens.join(', ');
+}
+
+function getSelectedSeoTitle(draft: ShareDraft): string {
+  if (draft.seoTitleMode === 'recommended') return draft.seoTitleRecommended;
+  if (draft.seoTitleMode === 'custom') return draft.seoTitleCustom || draft.seoTitleDefault;
+  return draft.seoTitleDefault;
+}
+
+function toSharePackage(draft: ShareDraft): SharePackage {
+  return {
+    platform: draft.platform,
+    platformLabel: SHARE_PLATFORM_LABEL[draft.platform],
+    shareText: draft.shareText,
+    sourceLink: draft.sourceLink,
+    seoTitle: getSelectedSeoTitle(draft),
+    seoDescription: draft.seoDescription,
+    tagText: draft.tagText,
+  };
+}
+
+function buildSharePackageText(pkg: SharePackage): string {
+  return [
+    `[${pkg.platformLabel}] 공유 패키지`,
+    '',
+    '공유 문구:',
+    pkg.shareText,
+    '',
+    `Source Link: ${pkg.sourceLink}`,
+    `SEO Title: ${pkg.seoTitle}`,
+    `SEO Description: ${pkg.seoDescription}`,
+    `Keywords/Tags: ${pkg.tagText}`,
+  ].join('\n');
+}
+
+function buildShareOpenTarget(pkg: SharePackage): ShareOpenTarget {
+  const encodedText = encodeURIComponent([pkg.shareText, '', `SEO Title: ${pkg.seoTitle}`].join('\n'));
+  const encodedUrl = encodeURIComponent(pkg.sourceLink);
+
+  switch (pkg.platform) {
+    case 'web':
+      return {
+        url: `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`,
+        supportsPrefill: true,
+      };
+    case 'threads':
+      return {
+        url: `https://www.threads.net/intent/post?text=${encodedText}&url=${encodedUrl}`,
+        supportsPrefill: true,
+      };
+    case 'instagram':
+      return {
+        url: 'https://www.instagram.com/',
+        supportsPrefill: false,
+      };
+    case 'youtube':
+      return {
+        url: 'https://studio.youtube.com/',
+        supportsPrefill: false,
+      };
+    default:
+      return {
+        url: 'https://www.instagram.com/',
+        supportsPrefill: false,
+      };
+  }
+}
+
+function createEmptyShareDraft(platform: SharePlatform): ShareDraft {
+  return {
+    platform,
+    shareText: '',
+    sourceLink: '',
+    seoTitleDefault: '',
+    seoTitleRecommended: '',
+    seoTitleCustom: '',
+    seoTitleMode: 'default',
+    seoDescription: '',
+    tagText: '',
+  };
+}
+
+function buildDefaultShareDraft(
+  platform: SharePlatform,
+  article: NewsItem,
+  emotionLabel: string,
+  sourceLink: string,
+  keywordPack: ShareKeywordPack,
+): ShareDraft {
+  const plainContent = stripArticleMeta(article.content);
+  const summary = clampText(article.summary || plainContent || article.title, 220);
+  const seoDescription = buildThreeSentenceDescription(plainContent || article.summary || article.title, article.title);
+  const tags = getTagTokensForPlatform(platform, keywordPack);
+  const seoTitleDefault = clampText(`${article.title} | HueBrief`, 68);
+  const seoTitleRecommended = clampText(buildRecommendedSeoTitle(article.title), 68);
+
+  const baseShareLines = [
+    article.title,
+    summary,
+    `출처: ${sourceLink}`,
+  ];
+
+  const shareByPlatform: Record<SharePlatform, string> = {
+    web: baseShareLines.join('\n'),
+    instagram: `${baseShareLines.join('\n')}\n${formatTagText('instagram', tags)}`,
+    threads: `${baseShareLines.join('\n')}\n${formatTagText('threads', tags)}`,
+    youtube: `${baseShareLines.join('\n')}\n태그: ${formatTagText('youtube', tags)}`,
+  };
+
+  return {
+    platform,
+    shareText: shareByPlatform[platform],
+    sourceLink,
+    seoTitleDefault,
+    seoTitleRecommended,
+    seoTitleCustom: '',
+    seoTitleMode: 'default',
+    seoDescription,
+    tagText: formatTagText(platform, tags),
+  };
+}
+
 interface CuratedArticle {
   id: number;
   originalArticle: NewsItem;
@@ -134,13 +500,29 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [aiActionError, setAiActionError] = useState<string | null>(null);
+  const [showShareSheet, setShowShareSheet] = useState(false);
+  const [sharePlatform, setSharePlatform] = useState<SharePlatform>('web');
+  const [shareLink, setShareLink] = useState('');
+  const [shareLinkDisplay, setShareLinkDisplay] = useState('');
+  const [sourceShortLink, setSourceShortLink] = useState('');
+  const [isPreparingShareLink, setIsPreparingShareLink] = useState(false);
+  const [shareDrafts, setShareDrafts] = useState<Record<SharePlatform, ShareDraft>>({
+    web: createEmptyShareDraft('web'),
+    instagram: createEmptyShareDraft('instagram'),
+    threads: createEmptyShareDraft('threads'),
+    youtube: createEmptyShareDraft('youtube'),
+  });
   const [bgTransitionProgress, setBgTransitionProgress] = useState(0);
+  const [revealedParagraphCount, setRevealedParagraphCount] = useState(1);
+  const [hasStartedScrollReveal, setHasStartedScrollReveal] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const recommendationSectionRef = useRef<HTMLDivElement | null>(null);
   const dialogPanelRef = useRef<HTMLDivElement | null>(null);
   const insightPanelRef = useRef<HTMLDivElement | null>(null);
+  const shareSheetRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const insightCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const shareCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
   const shouldReduceMotion = useReducedMotion();
   const isAiBusy = isTransforming || isSummarizing;
@@ -154,7 +536,21 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     setInteractiveError(null);
     setAiSummary(null);
     setAiActionError(null);
+    setShowShareSheet(false);
+    setSharePlatform('web');
+    setShareLink('');
+    setShareLinkDisplay('');
+    setSourceShortLink('');
+    setIsPreparingShareLink(false);
+    setShareDrafts({
+      web: createEmptyShareDraft('web'),
+      instagram: createEmptyShareDraft('instagram'),
+      threads: createEmptyShareDraft('threads'),
+      youtube: createEmptyShareDraft('youtube'),
+    });
     setBgTransitionProgress(0);
+    setRevealedParagraphCount(1);
+    setHasStartedScrollReveal(false);
   }, [article?.id]);
 
   useEffect(() => {
@@ -175,9 +571,13 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
   useEffect(() => {
     if (!article) return;
-    const focusTarget = showInsightEditor ? insightCloseButtonRef.current : closeButtonRef.current;
+    const focusTarget = showInsightEditor
+      ? insightCloseButtonRef.current
+      : showShareSheet
+        ? shareCloseButtonRef.current
+        : closeButtonRef.current;
     focusTarget?.focus();
-  }, [article, showInsightEditor]);
+  }, [article, showInsightEditor, showShareSheet]);
 
   useEffect(() => {
     if (!article) return;
@@ -187,6 +587,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
         event.preventDefault();
         if (showInsightEditor) {
           setShowInsightEditor(false);
+        } else if (showShareSheet) {
+          setShowShareSheet(false);
         } else {
           onClose();
         }
@@ -194,7 +596,13 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       }
 
       if (event.key !== 'Tab') return;
-      const activeContainer = (showInsightEditor ? insightPanelRef.current : dialogPanelRef.current) as HTMLElement | null;
+      const activeContainer = (
+        showInsightEditor
+          ? insightPanelRef.current
+          : showShareSheet
+            ? shareSheetRef.current
+            : dialogPanelRef.current
+      ) as HTMLElement | null;
       const focusable = getFocusableElements(activeContainer);
       if (focusable.length === 0) return;
 
@@ -218,7 +626,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [article, onClose, showInsightEditor]);
+  }, [article, onClose, showInsightEditor, showShareSheet]);
 
   const recommendationGroups = useMemo(() => {
     if (!article) {
@@ -279,6 +687,26 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     const maxScroll = Math.max(node.scrollHeight - node.clientHeight, 1);
     const progress = Math.max(0, Math.min(1, node.scrollTop / maxScroll));
     setBgTransitionProgress(progress);
+
+    const totalParagraphs = proseBlocks.length;
+    if (totalParagraphs <= 1) {
+      setRevealedParagraphCount(Math.max(totalParagraphs, 1));
+      setHasStartedScrollReveal(true);
+      return;
+    }
+
+    if (node.scrollHeight <= node.clientHeight + 8) {
+      setRevealedParagraphCount(totalParagraphs);
+      setHasStartedScrollReveal(true);
+      return;
+    }
+
+    if (node.scrollTop > 12) {
+      setHasStartedScrollReveal(true);
+    }
+
+    const targetReveal = 1 + Math.ceil(progress * (totalParagraphs - 1));
+    setRevealedParagraphCount((prev) => Math.max(prev, Math.min(totalParagraphs, targetReveal)));
   };
 
   const handleSave = () => {
@@ -288,29 +716,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     });
   };
 
-  const handleShare = async () => {
-    if (navigator.share && article) {
-      try {
-        await navigator.share({
-          title: article.title,
-          text: article.summary,
-        });
-        toast({
-          title: "공유 완료",
-          description: "기사가 공유되었습니다.",
-        });
-      } catch {
-        toast({
-          title: "공유하기",
-          description: "링크가 복사되었습니다.",
-        });
-      }
-    } else {
-      toast({
-        title: "공유하기",
-        description: "링크가 복사되었습니다.",
-      });
-    }
+  const handleShare = () => {
+    setShowShareSheet(true);
   };
 
   const handleMyArticle = async () => {
@@ -488,6 +895,210 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       return chunks.length > 0 ? chunks : [paragraph];
     });
   }, [article?.content, article?.summary]);
+
+  useEffect(() => {
+    if (!article) return;
+    const frame = requestAnimationFrame(() => {
+      const node = scrollContainerRef.current;
+      if (!node) return;
+      if (proseBlocks.length <= 1) {
+        setRevealedParagraphCount(Math.max(1, proseBlocks.length));
+        setHasStartedScrollReveal(true);
+        return;
+      }
+      if (node.scrollHeight <= node.clientHeight + 8) {
+        setRevealedParagraphCount(proseBlocks.length);
+        setHasStartedScrollReveal(true);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [article, proseBlocks.length]);
+
+  useEffect(() => {
+    if (!article) return;
+
+    let cancelled = false;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const emotionPath = article.emotion || emotionType;
+    const longShareLink = `${origin}/emotion/${emotionPath}?id=${encodeURIComponent(String(article.id))}`;
+    const sourceCandidate = detectSourceUrl(article) || longShareLink;
+    const emotionLabel = article.emotion ? getEmotionMeta(article.emotion).label : '뉴스';
+
+    const fallbackKeywordPack = buildFallbackShareKeywordPack(article, emotionLabel);
+
+    const applyDrafts = (resolvedSourceLink: string, keywordPack: ShareKeywordPack) => {
+      const next: Record<SharePlatform, ShareDraft> = {
+        web: buildDefaultShareDraft('web', article, emotionLabel, resolvedSourceLink, keywordPack),
+        instagram: buildDefaultShareDraft('instagram', article, emotionLabel, resolvedSourceLink, keywordPack),
+        threads: buildDefaultShareDraft('threads', article, emotionLabel, resolvedSourceLink, keywordPack),
+        youtube: buildDefaultShareDraft('youtube', article, emotionLabel, resolvedSourceLink, keywordPack),
+      };
+      setShareDrafts(next);
+    };
+
+    setShareLink(longShareLink);
+    setShareLinkDisplay(longShareLink.replace(/^https?:\/\//i, ''));
+    setSourceShortLink(sourceCandidate);
+    applyDrafts(sourceCandidate, fallbackKeywordPack);
+    setIsPreparingShareLink(true);
+
+    (async () => {
+      let resolvedShareLink = longShareLink;
+      let resolvedSourceLink = sourceCandidate;
+      let resolvedDisplay = longShareLink.replace(/^https?:\/\//i, '');
+      let resolvedKeywordPack = fallbackKeywordPack;
+
+      try {
+        const aiPack = await GeminiService.generateShareKeywordPack({
+          title: article.title,
+          summary: article.summary || '',
+          content: stripArticleMeta(article.content),
+          category: article.category || '',
+          emotion: article.emotion || emotionLabel,
+        });
+        resolvedKeywordPack = normalizeShareKeywordPack(aiPack, fallbackKeywordPack);
+      } catch {
+        resolvedKeywordPack = fallbackKeywordPack;
+      }
+
+      try {
+        const mainShort = await DBService.createShortLink(longShareLink);
+        resolvedShareLink = mainShort?.shortUrl || longShareLink;
+        resolvedDisplay = mainShort?.shortDisplay || resolvedShareLink.replace(/^https?:\/\//i, '');
+      } catch {
+        resolvedShareLink = longShareLink;
+        resolvedDisplay = resolvedShareLink.replace(/^https?:\/\//i, '');
+      }
+
+      try {
+        if (sourceCandidate === longShareLink) {
+          resolvedSourceLink = resolvedShareLink;
+        } else {
+          const sourceShort = await DBService.createShortLink(sourceCandidate);
+          resolvedSourceLink = sourceShort?.shortUrl || sourceCandidate;
+        }
+      } catch {
+        resolvedSourceLink = sourceCandidate;
+      }
+
+      if (cancelled) return;
+      setShareLink(resolvedShareLink);
+      setShareLinkDisplay(resolvedDisplay);
+      setSourceShortLink(resolvedSourceLink);
+      applyDrafts(resolvedSourceLink, resolvedKeywordPack);
+      setIsPreparingShareLink(false);
+    })().catch(() => {
+      if (cancelled) return;
+      setIsPreparingShareLink(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [article?.id, emotionType]);
+
+  const activeShareDraft = shareDrafts[sharePlatform];
+  const activeSharePackage = activeShareDraft ? toSharePackage(activeShareDraft) : null;
+  const activeTagTokens = useMemo(() => parseTagTokens(activeShareDraft?.tagText || ''), [activeShareDraft?.tagText]);
+
+  const copyToClipboard = async (text: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.setAttribute('readonly', '');
+      textArea.style.position = 'fixed';
+      textArea.style.opacity = '0';
+      document.body.appendChild(textArea);
+      textArea.select();
+      const succeeded = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return succeeded;
+    } catch {
+      return false;
+    }
+  };
+
+  const updateActiveShareDraft = (patch: Partial<ShareDraft>) => {
+    setShareDrafts((prev) => ({
+      ...prev,
+      [sharePlatform]: {
+        ...prev[sharePlatform],
+        ...patch,
+      },
+    }));
+  };
+
+  const handleCopyLink = async () => {
+    const copied = await copyToClipboard(shareLink);
+    if (copied) {
+      toast({ title: '링크 복사 완료', description: '공유 링크를 클립보드에 복사했습니다.' });
+      return;
+    }
+    toast({ title: '복사 실패', description: '링크 복사에 실패했습니다.', variant: 'destructive' });
+  };
+
+  const handleCopySourceLink = async () => {
+    const source = activeShareDraft?.sourceLink || sourceShortLink || shareLink;
+    const copied = await copyToClipboard(source);
+    if (copied) {
+      toast({ title: '출처 링크 복사 완료', description: '출처 링크를 클립보드에 복사했습니다.' });
+      return;
+    }
+    toast({ title: '복사 실패', description: '출처 링크 복사에 실패했습니다.', variant: 'destructive' });
+  };
+
+  const handleSelectSharePlatform = (platform: SharePlatform) => {
+    setSharePlatform(platform);
+  };
+
+  const handleCopyTagSet = async () => {
+    if (!activeShareDraft) return;
+    const copied = await copyToClipboard(activeShareDraft.tagText);
+    if (copied) {
+      toast({ title: '키워드/해시태그 복사 완료', description: `${sharePlatform.toUpperCase()} 포맷으로 복사했습니다.` });
+      return;
+    }
+    toast({ title: '복사 실패', description: '키워드/해시태그 복사에 실패했습니다.', variant: 'destructive' });
+  };
+
+  const handleNormalizeTags = () => {
+    if (!activeShareDraft) return;
+    const normalizedTokens = parseTagTokens(activeShareDraft.tagText);
+    const safeTokens = normalizedTokens.slice(0, 10);
+    while (safeTokens.length < 5) {
+      safeTokens.push(`태그${safeTokens.length + 1}`);
+    }
+    updateActiveShareDraft({ tagText: formatTagText(sharePlatform, safeTokens) });
+  };
+
+  const handleCopySharePackage = async () => {
+    if (!activeSharePackage) return;
+    const copied = await copyToClipboard(buildSharePackageText(activeSharePackage));
+    if (copied) {
+      toast({ title: '패키지 복사 완료', description: `${activeSharePackage.platformLabel}용 공유 패키지를 복사했습니다.` });
+      return;
+    }
+    toast({ title: '복사 실패', description: '공유 패키지 복사에 실패했습니다.', variant: 'destructive' });
+  };
+
+  const handleOpenPlatformPage = async () => {
+    if (!activeSharePackage) return;
+
+    const target = buildShareOpenTarget(activeSharePackage);
+    if (!target.supportsPrefill) {
+      await handleCopySharePackage();
+      toast({
+        title: `${activeSharePackage.platformLabel} 자동 입력 제한`,
+        description: '플랫폼 정책상 글쓰기 필드 자동 입력이 제한되어 패키지를 복사해 두었습니다.',
+      });
+    }
+    window.open(target.url, '_blank', 'noopener,noreferrer');
+  };
 
   const glowCore = `0 0 20px ${color}60`;
   const glowMid = `0 0 60px ${color}30`;
@@ -693,20 +1304,28 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                         </Button>
                       </div>
                     )}
-                    {proseBlocks.map((paragraph, idx) => {
+                    {proseBlocks.slice(0, Math.max(1, Math.min(revealedParagraphCount, proseBlocks.length))).map((paragraph, idx) => {
                       const sourceLike = isSourceLikeParagraph(paragraph);
+                      const previewOnly = idx === 0 && !hasStartedScrollReveal && proseBlocks.length > 1;
                       return (
                       <motion.p
                         key={`${article.id}-${idx}`}
                         initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-                        whileInView={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-                        viewport={{ once: true, amount: 0.7, margin: '-8% 0px -8% 0px' }}
+                        animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                         transition={{ duration: shouldReduceMotion ? 0.1 : 0.28, ease: 'easeOut', delay: shouldReduceMotion ? 0 : Math.min(idx * 0.04, 0.18) }}
-                        className={sourceLike ? 'text-left text-[10px] md:text-xs leading-5 md:leading-6 opacity-50 break-all' : 'text-left opacity-95 leading-8 md:leading-9'}
+                        className={[
+                          sourceLike
+                            ? 'text-left text-[10px] md:text-xs leading-5 md:leading-6 opacity-50 break-all'
+                            : 'text-left opacity-95 leading-8 md:leading-9',
+                          previewOnly ? 'line-clamp-2' : '',
+                        ].join(' ').trim()}
                       >
                         {paragraph}
                       </motion.p>
                     )})}
+                    {!hasStartedScrollReveal && proseBlocks.length > 1 && (
+                      <p className="text-xs text-gray-500/90">스크롤하면 본문이 이어서 표시됩니다.</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -891,6 +1510,260 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               </div>
 
             </div>
+
+            {/* Share Sheet Overlay */}
+            <AnimatePresence>
+              {showShareSheet && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 z-20 bg-black/35 backdrop-blur-[1px] p-3 sm:p-6 flex items-end sm:items-center justify-center"
+                  onWheel={(event) => {
+                    event.preventDefault();
+                  }}
+                  onTouchMove={(event) => {
+                    event.preventDefault();
+                  }}
+                  onClick={() => setShowShareSheet(false)}
+                  role="presentation"
+                >
+                  <motion.div
+                    ref={shareSheetRef}
+                    initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.98 }}
+                    animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                    exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 10, scale: 0.98 }}
+                    transition={{ duration: shouldReduceMotion ? 0.15 : 0.22 }}
+                    onClick={(event) => event.stopPropagation()}
+                    onWheel={(event) => event.stopPropagation()}
+                    onTouchMove={(event) => event.stopPropagation()}
+                    className="w-full max-w-2xl max-h-[88dvh] sm:max-h-[82dvh] rounded-2xl border border-black/10 bg-white shadow-2xl flex flex-col overflow-hidden"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="공유 시트"
+                  >
+                    <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">공유 시트</p>
+                        <p className="text-xs text-gray-500">Copy link + 플랫폼별 공유 문구/SEO 패키지(빠른 버전)</p>
+                      </div>
+                      <Button
+                        ref={shareCloseButtonRef}
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowShareSheet(false)}
+                        className="h-8 w-8 text-gray-600 hover:bg-gray-100"
+                        aria-label="공유 시트 닫기"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <div className="p-4 space-y-4 overflow-y-auto overscroll-contain min-h-0">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={handleCopyLink}
+                          className="h-9 sm:h-10 text-sm justify-start sm:justify-center"
+                        >
+                          <Link2 className="w-4 h-4" />
+                          Copy link
+                        </Button>
+                        <div className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 break-all">
+                          <span title={shareLink}>{shareLinkDisplay || shareLink}</span>
+                        </div>
+                      </div>
+                      {isPreparingShareLink && (
+                        <div className="text-xs text-gray-500 inline-flex items-center gap-2">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          짧은 링크 생성 중...
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {([
+                          { key: 'web' as SharePlatform, label: 'Web', Icon: Globe },
+                          { key: 'instagram' as SharePlatform, label: 'Instagram', Icon: Instagram },
+                          { key: 'threads' as SharePlatform, label: 'Threads', Icon: MessageCircle },
+                          { key: 'youtube' as SharePlatform, label: 'YouTube', Icon: Youtube },
+                        ]).map(({ key, label, Icon }) => {
+                          const active = sharePlatform === key;
+                          return (
+                            <Button
+                              key={key}
+                              type="button"
+                              variant={active ? 'default' : 'outline'}
+                              onClick={() => handleSelectSharePlatform(key)}
+                              className="h-10 text-sm"
+                            >
+                              <Icon className="w-4 h-4" />
+                              {label}
+                            </Button>
+                          );
+                        })}
+                      </div>
+
+                      {activeSharePackage && (
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-semibold text-gray-700">
+                              {activeSharePackage.platformLabel} 공유 패키지 (수정 가능)
+                            </p>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={handleCopySharePackage}
+                              className="h-7 px-2 text-xs"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                              패키지 복사
+                            </Button>
+                          </div>
+
+                          <div className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-1.5">
+                            <p className="text-[11px] font-medium text-gray-600">공유 문구</p>
+                            <textarea
+                              value={activeShareDraft.shareText}
+                              onChange={(event) => updateActiveShareDraft({ shareText: event.target.value })}
+                              rows={4}
+                              className="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 resize-y"
+                            />
+                          </div>
+
+                          <div className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-[11px] font-medium text-gray-600">출처 링크</p>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleCopySourceLink}
+                                className="h-7 px-2 text-[11px]"
+                              >
+                                <Copy className="w-3 h-3" />
+                                출처 복사
+                              </Button>
+                            </div>
+                            <div
+                              className="w-full rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs text-gray-900 max-w-full overflow-hidden text-ellipsis whitespace-nowrap"
+                              title={activeShareDraft.sourceLink || sourceShortLink || shareLink}
+                            >
+                              {activeShareDraft.sourceLink || sourceShortLink || shareLink}
+                            </div>
+                          </div>
+
+                          <div className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-2">
+                            <p className="text-[11px] font-medium text-gray-600">SEO Title 선택</p>
+                            <label className="flex items-center gap-2 text-xs text-gray-700">
+                              <input
+                                type="radio"
+                                name={`seo-title-mode-${activeSharePackage.platform}`}
+                                checked={activeShareDraft.seoTitleMode === 'default'}
+                                onChange={() => updateActiveShareDraft({ seoTitleMode: 'default' })}
+                              />
+                              기본 제목
+                            </label>
+                            <input
+                              value={activeShareDraft.seoTitleDefault}
+                              onChange={(event) => updateActiveShareDraft({ seoTitleDefault: event.target.value })}
+                              className="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                            />
+                            <label className="flex items-center gap-2 text-xs text-gray-700">
+                              <input
+                                type="radio"
+                                name={`seo-title-mode-${activeSharePackage.platform}`}
+                                checked={activeShareDraft.seoTitleMode === 'recommended'}
+                                onChange={() => updateActiveShareDraft({ seoTitleMode: 'recommended' })}
+                              />
+                              추천 제목
+                            </label>
+                            <input
+                              value={activeShareDraft.seoTitleRecommended}
+                              onChange={(event) => updateActiveShareDraft({ seoTitleRecommended: event.target.value })}
+                              className="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                            />
+                            <label className="flex items-center gap-2 text-xs text-gray-700">
+                              <input
+                                type="radio"
+                                name={`seo-title-mode-${activeSharePackage.platform}`}
+                                checked={activeShareDraft.seoTitleMode === 'custom'}
+                                onChange={() => updateActiveShareDraft({ seoTitleMode: 'custom' })}
+                              />
+                              직접 입력
+                            </label>
+                            <input
+                              value={activeShareDraft.seoTitleCustom}
+                              onChange={(event) => updateActiveShareDraft({ seoTitleCustom: event.target.value, seoTitleMode: 'custom' })}
+                              placeholder="직접 입력한 SEO 제목"
+                              className="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                            />
+                            <p className="text-[10px] text-gray-500">선택된 SEO Title: {activeSharePackage.seoTitle}</p>
+                          </div>
+
+                          <div className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-1.5">
+                            <p className="text-[11px] font-medium text-gray-600">SEO Description (3문장 기본 생성)</p>
+                            <textarea
+                              value={activeShareDraft.seoDescription}
+                              onChange={(event) => updateActiveShareDraft({ seoDescription: event.target.value })}
+                              rows={4}
+                              className="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 resize-y"
+                            />
+                          </div>
+
+                          <div className="rounded-lg border border-gray-200 bg-white p-2.5 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-[11px] font-medium text-gray-600">키워드/해시태그</p>
+                              <div className="inline-flex gap-1">
+                                <Button variant="outline" size="sm" onClick={handleNormalizeTags} className="h-7 px-2 text-[11px]">
+                                  5~10개 정규화
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={handleCopyTagSet} className="h-7 px-2 text-[11px]">
+                                  <Copy className="w-3 h-3" />
+                                  태그 복사
+                                </Button>
+                              </div>
+                            </div>
+                            <textarea
+                              value={activeShareDraft.tagText}
+                              onChange={(event) => updateActiveShareDraft({ tagText: event.target.value })}
+                              rows={3}
+                              className="w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-300 resize-y"
+                            />
+                            <p className={`text-[10px] ${activeTagTokens.length < 5 || activeTagTokens.length > 10 ? 'text-amber-600' : 'text-gray-500'}`}>
+                              현재 태그 수: {activeTagTokens.length}개 (권장 5~10개) | Instagram/Threads는 `#`, YouTube는 `,` 포맷 권장
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <div className="rounded-lg border border-gray-200 bg-white p-2.5">
+                              <p className="text-[11px] font-medium text-gray-600 mb-1">현재 플랫폼</p>
+                              <p className="text-xs text-gray-900">{activeSharePackage.platformLabel}</p>
+                            </div>
+                            <div className="rounded-lg border border-gray-200 bg-white p-2.5">
+                              <p className="text-[11px] font-medium text-gray-600 mb-1">자동 주입 가능 여부</p>
+                              <p className="text-xs text-gray-900">
+                                {buildShareOpenTarget(activeSharePackage).supportsPrefill ? '가능(텍스트 사전 주입)' : '제한됨(복사 후 수동 붙여넣기)'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-end">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleOpenPlatformPage}
+                              className="h-8 text-xs"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              플랫폼 열기
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Insight Editor Overlay */}
             <AnimatePresence>

@@ -310,6 +310,18 @@ This document consolidates the current article-generation baseline and the v2 re
 
 ---
 
+## 9.5 2026-02-24 Policy Update / 정책 업데이트
+- KR:
+  - 모든 AI 생성 뉴스/기사는 유효한 크롤링 레퍼런스(URL/출처) 없이는 생성 금지.
+  - `sourceCitation.url`은 제공된 레퍼런스 URL 집합 내 값만 허용.
+  - 레퍼런스 제목/요약 복붙(제목/본문) 탐지 시 생성 차단.
+- EN:
+  - AI generation is blocked when valid crawled references are unavailable.
+  - `sourceCitation.url` must stay within the provided reference URL set.
+  - Title/body verbatim reuse from reference title/summary is blocked by gate.
+
+---
+
 ## 10) References / 참고 코드
 - `server/routes.ts`
 - `server/services/articlePrompt.ts`

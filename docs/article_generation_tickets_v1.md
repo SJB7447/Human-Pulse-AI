@@ -81,3 +81,15 @@
 - Acceptance Criteria:
   - Metrics available in admin operational panel or logs.
   - Enables tracking of weekly regression trends.
+
+## T7. Reference-Only Generation Gate
+- Goal: Force all AI news/article generation to be grounded on explicit crawled references.
+- Scope:
+  - Block generation when valid crawled references are missing.
+  - Enforce citation URL-in-scope rule (only provided references).
+  - Add anti-copy gate for title/content verbatim reuse from reference.
+  - Keep fallback output from appearing as normal generated output.
+- Acceptance Criteria:
+  - No generated article is returned without valid source citation URL.
+  - Reference-unavailable requests fail with actionable code.
+  - Copy-detected outputs are blocked with explicit reason codes.

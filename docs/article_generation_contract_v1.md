@@ -9,6 +9,9 @@
 - Do not reuse reference headline wording or structure.
 - Do not mirror sentence flow/paragraph rhythm from reference.
 - Output article must be independently constructed in wording and narrative order.
+- Every generated article must include explicit source citation metadata.
+- Generation must be grounded only on web-crawled reference articles with valid URLs.
+- If no valid crawled reference is available, generation must be blocked (not silently downgraded).
 
 ## 3. Mode Contracts
 - `draft` (Quick Article)
@@ -39,6 +42,9 @@
 - Similarity Gate:
   - Headline lexical overlap threshold.
   - Structural overlap heuristic threshold.
+- Reference Grounding Gate:
+  - Citation URL must match provided crawled reference URL set.
+  - Verbatim copy detection on title/content against reference title/summary.
 - Compliance Gate:
   - Defamation/privacy/overclaim checks.
 - Retry Policy:

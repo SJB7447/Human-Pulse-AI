@@ -40,6 +40,12 @@ export interface KeywordAnalysisResult {
     fallbackUsed?: boolean;
 }
 
+export interface ShareKeywordPackResult {
+    representativeKeywords: string[];
+    viralHashtags: string[];
+    fallbackUsed?: boolean;
+}
+
 export interface KeywordNewsArticle {
     id: string;
     title: string;
@@ -107,6 +113,7 @@ export interface DraftGenerationResult {
 export class AIServiceError extends Error {
     status?: number;
     code?: string;
+    detail?: string;
     retryable?: boolean;
     retryAfterSeconds?: number;
     mode?: string;
@@ -127,6 +134,7 @@ export class AIServiceError extends Error {
     constructor(message: string, options?: {
         status?: number;
         code?: string;
+        detail?: string;
         retryable?: boolean;
         retryAfterSeconds?: number;
         mode?: string;
@@ -148,6 +156,7 @@ export class AIServiceError extends Error {
         this.name = 'AIServiceError';
         this.status = options?.status;
         this.code = options?.code;
+        this.detail = options?.detail;
         this.retryable = options?.retryable;
         this.retryAfterSeconds = options?.retryAfterSeconds;
         this.mode = options?.mode;
@@ -211,6 +220,7 @@ async function callApi(endpoint: string, body: any, options?: { withActorHeaders
             throw new AIServiceError(data.error || 'AI Service Error', {
                 status: res.status,
                 code: data.code,
+                detail: data.detail,
                 retryable: data.retryable,
                 retryAfterSeconds: data.retryAfterSeconds,
                 mode: data.mode,
@@ -306,6 +316,16 @@ export const GeminiService = {
         return callApi('/api/ai/generate-hashtags', { content, platforms });
     },
 
+    async generateShareKeywordPack(input: {
+        title?: string;
+        summary?: string;
+        content?: string;
+        category?: string;
+        emotion?: string;
+    }): Promise<ShareKeywordPackResult> {
+        return callApi('/api/ai/share-keyword-pack', input);
+    },
+
     async optimizeTitles(content: string, platforms: string[]): Promise<{ titles: { platform: string; title: string }[] }> {
         return callApi('/api/ai/optimize-titles', { content, platforms });
     },
@@ -325,7 +345,7 @@ export const GeminiService = {
     },
 
     async generateImage(articleContent: string, count: number = 4, customPrompt?: string): Promise<{
-        images: { url: string; description: string; prompt?: string }[];
+        images: { url: string; description: string; prompt?: string; width?: number | null; height?: number | null; aspectRatioObserved?: string }[];
         partial?: boolean;
         failures?: Array<{ index: number; detail: string; prompt: string }>;
         model?: string;

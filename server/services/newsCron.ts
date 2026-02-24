@@ -15,6 +15,12 @@ const parser = new Parser({
 // 1. Supabase 諛?Gemini ?ㅼ젙
 const apiKey = process.env.GEMINI_API_KEY || "";
 const genAI = new GoogleGenerativeAI(apiKey);
+const FIXED_GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image-002";
+const GEMINI_IMAGE_MODEL_FALLBACKS = [
+    FIXED_GEMINI_IMAGE_MODEL,
+    "gemini-2.5-flash-image",
+    "gemini-2.5-flash-image-001",
+] as const;
 
 // 援??蹂?RSS 二쇱냼
 const RSS_URLS = {
@@ -350,17 +356,37 @@ export async function runAutoNewsUpdate(options: Partial<AutoNewsUpdateOptions> 
             if (!item.enclosure?.url && !item['mediaContent']?.['$']?.url && opts.enableImageGeneration) {
                 try {
                     // Try to generate image, but fail fast (5s timeout)
-                    const imageModel = genAI.getGenerativeModel({ model: "gemini-3-pro-image-preview" });
                     const imagePrompt = `Editorial news photo for: ${aiResult.imageKeyword || "Global News"}. ${aiResult.emotion} atmosphere. High quality, realistic, cinematic lighting.`;
-
-                    const genPromise = imageModel.generateContent({ contents: [{ role: "user", parts: [{ text: imagePrompt }] }] });
-                    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), opts.imageTimeoutMs));
-
-                    const imageRes: any = await Promise.race([genPromise, timeoutPromise]);
-                    const imgData = imageRes.response.candidates?.[0]?.content?.parts?.[0];
-
-                    if (imgData?.inlineData) {
-                        imageUrl = `data:${imgData.inlineData.mimeType};base64,${imgData.inlineData.data}`;
+                    let imageGenerated = false;
+                    let lastImageError: unknown = null;
+                    for (const modelName of GEMINI_IMAGE_MODEL_FALLBACKS) {
+                        try {
+                            const model = genAI.getGenerativeModel({ model: modelName });
+                            const genPromise = (model as any).generateContent({
+                                contents: [{ role: "user", parts: [{ text: imagePrompt }] }],
+                                generationConfig: {
+                                    responseModalities: ["TEXT", "IMAGE"],
+                                    imageConfig: {
+                                        aspectRatio: "16:9",
+                                        imageSize: "1K",
+                                    },
+                                },
+                            } as any);
+                            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), opts.imageTimeoutMs));
+                            const imageRes: any = await Promise.race([genPromise, timeoutPromise]);
+                            const imgData = imageRes.response.candidates?.[0]?.content?.parts?.[0];
+                            if (!imgData?.inlineData?.data) {
+                                throw new Error(`No inline image data (${modelName})`);
+                            }
+                            imageUrl = `data:${imgData.inlineData.mimeType};base64,${imgData.inlineData.data}`;
+                            imageGenerated = true;
+                            break;
+                        } catch (e) {
+                            lastImageError = e;
+                        }
+                    }
+                    if (!imageGenerated) {
+                        throw lastImageError || new Error(`Image generation failed (${FIXED_GEMINI_IMAGE_MODEL})`);
                     }
                 } catch (e) {
                     // Fallback instantly

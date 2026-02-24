@@ -1,6 +1,8 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { DBService, type ApiHealthPayload } from '@/services/DBService';
+import { GeminiService } from '@/services/gemini';
+import { centerCropToAspectRatioDataUrl } from '@/lib/imageCrop';
 import { useEmotionStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
@@ -46,6 +48,7 @@ type AdminArticle = {
   title: string;
   summary?: string;
   content?: string;
+  image?: string | null;
   source?: string;
   category?: string;
   created_at?: string;
@@ -55,6 +58,10 @@ type AdminArticle = {
   saves?: number;
   is_published?: boolean;
   isPublished?: boolean;
+  authorId?: string | null;
+  author_id?: string | null;
+  authorName?: string | null;
+  author_name?: string | null;
 };
 
 type AdminTabKey = 'ops' | 'articles';
@@ -232,6 +239,29 @@ type ArticleIssueAnalysis = {
   suggestions: string[];
 };
 
+const ARTICLE_META_OPEN = '<!-- HUEBRIEF_META_START -->';
+const ARTICLE_META_CLOSE = '<!-- HUEBRIEF_META_END -->';
+
+function stripArticleMetaForEditor(content: string | null | undefined): string {
+  return String(content || '')
+    .replace(new RegExp(`${ARTICLE_META_OPEN}[\\s\\S]*?${ARTICLE_META_CLOSE}\\s*`, 'g'), '')
+    .trim();
+}
+
+function extractArticleMetaBlock(content: string | null | undefined): string {
+  const text = String(content || '');
+  const regex = new RegExp(`${ARTICLE_META_OPEN}[\\s\\S]*?${ARTICLE_META_CLOSE}`, 'g');
+  const match = text.match(regex);
+  return match?.[0] || '';
+}
+
+function mergeContentWithExistingMeta(originalContent: string | null | undefined, editedPlainText: string): string {
+  const plain = String(editedPlainText || '').trim();
+  const metaBlock = extractArticleMetaBlock(originalContent);
+  if (!metaBlock) return plain;
+  return `${metaBlock}\n\n${plain}`;
+}
+
 function getEmotionColor(emotion: string): string {
   const colors: Record<string, string> = {
     vibrance: '#ffd150',
@@ -391,6 +421,14 @@ export default function AdminPage() {
   const [editingEmotion, setEditingEmotion] = useState<AdminEmotionKey>('spectrum');
   const [editingCategory, setEditingCategory] = useState<string>('');
   const [savingClassification, setSavingClassification] = useState(false);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [editingSummary, setEditingSummary] = useState('');
+  const [editingContent, setEditingContent] = useState('');
+  const [editingSource, setEditingSource] = useState('');
+  const [editingImage, setEditingImage] = useState('');
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('');
+  const [isGeneratingEditImage, setIsGeneratingEditImage] = useState(false);
+  const [savingArticleContent, setSavingArticleContent] = useState(false);
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(new Set());
   const [articleEmotionFilter, setArticleEmotionFilter] = useState<string>('all');
   const [articleSearchQuery, setArticleSearchQuery] = useState('');
@@ -404,6 +442,7 @@ export default function AdminPage() {
   const opsOpsRef = useRef<HTMLDivElement | null>(null);
   const opsAiRef = useRef<HTMLDivElement | null>(null);
   const opsAnchorBarRef = useRef<HTMLDivElement | null>(null);
+  const editImageFileInputRef = useRef<HTMLInputElement | null>(null);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { user } = useEmotionStore();
@@ -570,6 +609,11 @@ export default function AdminPage() {
     if (!selectedArticle) return;
     setEditingEmotion(normalizeAdminEmotion(selectedArticle.emotion));
     setEditingCategory(String(selectedArticle.category || '').trim());
+    setEditingTitle(String(selectedArticle.title || ''));
+    setEditingSummary(String(selectedArticle.summary || ''));
+    setEditingContent(stripArticleMetaForEditor(selectedArticle.content));
+    setEditingSource(String(selectedArticle.source || ''));
+    setEditingImage(String(selectedArticle.image || ''));
   }, [selectedArticle]);
 
   useEffect(() => {
@@ -670,6 +714,137 @@ export default function AdminPage() {
     } finally {
       setSavingClassification(false);
     }
+  };
+
+  const handleSaveArticleContent = async () => {
+    if (!selectedArticle) return;
+    const nextTitle = String(editingTitle || '').trim();
+    const nextSummary = String(editingSummary || '').trim();
+    const nextContent = String(editingContent || '').trim();
+    const nextContentWithMeta = mergeContentWithExistingMeta(selectedArticle.content, nextContent);
+    const nextSource = String(editingSource || '').trim();
+    const nextImage = String(editingImage || '').trim();
+
+    if (!nextTitle) {
+      toast({
+        title: '기사 수정 실패',
+        description: '제목은 비워둘 수 없습니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setSavingArticleContent(true);
+      const updated = await DBService.updateArticle(selectedArticle.id, {
+        title: nextTitle,
+        summary: nextSummary || nextTitle,
+        content: nextContentWithMeta,
+        source: nextSource || 'Unknown',
+        image: nextImage || null,
+      });
+      applyLocalArticlePatch(selectedArticle.id, normalizeAdminArticle(updated));
+      toast({
+        title: '기사 수정 완료',
+        description: '제목/요약/본문/출처/이미지가 저장되었습니다.',
+      });
+    } catch (error: any) {
+      toast({
+        title: '기사 수정 실패',
+        description: error?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingArticleContent(false);
+    }
+  };
+
+  const handleSelectEditImageFile = () => {
+    editImageFileInputRef.current?.click();
+  };
+
+  const handleEditImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast({ title: '이미지 파일만 업로드할 수 있습니다.', variant: 'destructive' });
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      if (!dataUrl) {
+        toast({ title: '이미지 읽기에 실패했습니다.', variant: 'destructive' });
+        return;
+      }
+      setEditingImage(dataUrl);
+      toast({ title: '이미지 업로드 완료' });
+    };
+    reader.onerror = () => {
+      toast({ title: '이미지 업로드 실패', description: '파일을 다시 선택해 주세요.', variant: 'destructive' });
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  };
+
+  const handleGenerateEditImage = async () => {
+    const articleSeed = String(editingContent || editingSummary || editingTitle || '').trim();
+    if (!articleSeed) {
+      toast({ title: '기사 내용이 필요합니다.', description: '제목 또는 본문을 먼저 입력해 주세요.', variant: 'destructive' });
+      return;
+    }
+
+    setIsGeneratingEditImage(true);
+    try {
+      const promptSpec = JSON.stringify({
+        language: 'en',
+        task: 'news_editorial_image',
+        directive: `Generate a representative editorial image for: ${editingTitle || 'news article'}`,
+        hard_constraints: [
+          'No text overlay',
+          'No watermark',
+          'No logo',
+          '16:9 composition',
+        ],
+        output: {
+          aspect_ratio: '16:9',
+          style: 'photorealistic editorial',
+        },
+      }, null, 2);
+
+      const result = await GeminiService.generateImage(articleSeed, 1, promptSpec);
+      const nextImageRaw = String(result?.images?.[0]?.url || '').trim();
+      if (!nextImageRaw) {
+        toast({ title: 'AI 이미지 생성 실패', description: '생성된 이미지가 없습니다.', variant: 'destructive' });
+        return;
+      }
+      const croppedImage = await centerCropToAspectRatioDataUrl(nextImageRaw, 16, 9);
+      setEditingImage(croppedImage || nextImageRaw);
+      const observed = String(result?.images?.[0]?.aspectRatioObserved || '').trim();
+      const model = String(result?.model || '').trim();
+      toast({
+        title: 'AI 이미지 생성 완료',
+        description: observed ? `모델: ${model || 'unknown'} · 실제 비율: ${observed}` : undefined,
+      });
+    } catch (error: any) {
+      const detail = String(error?.detail || '').trim();
+      const retryAfter = Number(error?.retryAfterSeconds || 0);
+      const extra = retryAfter > 0 ? ` ${retryAfter}초 후 재시도해 주세요.` : '';
+      toast({
+        title: 'AI 이미지 생성 실패',
+        description: detail || `${error?.message || '잠시 후 다시 시도해 주세요.'}${extra}`,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGeneratingEditImage(false);
+    }
+  };
+
+  const handleRemoveEditImage = () => {
+    setEditingImage('');
+    toast({ title: '이미지를 제거했습니다.', description: '기사 수정 저장 시 이미지가 삭제됩니다.' });
   };
 
   const handleScrollToOpsSection = (section: 'kpi' | 'chart' | 'ops' | 'ai') => {
@@ -2481,7 +2656,7 @@ export default function AdminPage() {
       </div>
 
       <Dialog open={Boolean(selectedArticle)} onOpenChange={(open) => !open && setSelectedArticle(null)}>
-        <DialogContent className="max-w-2xl max-h-[88vh] overflow-hidden">
+        <DialogContent className="max-w-2xl max-h-[88vh] overflow-hidden overflow-x-hidden">
           {selectedArticle && selectedAnalysis && (
             <>
               <DialogHeader>
@@ -2489,7 +2664,7 @@ export default function AdminPage() {
                 <DialogDescription>조회수, 검수 필요사항, 등록 이슈, 담당자 메모를 확인할 수 있습니다.</DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-4 overflow-y-auto pr-1 max-h-[calc(88vh-8rem)]">
+              <div className="space-y-4 overflow-y-auto overflow-x-hidden pr-1 max-h-[calc(88vh-8rem)]">
                 <div>
                   <h4 className="text-sm font-semibold text-gray-800">제목</h4>
                   <p className="text-sm text-gray-700">{selectedArticle.title}</p>
@@ -2555,7 +2730,105 @@ export default function AdminPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-lg border border-gray-200 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-gray-800">기사 내용 수정</h4>
+                    <span className="text-[11px] text-gray-500">작성자/관리자 권한으로 저장</span>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-gray-600">제목</label>
+                    <input
+                      type="text"
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      placeholder="기사 제목"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-gray-600">요약</label>
+                    <textarea
+                      value={editingSummary}
+                      onChange={(e) => setEditingSummary(e.target.value)}
+                      className="min-h-[82px] w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-y"
+                      placeholder="기사 요약"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-gray-600">본문</label>
+                    <textarea
+                      value={editingContent}
+                      onChange={(e) => setEditingContent(e.target.value)}
+                      className="min-h-[160px] w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-y"
+                      placeholder="기사 본문"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs font-medium text-gray-600">기사 이미지</label>
+                      <span className="text-[11px] text-gray-500">{editingImage ? '등록됨' : '없음'}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={handleSelectEditImageFile}>
+                        <Upload className="w-3.5 h-3.5 mr-1" />
+                        이미지 변경
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={handleGenerateEditImage} disabled={isGeneratingEditImage}>
+                        <Sparkles className="w-3.5 h-3.5 mr-1" />
+                        {isGeneratingEditImage ? 'AI 재생성 중...' : 'AI 이미지 재생성'}
+                      </Button>
+                      <Button type="button" variant="outline" size="sm" onClick={handleRemoveEditImage} disabled={!editingImage}>
+                        <X className="w-3.5 h-3.5 mr-1" />
+                        이미지 삭제
+                      </Button>
+                    </div>
+                    <input
+                      type="text"
+                      value={editingImage}
+                      onChange={(e) => setEditingImage(e.target.value)}
+                      className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      placeholder="이미지 URL (업로드/AI 생성 시 자동 입력)"
+                    />
+                    {editingImage ? (
+                      <button
+                        type="button"
+                        onClick={() => setImagePreviewUrl(editingImage)}
+                        className="block w-full overflow-hidden rounded-lg border border-gray-200 bg-gray-50 hover:opacity-95 transition-opacity"
+                        title="이미지 전체 보기"
+                      >
+                        <img
+                          src={editingImage}
+                          alt="기사 이미지 미리보기"
+                          className="h-40 w-full object-cover"
+                          onError={() => toast({ title: '이미지 미리보기를 불러오지 못했습니다.', variant: 'destructive' })}
+                        />
+                      </button>
+                    ) : (
+                      <p className="text-[11px] text-gray-500">등록된 이미지가 없습니다.</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-gray-600">출처</label>
+                    <input
+                      type="text"
+                      value={editingSource}
+                      onChange={(e) => setEditingSource(e.target.value)}
+                      className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      placeholder="출처 URL 또는 출처명"
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleSaveArticleContent}
+                      disabled={savingArticleContent}
+                      className="bg-indigo-600 hover:bg-indigo-700"
+                    >
+                      {savingArticleContent ? '저장 중...' : '기사 수정 저장'}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <StatCard title="조회수" value={String(selectedArticle.views || 0)} icon={<Eye className="w-4 h-4 text-blue-600" />} bgColor="bg-blue-50" />
                   <StatCard title="저장수" value={String(selectedArticle.saves || 0)} icon={<CheckCircle className="w-4 h-4 text-green-600" />} bgColor="bg-green-50" />
                   <StatCard title="공개상태" value={getArticlePublished(selectedArticle) ? '게시중' : '숨김'} icon={<Clock className="w-4 h-4 text-purple-600" />} bgColor="bg-purple-50" />
@@ -2646,6 +2919,29 @@ export default function AdminPage() {
           )}
         </DialogContent>
       </Dialog>
+      <Dialog open={Boolean(imagePreviewUrl)} onOpenChange={(open) => !open && setImagePreviewUrl('')}>
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>기사 이미지 전체 보기</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[80vh] overflow-auto rounded-lg bg-gray-950/95 p-2">
+            {imagePreviewUrl ? (
+              <img
+                src={imagePreviewUrl}
+                alt="기사 이미지 전체 보기"
+                className="mx-auto h-auto max-h-[78vh] w-auto max-w-full object-contain"
+              />
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <input
+        type="file"
+        ref={editImageFileInputRef}
+        onChange={handleEditImageFileChange}
+        accept="image/*"
+        className="hidden"
+      />
       <div aria-hidden className="h-[100px]" />
       </div>
     </div>
@@ -2751,11 +3047,11 @@ function StatCard({
   subtitle?: string;
 }) {
   return (
-    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-3">
-      <div className={`p-2 rounded-xl ${bgColor}`}>{icon}</div>
-      <div>
-        <p className="text-xs font-medium text-gray-500">{title}</p>
-        <p className="text-lg font-bold text-gray-900">{value}</p>
+    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-3 min-w-0">
+      <div className={`p-2 rounded-xl shrink-0 ${bgColor}`}>{icon}</div>
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-gray-500 truncate">{title}</p>
+        <p className="text-lg font-bold text-gray-900 break-all leading-tight">{value}</p>
         {subtitle ? <p className="text-[11px] text-gray-500 mt-0.5">{subtitle}</p> : null}
       </div>
     </div>

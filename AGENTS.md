@@ -76,8 +76,8 @@
 - Prefer **Story Spec JSON** over raw HTML from Gemini.
 - 사용자 명시 요청이 있기 전까지 Gemini 모델명(`GEMINI_TEXT_MODEL` 기본값/코드 상 모델 문자열)을 절대 변경하지 않습니다.
 - Do not change Gemini model identifiers unless the user explicitly requests it.
-- 이미지 생성 모델은 사용자 요청 시 지정한 모델(`gemini-2.5-flash-image`)로 고정하며, 사용자 재요청 없이 타 모델/외부 이미지 서비스로 우회하지 않습니다.
-- Keep image generation fixed to the user-requested model (`gemini-2.5-flash-image`) unless explicitly requested.
+- 이미지 생성 모델은 사용자 요청 시 지정한 모델(`gemini-2.5-flash-image-002`)로 고정하며, 사용자 재요청 없이 타 모델/외부 이미지 서비스로 우회하지 않습니다.
+- Keep image generation fixed to the user-requested model (`gemini-2.5-flash-image-002`) unless explicitly requested.
 
 ### QA
 - 회귀(regression), 맥락 손실, 복귀 동선 실패를 집중 점검합니다.

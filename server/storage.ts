@@ -53,6 +53,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByGoogleId(googleId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  getNewsItemById(id: string): Promise<NewsItem | null>;
   getNewsByEmotion(emotion: EmotionType): Promise<NewsItem[]>;
   getAllNews(includeHidden?: boolean): Promise<NewsItem[]>;
   createNewsItem(item: InsertNewsItem): Promise<NewsItem>;
@@ -283,6 +284,11 @@ export class MemStorage implements IStorage {
     return Array.from(this.newsItems.values())
       .filter(item => item.emotion === emotion && isPublishedVisible(item))
       .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+  }
+
+  async getNewsItemById(id: string): Promise<NewsItem | null> {
+    const item = this.newsItems.get(id);
+    return item || null;
   }
 
   async getAllNews(includeHidden: boolean = false): Promise<NewsItem[]> {
@@ -620,6 +626,21 @@ export class SupabaseStorage implements IStorage {
     const dbRows = (data || []) as NewsItem[];
     const merged = this.mergeWithFallback(dbRows);
     return merged.filter((row: any) => row.emotion === emotion && isPublishedVisible(row));
+  }
+
+  async getNewsItemById(id: string): Promise<NewsItem | null> {
+    if (this.fallbackNews.has(id)) {
+      return this.fallbackNews.get(id) || null;
+    }
+
+    const { data } = await supabase
+      .from('news_items')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (data) return data as NewsItem;
+    return null;
   }
 
   async getAllNews(includeHidden: boolean = false): Promise<NewsItem[]> {

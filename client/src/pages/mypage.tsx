@@ -1,11 +1,13 @@
-﻿import { useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'wouter';
-import { User, Bookmark, Sparkles, Edit, Trash2, Eye, Settings, Heart, Lightbulb, Share2, MessageSquare } from 'lucide-react';
+import { User, Bookmark, Sparkles, Edit, Trash2, Eye, Settings, Heart, Lightbulb, Share2, MessageSquare, Loader2 } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { GlassButton } from '@/components/ui/glass-button';
 import { Button } from '@/components/ui/button';
-import { EMOTION_CONFIG } from '@/lib/store';
+import { EMOTION_CONFIG, useEmotionStore } from '@/lib/store';
+import { DBService, type UserSocialConnections } from '@/services/DBService';
+import { useToast } from '@/hooks/use-toast';
 
 interface SavedArticle {
   id: number;
@@ -57,13 +59,69 @@ const MOCK_CURATED_ARTICLES: CuratedArticle[] = [
   },
 ];
 
+const createEmptySocialConnections = (): UserSocialConnections => ({
+  webUrl: '',
+  instagramHandle: '',
+  threadsHandle: '',
+  youtubeChannelUrl: '',
+  updatedAt: '',
+});
+
 export default function MyPage() {
+  const { user } = useEmotionStore();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'saved' | 'curated' | 'custom' | 'settings'>('saved');
   const [userInfo, setUserInfo] = useState({
     name: '김휴브리프',
     email: 'human@pulse.com',
     bio: '감정을 통해 세상을 이해하고 기록합니다.',
   });
+  const [socialConnections, setSocialConnections] = useState<UserSocialConnections>(createEmptySocialConnections());
+  const [socialLoading, setSocialLoading] = useState(false);
+  const [socialSaving, setSocialSaving] = useState(false);
+
+  const socialOwnerId = String(user?.id || 'guest');
+
+  useEffect(() => {
+    let mounted = true;
+    const loadSocialConnections = async () => {
+      setSocialLoading(true);
+      try {
+        const loaded = await DBService.getUserSocialConnections(socialOwnerId);
+        if (!mounted) return;
+        setSocialConnections(loaded);
+      } catch {
+        if (!mounted) return;
+        setSocialConnections(createEmptySocialConnections());
+      } finally {
+        if (mounted) setSocialLoading(false);
+      }
+    };
+    loadSocialConnections();
+    return () => {
+      mounted = false;
+    };
+  }, [socialOwnerId]);
+
+  const handleSaveSocialConnections = async () => {
+    setSocialSaving(true);
+    try {
+      const saved = await DBService.updateUserSocialConnections(socialOwnerId, socialConnections);
+      setSocialConnections(saved);
+      toast({
+        title: 'SNS 연결 설정 저장 완료',
+        description: '현재는 목업 저장이며 추후 실제 연동으로 확장됩니다.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'SNS 설정 저장 실패',
+        description: error?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSocialSaving(false);
+    }
+  };
 
   const getEmotionColor = (emotion: string) => {
     return EMOTION_CONFIG.find((e) => e.type === emotion)?.color || '#888';
@@ -287,6 +345,81 @@ export default function MyPage() {
                     data-testid="input-bio"
                   />
                 </div>
+
+                <div className="pt-2 border-t border-gray-100">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <p className="text-sm font-semibold text-gray-800">SNS 계정 연결 (목업)</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        setSocialLoading(true);
+                        try {
+                          const loaded = await DBService.getUserSocialConnections(socialOwnerId);
+                          setSocialConnections(loaded);
+                          toast({ title: 'SNS 연결 정보 불러오기 완료' });
+                        } catch {
+                          toast({ title: 'SNS 연결 정보 불러오기 실패', variant: 'destructive' });
+                        } finally {
+                          setSocialLoading(false);
+                        }
+                      }}
+                      disabled={socialLoading}
+                    >
+                      {socialLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : '불러오기'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-gray-500 mb-3">
+                    현재는 저장/복원 목업 단계입니다. 실제 OAuth 연동은 추후 확장 예정입니다.
+                  </p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Web 프로필 URL</label>
+                      <input
+                        type="text"
+                        value={socialConnections.webUrl}
+                        onChange={(e) => setSocialConnections({ ...socialConnections, webUrl: e.target.value })}
+                        placeholder="https://example.com/me"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Instagram 계정</label>
+                      <input
+                        type="text"
+                        value={socialConnections.instagramHandle}
+                        onChange={(e) => setSocialConnections({ ...socialConnections, instagramHandle: e.target.value })}
+                        placeholder="@your_instagram"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Threads 계정</label>
+                      <input
+                        type="text"
+                        value={socialConnections.threadsHandle}
+                        onChange={(e) => setSocialConnections({ ...socialConnections, threadsHandle: e.target.value })}
+                        placeholder="@your_threads"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">YouTube 채널 URL</label>
+                      <input
+                        type="text"
+                        value={socialConnections.youtubeChannelUrl}
+                        onChange={(e) => setSocialConnections({ ...socialConnections, youtubeChannelUrl: e.target.value })}
+                        placeholder="https://youtube.com/@yourchannel"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <Button onClick={handleSaveSocialConnections} disabled={socialSaving}>
+                      {socialSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'SNS 연결 저장'}
+                    </Button>
+                  </div>
+                </div>
                 <GlassButton variant="primary" data-testid="button-save-settings">
                   <Heart className="w-4 h-4" />
                   저장하기
@@ -305,3 +438,4 @@ export default function MyPage() {
     </div>
   );
 }
+

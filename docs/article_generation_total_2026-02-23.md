@@ -27,6 +27,7 @@ This is the revised single-source baseline for implementation.
 3. Emotion affects only expression strength, narrative density, and stimulation.
 4. External references are context-only; no copy or structural mimicry.
 5. `spectrum` is a balance mode, not an independent category.
+6. AI generation is allowed only with valid crawled reference articles (URL/source required).
 
 ---
 
@@ -171,6 +172,9 @@ HueBrief AI는 감정 상태를 정보 왜곡에 사용하지 않으며, 표현 
 3. Gate order: `parse -> schema -> similarity -> compliance`
 4. Gate fail must return actionable `issues[]` and `reasonCode`
 5. Fallback/blocked 결과는 정상 기사로 저장 금지
+6. `sourceCitation.url`은 반드시 수집된 레퍼런스 URL 집합 안에서만 허용
+7. 레퍼런스(제목/요약) 문구를 제목/본문에 그대로 복붙하면 게이트 차단
+8. 유효한 크롤링 레퍼런스가 없으면 생성 중단(`reference_unavailable`)
 
 ---
 
@@ -217,3 +221,5 @@ HueBrief AI는 감정 상태를 정보 왜곡에 사용하지 않으며, 표현 
 2. gate 실패 결과는 저장되지 않고 원인 코드가 사용자/관리자에 노출된다.
 3. 감정별 톤 차이는 유지되며 사실성/근거 품질은 감정과 무관하게 동일 기준을 만족한다.
 4. fallback 비율, gate 차단율, parse 실패율을 관리자에서 확인 가능하다.
+5. 생성 기사의 citation URL은 모두 크롤링 레퍼런스와 매칭된다.
+6. 레퍼런스 복붙 탐지 시 결과는 차단되고 reason code가 반환된다.

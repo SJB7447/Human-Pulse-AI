@@ -359,6 +359,11 @@ export default function EmotionPage() {
           AI_NEWS_MODEL_TIMEOUT: 'Gemini 응답 시간이 초과되었습니다. 잠시 후 다시 시도하거나 timeout 설정을 늘려주세요.',
           AI_NEWS_MODEL_ERROR: 'Gemini 호출 오류가 발생했습니다. 모델명/키 권한 상태를 점검하세요.',
           AI_NEWS_MODEL_EMPTY: 'Gemini 응답이 비어 있어 생성하지 못했습니다.',
+          AI_NEWS_REFERENCE_REQUIRED: '레퍼런스 기사 기반 생성 조건을 충족하지 못했습니다.',
+          AI_NEWS_REFERENCE_OUT_OF_SCOPE: '출처 URL이 수집된 레퍼런스 범위를 벗어나 생성이 차단되었습니다.',
+          AI_NEWS_REFERENCE_WEAK_GROUNDING: '생성 본문이 레퍼런스 기사와 충분히 연결되지 않아 생성이 차단되었습니다.',
+          AI_NEWS_TITLE_COPY_DETECTED: '레퍼런스 제목과 유사도가 높아 생성이 차단되었습니다.',
+          AI_NEWS_CONTENT_COPY_DETECTED: '레퍼런스 본문/요약 복붙 패턴이 감지되어 생성이 차단되었습니다.',
         };
         toast({
           title: "실시간 기사 생성 실패",

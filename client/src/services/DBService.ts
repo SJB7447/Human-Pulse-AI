@@ -21,6 +21,24 @@ export type ApiHealthPayload = {
     timestamp?: string;
 };
 
+export type UserSocialConnections = {
+    webUrl: string;
+    instagramHandle: string;
+    threadsHandle: string;
+    youtubeChannelUrl: string;
+    updatedAt: string;
+};
+
+const SOCIAL_CONNECTIONS_STORAGE_PREFIX = 'huebrief.socialConnections.v1';
+
+const createDefaultSocialConnections = (): UserSocialConnections => ({
+    webUrl: '',
+    instagramHandle: '',
+    threadsHandle: '',
+    youtubeChannelUrl: '',
+    updatedAt: new Date(0).toISOString(),
+});
+
 const createApiError = async (response: Response, fallbackMessage: string): Promise<ApiError> => {
     let message = fallbackMessage;
 
@@ -229,6 +247,27 @@ export const DBService = {
         return await response.json();
     },
 
+    async createShortLink(targetUrl: string) {
+        const normalized = String(targetUrl || '').trim();
+        if (!normalized) throw new Error('targetUrl is required');
+
+        const response = await fetch('/api/share/short-links', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetUrl: normalized }),
+        });
+
+        if (!response.ok) throw await createApiError(response, 'Failed to create short link');
+        return await response.json() as {
+            slug: string;
+            shortUrl: string;
+            shortDisplay?: string;
+            targetUrl: string;
+            createdAt: string;
+            hits: number;
+        };
+    },
+
     async createAdminReport(articleId: string, reason: string) {
         const response = await fetch('/api/admin/reports', {
             method: 'POST',
@@ -391,6 +430,47 @@ export const DBService = {
             username: profile?.username || user.user_metadata?.name || user.email?.split('@')[0] || 'user',
             role: profile?.role || user.user_metadata?.role || 'general',
         };
+    },
+
+    async getUserSocialConnections(userId: string): Promise<UserSocialConnections> {
+        if (!userId || typeof window === 'undefined') {
+            return createDefaultSocialConnections();
+        }
+
+        const storageKey = `${SOCIAL_CONNECTIONS_STORAGE_PREFIX}:${String(userId).trim()}`;
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) return createDefaultSocialConnections();
+
+        try {
+            const parsed = JSON.parse(raw) as Partial<UserSocialConnections>;
+            return {
+                ...createDefaultSocialConnections(),
+                ...parsed,
+                updatedAt: parsed?.updatedAt || createDefaultSocialConnections().updatedAt,
+            };
+        } catch {
+            return createDefaultSocialConnections();
+        }
+    },
+
+    async updateUserSocialConnections(
+        userId: string,
+        patch: Partial<UserSocialConnections>,
+    ): Promise<UserSocialConnections> {
+        if (!userId || typeof window === 'undefined') {
+            return { ...createDefaultSocialConnections(), ...patch, updatedAt: new Date().toISOString() };
+        }
+
+        const storageKey = `${SOCIAL_CONNECTIONS_STORAGE_PREFIX}:${String(userId).trim()}`;
+        const current = await this.getUserSocialConnections(userId);
+        const next: UserSocialConnections = {
+            ...current,
+            ...patch,
+            updatedAt: new Date().toISOString(),
+        };
+
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+        return next;
     },
 
     async getCommunityFeed(limit = 24) {

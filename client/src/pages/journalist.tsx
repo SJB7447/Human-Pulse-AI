@@ -41,10 +41,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EMOTION_CONFIG } from '@/lib/store';
+import { EMOTION_NEWS_LINKS } from '@/lib/emotionNewsLinks';
 import { GeminiService, AIServiceError, type KeywordNewsArticle } from '@/services/gemini';
 import { getSupabase } from '@/services/supabaseClient';
 import { DBService } from '@/services/DBService';
 import { useToast } from '@/hooks/use-toast';
+import { centerCropToAspectRatioDataUrl } from '@/lib/imageCrop';
 
 const PLATFORMS = [
   { id: 'interactive', label: '인터랙티브 페이지', Icon: Globe, description: 'HueBrief 서비스에 직접 발행' },
@@ -168,6 +170,25 @@ const normalizeArticleSummary = (summary: string, title: string, source: string)
   const cleaned = cleanArticleText(summary);
   if (cleaned.length >= 24) return cleaned;
   return `${source || '외부 기사'} 보도를 바탕으로 '${cleanArticleText(title)}' 핵심 내용을 요약한 문장입니다.`;
+};
+
+const extractSourceFromArticleBody = (content: string): string => {
+  const plain = String(content || '').trim();
+  if (!plain) return '';
+  const sourceSection = plain.match(/\[출처\]([\s\S]*)$/i);
+  if (!sourceSection?.[1]) return '';
+  const sourceBody = sourceSection[1].trim();
+  if (!sourceBody) return '';
+
+  const line = sourceBody
+    .split('\n')
+    .map((entry) => entry.replace(/^[\-\u2022]\s*/, '').trim())
+    .find(Boolean) || '';
+  if (!line) return '';
+
+  const urlMatch = line.match(/https?:\/\/[^\s)]+/i);
+  const withoutUrl = line.replace(/https?:\/\/[^\s)]+/ig, '').replace(/[()]/g, '').trim();
+  return (withoutUrl || urlMatch?.[0] || '').slice(0, 180);
 };
 
 const normalizeTitleForCompare = (title: string) =>
@@ -840,9 +861,11 @@ export default function JournalistPage() {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    const plain = String(articleContent || '')
+    const rawContent = String(articleContent || '');
+    const plain = rawContent
       .replace(new RegExp(`${ARTICLE_META_OPEN}[\\s\\S]*?${ARTICLE_META_CLOSE}\\s*`, 'g'), '')
       .trim();
+    const isAiDraft = /"aiGenerated"\s*:\s*true/i.test(rawContent);
 
     if (!plain) {
       errors.push('기사 본문이 비어 있습니다.');
@@ -923,6 +946,9 @@ export default function JournalistPage() {
 
     if (selectedRecommendedArticle && !/\[출처\]/.test(plain)) {
       errors.push('외부 기사 기반 작성은 출처 표기가 필수입니다. [출처] 항목을 확인해 주세요.');
+    }
+    if (isAiDraft && !/\[출처\]/.test(plain)) {
+      errors.push('AI 간편 생성 기사에는 [출처] 표기가 필수입니다.');
     }
 
     return { errors, warnings };
@@ -1096,11 +1122,11 @@ export default function JournalistPage() {
 
   const articleCategoryOptions = useMemo(
     () =>
-      EMOTION_CONFIG
+      EMOTION_NEWS_LINKS
         .filter((emotion) => emotion.type !== 'spectrum')
         .map((emotion) => ({
           value: emotion.type,
-          label: emotion.labelKo || emotion.type.toUpperCase(),
+          label: `${emotion.labelKo}(${emotion.categoryKo})`,
         })),
     [],
   );
@@ -1836,10 +1862,13 @@ export default function JournalistPage() {
     try {
       const result = await GeminiService.generateImage(articleContent, 4, promptSpec);
 
-      const newImages = result.images.map(img => ({
-        imageUrl: img.url,
-        description: img.description,
-        prompt: img.prompt,
+      const newImages = await Promise.all((result.images || []).map(async (img) => {
+        const cropped = await centerCropToAspectRatioDataUrl(String(img.url || ''), 16, 9);
+        return {
+          imageUrl: cropped || img.url,
+          description: img.description,
+          prompt: img.prompt,
+        };
       }));
 
       setGeneratedImages(newImages);
@@ -1863,9 +1892,12 @@ export default function JournalistPage() {
         toast({ title: `이미지 ${newImages.length}개 생성 완료` });
       }
     } catch (error: any) {
+      const detail = String(error?.detail || '').trim();
+      const retryAfter = Number(error?.retryAfterSeconds || 0);
+      const extra = retryAfter > 0 ? ` ${retryAfter}초 후 재시도해 주세요.` : '';
       setLastAiFailedStep('image');
-      setLastAiErrorMessage(error?.message || '이미지 생성 실패');
-      toast({ title: '이미지 생성 실패', description: error.message, variant: 'destructive' });
+      setLastAiErrorMessage(detail || error?.message || '이미지 생성 실패');
+      toast({ title: '이미지 생성 실패', description: detail || `${error?.message || '재시도해 주세요.'}${extra}`, variant: 'destructive' });
     } finally {
       setIsGeneratingImage(false);
     }
@@ -1956,16 +1988,20 @@ export default function JournalistPage() {
       if (!nextImage) {
         throw new Error('재생성 결과가 비어 있습니다.');
       }
+      const cropped = await centerCropToAspectRatioDataUrl(String(nextImage.url || ''), 16, 9);
       setGeneratedImages((prev) =>
         prev.map((item, itemIndex) => (
           itemIndex === index
-            ? { imageUrl: nextImage.url, description: nextImage.description, prompt: nextImage.prompt || rawDirective }
+            ? { imageUrl: cropped || nextImage.url, description: nextImage.description, prompt: nextImage.prompt || rawDirective }
             : item
         )),
       );
       toast({ title: `이미지 ${index + 1} 재생성 완료` });
     } catch (error: any) {
-      toast({ title: '개별 이미지 재생성 실패', description: error?.message || '재시도해 주세요.', variant: 'destructive' });
+      const detail = String(error?.detail || '').trim();
+      const retryAfter = Number(error?.retryAfterSeconds || 0);
+      const extra = retryAfter > 0 ? ` ${retryAfter}초 후 재시도해 주세요.` : '';
+      toast({ title: '개별 이미지 재생성 실패', description: detail || `${error?.message || '재시도해 주세요.'}${extra}`, variant: 'destructive' });
     } finally {
       setRegeneratingImageIndex(null);
     }
@@ -2069,6 +2105,8 @@ export default function JournalistPage() {
             sections: draftSections || inferredSectionsForMeta,
             mediaSlots: suggestedMediaSlots,
           });
+          const sourceFromBody = extractSourceFromArticleBody(plainForMeta);
+          const ensuredSource = sourceFromBody || selectedRecommendedArticle?.source || '출처 확인 필요';
 
           let data;
           if (editingArticleId) {
@@ -2077,6 +2115,7 @@ export default function JournalistPage() {
               title: title,
               content: contentWithMeta,
               summary: articleContent.slice(0, 150) + '...',
+              source: ensuredSource,
               category: tags,
               emotion: emotionLabel,
               ...(selectedImage ? { image: selectedImage } : {})
@@ -2088,7 +2127,7 @@ export default function JournalistPage() {
               title: title,
               content: contentWithMeta,
               summary: articleContent.slice(0, 150) + '...',
-              source: '휴브리프 기자단',
+              source: ensuredSource,
               image: selectedImage,
               category: tags,
               emotionLabel: emotionLabel
