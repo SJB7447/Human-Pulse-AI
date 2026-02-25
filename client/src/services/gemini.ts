@@ -109,6 +109,18 @@ export interface DraftGenerationResult {
     fallbackUsed?: boolean;
 }
 
+export interface OpinionComposeResult {
+    title: string;
+    summary: string;
+    content: string;
+    references: Array<{
+        title: string;
+        url: string;
+        source: string;
+    }>;
+    fallbackUsed?: boolean;
+}
+
 
 export class AIServiceError extends Error {
     status?: number;
@@ -397,6 +409,18 @@ export const GeminiService = {
 
     async generateInteractiveArticle(input: InteractiveGenerationInput): Promise<InteractiveArticle> {
         return callApi('/api/ai/generate/interactive-article', input);
+    },
+
+    async composeArticleWithOpinion(input: {
+        sourceArticleId: string;
+        sourceTitle: string;
+        sourceSummary?: string;
+        sourceUrl?: string;
+        opinionText: string;
+        extraRequest?: string;
+        requestedReferences?: string[];
+    }): Promise<OpinionComposeResult> {
+        return callApi('/api/ai/compose-opinion-article', input);
     },
 
     async summarizeArticle(title: string, content: string): Promise<{

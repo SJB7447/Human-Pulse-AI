@@ -77,6 +77,43 @@ export const adminActionLogs = pgTable("admin_action_logs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const userInsights = pgTable("user_insights", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  articleId: text("article_id").notNull(),
+  originalTitle: text("original_title").notNull(),
+  userComment: text("user_comment").notNull(),
+  userEmotion: text("user_emotion").notNull().$type<EmotionType>(),
+  userFeelingText: text("user_feeling_text").notNull().default(""),
+  selectedTags: text("selected_tags").array().notNull().default(sql`ARRAY[]::text[]`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const userComposedArticles = pgTable("user_composed_articles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  sourceArticleId: text("source_article_id").notNull(),
+  sourceTitle: text("source_title").notNull(),
+  sourceUrl: text("source_url"),
+  sourceEmotion: text("source_emotion").notNull().default("spectrum"),
+  sourceCategory: text("source_category").notNull().default("General"),
+  userOpinion: text("user_opinion").notNull(),
+  extraRequest: text("extra_request").notNull().default(""),
+  requestedReferences: text("requested_references").array().notNull().default(sql`ARRAY[]::text[]`),
+  generatedTitle: text("generated_title").notNull(),
+  generatedSummary: text("generated_summary").notNull(),
+  generatedContent: text("generated_content").notNull(),
+  referenceLinks: text("reference_links").array().notNull().default(sql`ARRAY[]::text[]`),
+  status: varchar("status", { length: 16 }).notNull().default("draft"),
+  submissionStatus: varchar("submission_status", { length: 16 }).notNull().default("pending"),
+  moderationMemo: text("moderation_memo").notNull().default(""),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -114,6 +151,18 @@ export const insertAdminActionLogSchema = createInsertSchema(adminActionLogs).om
   createdAt: true,
 });
 
+export const insertUserInsightSchema = createInsertSchema(userInsights).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserComposedArticleSchema = createInsertSchema(userComposedArticles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -131,3 +180,9 @@ export type UserConsent = typeof userConsents.$inferSelect;
 
 export type InsertAdminActionLog = z.infer<typeof insertAdminActionLogSchema>;
 export type AdminActionLog = typeof adminActionLogs.$inferSelect;
+
+export type InsertUserInsight = z.infer<typeof insertUserInsightSchema>;
+export type UserInsight = typeof userInsights.$inferSelect;
+
+export type InsertUserComposedArticle = z.infer<typeof insertUserComposedArticleSchema>;
+export type UserComposedArticle = typeof userComposedArticles.$inferSelect;

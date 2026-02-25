@@ -11,6 +11,8 @@ interface CommunityItem {
   id: string;
   title: string;
   emotion: EmotionType;
+  category?: string;
+  content?: string;
   excerpt: string;
   author: string;
   createdAt: string | null;
@@ -44,6 +46,7 @@ export default function CommunityPage() {
   const [emotion, setEmotion] = useState<EmotionType>('spectrum');
   const [drafts, setDrafts] = useState<InsightDraft[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [lastPublishedLink, setLastPublishedLink] = useState('');
   const canPublish = Boolean(user);
 
@@ -363,8 +366,29 @@ export default function CommunityPage() {
                     </span>
                   </div>
 
-                  <h2 className="font-semibold text-gray-900 mb-2 leading-snug">{item.title}</h2>
-                  <p className="text-sm text-gray-600 leading-relaxed">{item.excerpt}</p>
+                  {item.category && (
+                    <div className="mb-2">
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                        {item.category}
+                      </span>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="text-left w-full"
+                    onClick={() => setExpandedPostId((prev) => (prev === item.id ? null : item.id))}
+                  >
+                    <h2 className="font-semibold text-gray-900 mb-2 leading-snug hover:underline">{item.title}</h2>
+                    <p className="text-sm text-gray-600 leading-relaxed">{item.excerpt}</p>
+                  </button>
+                  {expandedPostId === item.id && (
+                    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                      <p className="text-[11px] text-gray-500 mb-1">Full article</p>
+                      <p className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed">
+                        {String(item.content || item.excerpt || '')}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
                     작성자: {item.author}

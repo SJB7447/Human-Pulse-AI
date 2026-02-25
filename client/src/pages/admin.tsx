@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
-import { DBService, type ApiHealthPayload } from '@/services/DBService';
+import { DBService, type ApiHealthPayload, type UserComposedArticleRecord } from '@/services/DBService';
 import { GeminiService } from '@/services/gemini';
 import { centerCropToAspectRatioDataUrl } from '@/lib/imageCrop';
 import { useEmotionStore } from '@/lib/store';
@@ -400,6 +400,8 @@ export default function AdminPage() {
   const [stats, setStats] = useState<AdminStatsPayload | null>(null);
   const [reviewMap, setReviewMap] = useState<Record<string, ReviewState>>({});
   const [reports, setReports] = useState<AdminReportPayload[]>([]);
+  const [readerArticles, setReaderArticles] = useState<UserComposedArticleRecord[]>([]);
+  const [expandedReaderArticleId, setExpandedReaderArticleId] = useState<string | null>(null);
   const [exportHistory, setExportHistory] = useState<ExportJob[]>([]);
   const [exportSchedule, setExportSchedule] = useState<ExportSchedule>({
     enabled: false,
@@ -458,6 +460,7 @@ export default function AdminPage() {
         DBService.getAdminStats(),
         DBService.getAdminReviews(),
         DBService.getAdminReports(),
+        DBService.getAdminReaderArticles('pending'),
         DBService.getAdminExportHistory(10),
         DBService.getAdminExportSchedule(),
         DBService.getAdminAlerts(8),
@@ -468,6 +471,7 @@ export default function AdminPage() {
         statsResult,
         reviewsResult,
         reportsResult,
+        readerArticlesResult,
         exportHistoryResult,
         exportScheduleResult,
         opsAlertsResult,
@@ -494,6 +498,7 @@ export default function AdminPage() {
       const statsData = statsResult.status === 'fulfilled' ? statsResult.value : null;
       const reviewsData = reviewsResult.status === 'fulfilled' ? reviewsResult.value : [];
       const reportsData = reportsResult.status === 'fulfilled' ? reportsResult.value : [];
+      const readerArticlesData = readerArticlesResult.status === 'fulfilled' ? readerArticlesResult.value : [];
       const exportHistoryData = exportHistoryResult.status === 'fulfilled' ? exportHistoryResult.value : [];
       const exportScheduleData = exportScheduleResult.status === 'fulfilled' ? exportScheduleResult.value : exportSchedule;
       const opsAlertsData = opsAlertsResult.status === 'fulfilled' ? opsAlertsResult.value : [];
@@ -503,6 +508,7 @@ export default function AdminPage() {
       setStats((statsData || null) as AdminStatsPayload | null);
       setReviewMap(buildReviewMap((reviewsData || []) as AdminReviewPayload[]));
       setReports(((reportsData || []) as AdminReportPayload[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+      setReaderArticles(((readerArticlesData || []) as UserComposedArticleRecord[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
       setExportHistory((exportHistoryData || []) as ExportJob[]);
       setExportSchedule((exportScheduleData || exportSchedule) as ExportSchedule);
       setOpsAlerts((opsAlertsData || []) as OpsAlert[]);
@@ -1417,6 +1423,32 @@ export default function AdminPage() {
     }
   };
 
+  const handleReaderArticleDecision = async (
+    article: UserComposedArticleRecord,
+    submissionStatus: 'approved' | 'rejected',
+  ) => {
+    try {
+      const moderationMemo = submissionStatus === 'approved'
+        ? '커뮤니티 노출 승인'
+        : '관리자 반려';
+      const updated = await DBService.decideAdminReaderArticle(article.id, {
+        submissionStatus,
+        moderationMemo,
+      });
+      if (!updated) throw new Error('업데이트된 독자 기사를 찾지 못했습니다.');
+      setReaderArticles((prev) => prev.filter((row) => row.id !== article.id));
+      toast({
+        title: submissionStatus === 'approved' ? '독자 기사 승인 완료' : '독자 기사 반려 완료',
+      });
+    } catch (error: any) {
+      toast({
+        title: '독자 기사 상태 업데이트 실패',
+        description: error?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const topStats = stats?.stats || {};
   const draftOpsStats = stats?.aiDraftOps?.totals || {};
   const draftModeOps = stats?.aiDraftOps?.byMode?.draft || {};
@@ -2243,6 +2275,76 @@ export default function AdminPage() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      <div className={`${showArticlesTab ? '' : 'hidden'} bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4`}>
+        <div className="px-5 py-4 border-b border-amber-100 bg-amber-50/50">
+          <p className="text-sm font-semibold text-amber-900">독자 기사 검증 대기열</p>
+          <p className="text-xs text-amber-700 mt-1">내 의견으로 생성된 기사의 커뮤니티 노출 승인/반려를 처리합니다.</p>
+        </div>
+        <div className="p-4 sm:p-5 space-y-3">
+          {readerArticles.length === 0 ? (
+            <p className="text-sm text-gray-500">검증 대기 중인 독자 기사가 없습니다.</p>
+          ) : readerArticles.slice(0, 20).map((item) => (
+            <div key={`reader-article-${item.id}`} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-gray-900 line-clamp-1 text-left hover:underline"
+                    onClick={() => setExpandedReaderArticleId((prev) => (prev === item.id ? null : item.id))}
+                  >
+                    {item.generatedTitle}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1">원문: {item.sourceTitle}</p>
+                  <p className="text-xs text-gray-500">작성자: {item.userId} · {new Date(item.createdAt).toLocaleString()}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px]">
+                      {item.sourceCategory || 'General'}
+                    </span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-700 text-[11px]">
+                      {item.sourceEmotion}
+                    </span>
+                  </div>
+                </div>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">대기</span>
+              </div>
+              <button
+                type="button"
+                className="text-sm text-gray-700 line-clamp-2 text-left hover:text-gray-900"
+                onClick={() => setExpandedReaderArticleId((prev) => (prev === item.id ? null : item.id))}
+              >
+                {item.generatedSummary}
+              </button>
+              {expandedReaderArticleId === item.id && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <p className="text-[11px] text-gray-500 mb-1">기사 전체 본문</p>
+                  <p className="whitespace-pre-wrap text-xs text-gray-700 leading-relaxed">{item.generatedContent}</p>
+                </div>
+              )}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                <p className="text-[11px] text-gray-500 mb-1">독자 의견</p>
+                <p className="text-xs text-gray-700 line-clamp-2">{item.userOpinion}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => void handleReaderArticleDecision(item, 'approved')}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  승인 후 커뮤니티 노출
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleReaderArticleDecision(item, 'rejected')}
+                >
+                  반려
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

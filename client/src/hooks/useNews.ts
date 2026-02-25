@@ -14,6 +14,19 @@ export interface NewsItem {
     created_at: string | null;
 }
 
+function coerceArrayPayload(payload: unknown, url: string): any[] {
+    if (Array.isArray(payload)) return payload;
+    if (payload && typeof payload === 'object') {
+        const envelope = payload as Record<string, unknown>;
+        for (const key of ['data', 'items', 'articles', 'news', 'results']) {
+            if (Array.isArray(envelope[key])) {
+                return envelope[key] as any[];
+            }
+        }
+    }
+    throw new Error(`API payload is not an array for ${url}`);
+}
+
 function toNewsItem(item: any): NewsItem {
     const resolvedImage = item.image || item.image_url || item.thumbnail_url || null;
     return {
@@ -59,7 +72,14 @@ async function safeFetchJson(url: string): Promise<any[]> {
             throw new Error(`API returned non-JSON for ${url}: ${preview}`);
         }
 
-        return JSON.parse(bodyText);
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(bodyText);
+        } catch {
+            throw new Error(`API returned invalid JSON for ${url}`);
+        }
+
+        return coerceArrayPayload(parsed, url);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const isNetworkFailure =
@@ -75,26 +95,52 @@ async function safeFetchJson(url: string): Promise<any[]> {
 }
 
 async function fetchEmotionFromArticlesApi(emotion: EmotionType): Promise<NewsItem[]> {
-    const rows = await safeFetchJson('/api/articles?all=true');
-    return (rows || [])
-        .filter((item: any) => {
-            const published = typeof item?.isPublished === 'boolean'
-                ? item.isPublished
-                : typeof item?.is_published === 'boolean'
-                    ? item.is_published
-                    : true;
-            return item?.emotion === emotion && published;
-        })
-        .map(toNewsItem);
+    try {
+        const rows = await safeFetchJson('/api/articles?all=true');
+        return (rows || [])
+            .filter((item: any) => {
+                const published = typeof item?.isPublished === 'boolean'
+                    ? item.isPublished
+                    : typeof item?.is_published === 'boolean'
+                        ? item.is_published
+                        : true;
+                return item?.emotion === emotion && published;
+            })
+            .map(toNewsItem);
+    } catch {
+        return [];
+    }
+}
+
+async function fetchEmotionFromNewsAllApi(emotion: EmotionType): Promise<NewsItem[]> {
+    try {
+        const rows = await safeFetchJson('/api/news?all=true');
+        return (rows || [])
+            .filter((item: any) => {
+                const published = typeof item?.isPublished === 'boolean'
+                    ? item.isPublished
+                    : typeof item?.is_published === 'boolean'
+                        ? item.is_published
+                        : true;
+                return item?.emotion === emotion && published;
+            })
+            .map(toNewsItem);
+    } catch {
+        return [];
+    }
 }
 
 async function fetchEmotionNewsResilient(emotion: EmotionType): Promise<NewsItem[]> {
     try {
         const data = await safeFetchJson(`/api/news/${emotion}`);
-        return (data || []).map(toNewsItem);
+        const direct = (data || []).map(toNewsItem);
+        if (direct.length > 0) return direct;
     } catch {
-        return fetchEmotionFromArticlesApi(emotion);
+        // continue with fallback chain
     }
+    const fromNewsAll = await fetchEmotionFromNewsAllApi(emotion);
+    if (fromNewsAll.length > 0) return fromNewsAll;
+    return fetchEmotionFromArticlesApi(emotion);
 }
 
 export function useNews(emotion: EmotionType | undefined) {
@@ -122,8 +168,9 @@ export function useNews(emotion: EmotionType | undefined) {
 
             try {
                 return await fetchEmotionNewsResilient(emotion);
-            } catch {
-                throw new Error('Unable to load news data. Please try again.');
+            } catch (error) {
+                console.error('[useNews] all fetch paths failed:', error);
+                return [];
             }
         },
         enabled: !!emotion,

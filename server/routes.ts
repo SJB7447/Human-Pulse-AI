@@ -207,6 +207,48 @@ function normalizeShortLinkSlug(value: unknown): string {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 32);
 }
 
+function normalizeInsightUserId(value: unknown): string {
+  return String(value || "").trim().slice(0, 128);
+}
+
+function normalizeStringArray(value: unknown, maxItems: number, maxLength: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item || "").trim().slice(0, maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function buildOpinionArticleFromCrawledFallback(input: {
+  sourceTitle: string;
+  opinionText: string;
+  extraRequest: string;
+  crawledArticles: KeywordNewsArticle[];
+}) {
+  const picked = input.crawledArticles.slice(0, 4);
+  const content = [
+    `## 독자 의견`,
+    input.opinionText,
+    ``,
+    `## 재구성 기사`,
+    ...picked.map((row, index) => `${index + 1}. ${row.title}\n- ${row.summary}`),
+    ``,
+    input.extraRequest ? `## 반영한 추가 요청\n${input.extraRequest}` : "",
+  ].filter(Boolean).join("\n");
+
+  return {
+    title: `[의견 기사] ${input.sourceTitle}`,
+    summary: `${input.sourceTitle} 관련 최신 기사들을 교차 참고해 독자 의견 중심으로 재구성한 기사입니다.`,
+    content,
+    references: picked.map((row) => ({
+      title: row.title,
+      url: row.url,
+      source: row.source,
+    })),
+    fallbackUsed: true,
+  };
+}
+
 function isValidHttpUrl(value: string): boolean {
   try {
     const parsed = new URL(value);
@@ -3322,9 +3364,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/community", async (req, res) => {
     const limit = Math.min(Number(req.query.limit || 30), 100);
-    const data = [...communityFallback]
+    const feedFromFallback = [...communityFallback]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, limit)
       .map((row) => ({
         id: row.id,
         title: "Community Story",
@@ -3333,7 +3374,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         author: row.username,
         createdAt: row.createdAt,
       }));
-    res.json(data);
+
+    const approvedReaderArticles = (await storage.getReaderComposedArticles("approved"))
+      .map((row: any) => ({
+        id: String(row.id),
+        title: String(row.generatedTitle || "Reader Article"),
+        emotion: toEmotion(row.sourceEmotion),
+        category: String(row.sourceCategory || "General"),
+        content: String(row.generatedContent || ""),
+        excerpt: String(row.generatedSummary || row.userOpinion || "").slice(0, 300),
+        author: String(row.userId || "reader"),
+        createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
+      }));
+
+    const merged = [...approvedReaderArticles, ...feedFromFallback]
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+      .slice(0, limit);
+
+    res.json(merged);
   });
 
   app.post("/api/community", async (req, res) => {
@@ -3352,6 +3410,329 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     };
     if (isPublic) communityFallback.push(row);
     res.status(201).json({ id: row.id, createdAt: row.createdAt });
+  });
+
+  app.post("/api/ai/compose-opinion-article", async (req, res) => {
+    try {
+      const sourceArticleId = String(req.body?.sourceArticleId || "").trim().slice(0, 128);
+      const sourceTitle = String(req.body?.sourceTitle || "").trim().slice(0, 220);
+      const sourceSummary = String(req.body?.sourceSummary || "").trim().slice(0, 1600);
+      const sourceUrl = String(req.body?.sourceUrl || "").trim().slice(0, 500);
+      const opinionText = String(req.body?.opinionText || "").trim().slice(0, 2400);
+      const extraRequest = String(req.body?.extraRequest || "").trim().slice(0, 600);
+      const requestedReferences = normalizeStringArray(req.body?.requestedReferences, 8, 180);
+
+      if (!sourceArticleId || !sourceTitle || !opinionText) {
+        return res.status(400).json({ error: "sourceArticleId, sourceTitle, opinionText are required." });
+      }
+
+      const crawlSeed = [sourceTitle, extraRequest, ...requestedReferences.slice(0, 2)]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .join(" ");
+      const fetched = await fetchKeywordNewsArticles(crawlSeed || sourceTitle, 6, 9000);
+      const crawledArticles = (fetched.articles || [])
+        .filter((row) => /^https?:\/\//i.test(String(row?.url || "").trim()))
+        .filter((row) => String(row?.source || "").trim().toLowerCase() !== "fallback")
+        .slice(0, 6);
+
+      if (crawledArticles.length === 0) {
+        return res.status(503).json({
+          error: "웹 크롤링 기사 확보에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+          code: "OPINION_COMPOSE_CRAWL_EMPTY",
+          retryable: true,
+        });
+      }
+
+      const crawlContext = crawledArticles.map((row, idx) => ({
+        n: idx + 1,
+        title: row.title,
+        summary: row.summary,
+        source: row.source,
+        url: row.url,
+      }));
+
+      const prompt = [
+        "You are a newsroom writing assistant.",
+        "Task: write a NEW article using web-crawled context + reader opinion.",
+        "Hard rules:",
+        "1) NEVER edit or overwrite original article text.",
+        "2) Treat original article as read-only context only.",
+        "3) Use crawled references as the primary factual context.",
+        "4) Output content must start from reader perspective section. Do not add a section named '원문 요약'.",
+        "5) Return a standalone article that clearly separates reader opinion.",
+        "Output strict JSON:",
+        '{"title":"string","summary":"string","content":"markdown string","references":[{"title":"string","url":"string","source":"string"}]}',
+        "INPUT:",
+        JSON.stringify({
+          sourceArticleId,
+          sourceTitle,
+          sourceSummary,
+          sourceUrl,
+          opinionText,
+          extraRequest,
+          requestedReferences,
+          crawledContext: crawlContext,
+          language: "ko-KR",
+        }),
+      ].join("\n");
+
+      const modelRaw = await generateGeminiText(prompt);
+      const parsed = parseJsonFromModelText<{
+        title?: string;
+        summary?: string;
+        content?: string;
+        references?: Array<{ title?: string; url?: string; source?: string }>;
+      }>(modelRaw || "");
+
+      if (!parsed?.title || !parsed?.summary || !parsed?.content) {
+        return res.json(buildOpinionArticleFromCrawledFallback({
+          sourceTitle,
+          opinionText,
+          extraRequest,
+          crawledArticles,
+        }));
+      }
+
+      const references = Array.isArray(parsed.references)
+        ? parsed.references
+          .map((ref) => ({
+            title: String(ref?.title || "").trim().slice(0, 160),
+            url: String(ref?.url || "").trim().slice(0, 300),
+            source: String(ref?.source || "").trim().slice(0, 120),
+          }))
+          .filter((ref) => ref.title || ref.url || ref.source)
+          .slice(0, 10)
+        : [];
+
+      const normalizedCrawledUrlSet = new Set(
+        crawledArticles.map((row) => String(row.url || "").trim()).filter(Boolean),
+      );
+      const hasCrawledReference = references.some((ref) => normalizedCrawledUrlSet.has(ref.url));
+      const resolvedReferences = hasCrawledReference
+        ? references
+        : crawledArticles.slice(0, 4).map((row) => ({
+          title: row.title,
+          url: row.url,
+          source: row.source,
+        }));
+
+      return res.json({
+        title: String(parsed.title || "").trim().slice(0, 220),
+        summary: String(parsed.summary || "").trim().slice(0, 600),
+        content: String(parsed.content || "").trim().slice(0, 20000),
+        references: resolvedReferences,
+        fallbackUsed: false,
+      });
+    } catch (error) {
+      console.error("[API] /api/ai/compose-opinion-article failed:", error);
+      return res.status(500).json({ error: "Failed to compose article with opinion." });
+    }
+  });
+
+  app.get("/api/mypage/insights", async (req, res) => {
+    try {
+      const userId = normalizeInsightUserId(req.query.userId);
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+
+      const rows = await storage.getUserInsights(userId);
+      return res.json(rows);
+    } catch (error) {
+      console.error("[API] /api/mypage/insights failed:", error);
+      return res.status(500).json({ error: "Failed to load user insights." });
+    }
+  });
+
+  app.post("/api/mypage/insights", async (req, res) => {
+    try {
+      const userId = normalizeInsightUserId(req.body?.userId);
+      const articleId = String(req.body?.articleId || "").trim().slice(0, 128);
+      const originalTitle = String(req.body?.originalTitle || "").trim().slice(0, 220);
+      const userComment = String(req.body?.userComment || "").trim().slice(0, 1200);
+      const userFeelingText = String(req.body?.userFeelingText || "").trim().slice(0, 120);
+      const selectedTags = Array.isArray(req.body?.selectedTags)
+        ? req.body.selectedTags.map((tag: unknown) => String(tag || "").trim()).filter(Boolean).slice(0, 3)
+        : [];
+      const userEmotion = toEmotion(req.body?.userEmotion);
+
+      if (!userId || !articleId || !originalTitle || !userComment) {
+        return res.status(400).json({ error: "userId, articleId, originalTitle, userComment are required." });
+      }
+
+      const row = await storage.createUserInsight({
+        userId,
+        articleId,
+        originalTitle,
+        userComment,
+        userEmotion,
+        userFeelingText,
+        selectedTags,
+      });
+      return res.status(201).json(row);
+    } catch (error) {
+      console.error("[API] /api/mypage/insights create failed:", error);
+      return res.status(500).json({ error: "Failed to save insight." });
+    }
+  });
+
+  app.delete("/api/mypage/insights/:id", async (req, res) => {
+    try {
+      const userId = normalizeInsightUserId(req.query.userId || req.body?.userId);
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+      const insightId = String(req.params.id || "").trim();
+      const deleted = await storage.deleteUserInsight(userId, insightId);
+      if (!deleted) {
+        return res.status(404).json({ error: "Insight not found." });
+      }
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("[API] /api/mypage/insights delete failed:", error);
+      return res.status(500).json({ error: "Failed to delete insight." });
+    }
+  });
+
+  app.get("/api/mypage/composed-articles", async (req, res) => {
+    try {
+      const userId = normalizeInsightUserId(req.query.userId);
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+      const rows = await storage.getUserComposedArticles(userId);
+      return res.json(rows);
+    } catch (error) {
+      console.error("[API] /api/mypage/composed-articles failed:", error);
+      return res.status(500).json({ error: "Failed to load composed articles." });
+    }
+  });
+
+  app.post("/api/mypage/composed-articles", async (req, res) => {
+    try {
+      const userId = normalizeInsightUserId(req.body?.userId);
+      const sourceArticleId = String(req.body?.sourceArticleId || "").trim().slice(0, 128);
+      const sourceTitle = String(req.body?.sourceTitle || "").trim().slice(0, 220);
+      const sourceUrl = String(req.body?.sourceUrl || "").trim().slice(0, 500);
+      const userOpinion = String(req.body?.userOpinion || "").trim().slice(0, 2400);
+      const extraRequest = String(req.body?.extraRequest || "").trim().slice(0, 600);
+      const requestedReferences = normalizeStringArray(req.body?.requestedReferences, 8, 180);
+      const generatedTitle = String(req.body?.generatedTitle || "").trim().slice(0, 220);
+      const generatedSummary = String(req.body?.generatedSummary || "").trim().slice(0, 1000);
+      const generatedContent = String(req.body?.generatedContent || "").trim().slice(0, 24000);
+      const referenceLinks = normalizeStringArray(req.body?.referenceLinks, 12, 300);
+      const status = String(req.body?.status || "draft").trim().toLowerCase() === "published" ? "published" : "draft";
+      const submissionStatusRaw = String(req.body?.submissionStatus || "pending").trim().toLowerCase();
+      const submissionStatus = ["pending", "approved", "rejected"].includes(submissionStatusRaw)
+        ? (submissionStatusRaw as "pending" | "approved" | "rejected")
+        : "pending";
+      const sourceEmotion = toEmotion(req.body?.sourceEmotion);
+      const sourceCategory = String(req.body?.sourceCategory || "").trim().slice(0, 120) || "General";
+
+      if (!userId || !sourceArticleId || !sourceTitle || !userOpinion || !generatedTitle || !generatedSummary || !generatedContent) {
+        return res.status(400).json({ error: "Required fields are missing." });
+      }
+
+      const row = await storage.createUserComposedArticle({
+        userId,
+        sourceArticleId,
+        sourceTitle,
+        sourceUrl,
+        userOpinion,
+        extraRequest,
+        requestedReferences,
+        generatedTitle,
+        generatedSummary,
+        generatedContent,
+        referenceLinks,
+        status,
+        submissionStatus,
+        sourceEmotion,
+        sourceCategory,
+      });
+      return res.status(201).json(row);
+    } catch (error) {
+      console.error("[API] /api/mypage/composed-articles create failed:", error);
+      return res.status(500).json({ error: "Failed to save composed article." });
+    }
+  });
+
+  app.delete("/api/mypage/composed-articles/:id", async (req, res) => {
+    try {
+      const userId = normalizeInsightUserId(req.query.userId || req.body?.userId);
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+      const articleId = String(req.params.id || "").trim();
+      const deleted = await storage.deleteUserComposedArticle(userId, articleId);
+      if (!deleted) return res.status(404).json({ error: "Composed article not found." });
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("[API] /api/mypage/composed-articles delete failed:", error);
+      return res.status(500).json({ error: "Failed to delete composed article." });
+    }
+  });
+
+  app.put("/api/mypage/composed-articles/:id", async (req, res) => {
+    try {
+      const userId = normalizeInsightUserId(req.query.userId || req.body?.userId);
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+      const articleId = String(req.params.id || "").trim();
+      if (!articleId) return res.status(400).json({ error: "article id is required." });
+
+      const updates: Record<string, unknown> = {};
+      if (typeof req.body?.generatedTitle === "string") updates.generatedTitle = req.body.generatedTitle;
+      if (typeof req.body?.generatedSummary === "string") updates.generatedSummary = req.body.generatedSummary;
+      if (typeof req.body?.generatedContent === "string") updates.generatedContent = req.body.generatedContent;
+      if (typeof req.body?.userOpinion === "string") updates.userOpinion = req.body.userOpinion;
+      if (typeof req.body?.extraRequest === "string") updates.extraRequest = req.body.extraRequest;
+      if (Array.isArray(req.body?.requestedReferences)) updates.requestedReferences = req.body.requestedReferences;
+      if (Array.isArray(req.body?.referenceLinks)) updates.referenceLinks = req.body.referenceLinks;
+      if (typeof req.body?.sourceTitle === "string") updates.sourceTitle = req.body.sourceTitle;
+      if (typeof req.body?.sourceUrl === "string") updates.sourceUrl = req.body.sourceUrl;
+      if (typeof req.body?.status === "string") {
+        updates.status = String(req.body.status).trim().toLowerCase() === "published" ? "published" : "draft";
+      }
+      if (typeof req.body?.sourceCategory === "string") updates.sourceCategory = req.body.sourceCategory;
+      if (typeof req.body?.sourceEmotion === "string") updates.sourceEmotion = toEmotion(req.body.sourceEmotion);
+
+      const updated = await storage.updateUserComposedArticle(userId, articleId, updates);
+      if (!updated) return res.status(404).json({ error: "Composed article not found." });
+      return res.json(updated);
+    } catch (error) {
+      console.error("[API] /api/mypage/composed-articles/:id update failed:", error);
+      return res.status(500).json({ error: "Failed to update composed article." });
+    }
+  });
+
+  app.get("/api/admin/reader-articles", async (req, res) => {
+    try {
+      const statusRaw = String(req.query.status || "").trim().toLowerCase();
+      const status = ["pending", "approved", "rejected"].includes(statusRaw)
+        ? (statusRaw as "pending" | "approved" | "rejected")
+        : undefined;
+      const rows = await storage.getReaderComposedArticles(status);
+      return res.json(rows);
+    } catch (error) {
+      console.error("[API] /api/admin/reader-articles failed:", error);
+      return res.status(500).json({ error: "Failed to load reader articles." });
+    }
+  });
+
+  app.post("/api/admin/reader-articles/:id/decision", async (req, res) => {
+    try {
+      const articleId = String(req.params.id || "").trim();
+      if (!articleId) return res.status(400).json({ error: "articleId is required." });
+      const submissionStatusRaw = String(req.body?.submissionStatus || "").trim().toLowerCase();
+      if (!["pending", "approved", "rejected"].includes(submissionStatusRaw)) {
+        return res.status(400).json({ error: "submissionStatus must be pending|approved|rejected." });
+      }
+      const moderationMemo = String(req.body?.moderationMemo || "").trim().slice(0, 1200);
+      const reviewedBy = resolveActor(req).actorId || "admin";
+      const updated = await storage.updateReaderComposedArticleDecision(articleId, {
+        submissionStatus: submissionStatusRaw as "pending" | "approved" | "rejected",
+        moderationMemo,
+        reviewedBy,
+      });
+      if (!updated) return res.status(404).json({ error: "Reader article not found." });
+      return res.json(updated);
+    } catch (error) {
+      console.error("[API] /api/admin/reader-articles/:id/decision failed:", error);
+      return res.status(500).json({ error: "Failed to update reader article decision." });
+    }
   });
 
   app.get("/api/billing/subscription/:userId", async (req, res) => {

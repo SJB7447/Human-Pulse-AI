@@ -1,5 +1,5 @@
 
-import { type User, type InsertUser, type NewsItem, type InsertNewsItem, type EmotionType, type Report, type ArticleReview, type InsertUserConsent, type UserConsent, type AdminActionLog } from "../shared/schema.js";
+import { type User, type InsertUser, type NewsItem, type InsertNewsItem, type EmotionType, type Report, type ArticleReview, type InsertUserConsent, type UserConsent, type AdminActionLog, type InsertUserInsight, type UserInsight, type InsertUserComposedArticle, type UserComposedArticle } from "../shared/schema.js";
 import { randomUUID } from "crypto";
 
 const isPublishedVisible = (row: any): boolean => {
@@ -38,6 +38,12 @@ export interface AdminActionLogInput {
   detail?: string | null;
 }
 
+export interface ReaderArticleDecisionInput {
+  submissionStatus: "pending" | "approved" | "rejected";
+  moderationMemo?: string | null;
+  reviewedBy?: string | null;
+}
+
 export type ReportWorkflowStatus = "reported" | "in_review" | "resolved" | "rejected";
 export type ReportSanctionType = "none" | "hide_article" | "delete_article" | "warn_author";
 
@@ -73,6 +79,15 @@ export interface IStorage {
   createAdminActionLog(input: AdminActionLogInput): Promise<AdminActionLog>;
   getAdminActionLogs(limit?: number): Promise<AdminActionLog[]>;
   saveUserConsent(input: InsertUserConsent): Promise<UserConsent>;
+  getUserInsights(userId: string): Promise<UserInsight[]>;
+  createUserInsight(input: InsertUserInsight): Promise<UserInsight>;
+  deleteUserInsight(userId: string, insightId: string): Promise<boolean>;
+  getUserComposedArticles(userId: string): Promise<UserComposedArticle[]>;
+  createUserComposedArticle(input: InsertUserComposedArticle): Promise<UserComposedArticle>;
+  deleteUserComposedArticle(userId: string, articleId: string): Promise<boolean>;
+  updateUserComposedArticle(userId: string, articleId: string, updates: Partial<InsertUserComposedArticle>): Promise<UserComposedArticle | null>;
+  getReaderComposedArticles(status?: "pending" | "approved" | "rejected"): Promise<UserComposedArticle[]>;
+  updateReaderComposedArticleDecision(articleId: string, input: ReaderArticleDecisionInput): Promise<UserComposedArticle | null>;
 }
 
 const REVIEW_SLA_TARGET_HOURS = 24;
@@ -178,6 +193,8 @@ export class MemStorage implements IStorage {
   private articleReviews: Map<string, ArticleReview>;
   private adminActionLogs: Map<string, AdminActionLog>;
   private userConsents: Map<string, UserConsent>;
+  private userInsights: Map<string, UserInsight>;
+  private userComposedArticles: Map<string, UserComposedArticle>;
 
   constructor() {
     this.users = new Map();
@@ -187,6 +204,8 @@ export class MemStorage implements IStorage {
     this.articleReviews = new Map();
     this.adminActionLogs = new Map();
     this.userConsents = new Map();
+    this.userInsights = new Map();
+    this.userComposedArticles = new Map();
     this.seedNews();
   }
 
@@ -471,6 +490,128 @@ export class MemStorage implements IStorage {
     this.userConsents.set(email, next);
     return next;
   }
+
+  async getUserInsights(userId: string): Promise<UserInsight[]> {
+    const safeUserId = String(userId || "").trim();
+    return Array.from(this.userInsights.values())
+      .filter((row) => String(row.userId) === safeUserId)
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }
+
+  async createUserInsight(input: InsertUserInsight): Promise<UserInsight> {
+    const now = new Date();
+    const row: UserInsight = {
+      id: randomUUID(),
+      userId: String(input.userId || "").trim(),
+      articleId: String(input.articleId || "").trim(),
+      originalTitle: String(input.originalTitle || "").trim(),
+      userComment: String(input.userComment || "").trim(),
+      userEmotion: (String(input.userEmotion || "spectrum").trim().toLowerCase() as EmotionType),
+      userFeelingText: String(input.userFeelingText || "").trim(),
+      selectedTags: Array.isArray((input as any).selectedTags)
+        ? (input as any).selectedTags.map((tag: unknown) => String(tag || "").trim()).filter(Boolean).slice(0, 3)
+        : [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.userInsights.set(String(row.id), row);
+    return row;
+  }
+
+  async deleteUserInsight(userId: string, insightId: string): Promise<boolean> {
+    const current = this.userInsights.get(String(insightId));
+    if (!current) return false;
+    if (String(current.userId) !== String(userId || "").trim()) return false;
+    return this.userInsights.delete(String(insightId));
+  }
+
+  async getUserComposedArticles(userId: string): Promise<UserComposedArticle[]> {
+    const safeUserId = String(userId || "").trim();
+    return Array.from(this.userComposedArticles.values())
+      .filter((row) => String(row.userId) === safeUserId)
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }
+
+  async createUserComposedArticle(input: InsertUserComposedArticle): Promise<UserComposedArticle> {
+    const now = new Date();
+    const row: UserComposedArticle = {
+      id: randomUUID(),
+      userId: String(input.userId || "").trim(),
+      sourceArticleId: String(input.sourceArticleId || "").trim(),
+      sourceTitle: String(input.sourceTitle || "").trim(),
+      sourceUrl: input.sourceUrl ? String(input.sourceUrl).trim() : null,
+      sourceEmotion: String((input as any).sourceEmotion || "spectrum").trim().toLowerCase() || "spectrum",
+      sourceCategory: String((input as any).sourceCategory || "General").trim() || "General",
+      userOpinion: String(input.userOpinion || "").trim(),
+      extraRequest: String(input.extraRequest || "").trim(),
+      requestedReferences: Array.isArray((input as any).requestedReferences)
+        ? (input as any).requestedReferences.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 8)
+        : [],
+      generatedTitle: String(input.generatedTitle || "").trim(),
+      generatedSummary: String(input.generatedSummary || "").trim(),
+      generatedContent: String(input.generatedContent || "").trim(),
+      referenceLinks: Array.isArray((input as any).referenceLinks)
+        ? (input as any).referenceLinks.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 12)
+        : [],
+      status: String((input as any).status || "draft") === "published" ? "published" : "draft",
+      submissionStatus: (["pending", "approved", "rejected"].includes(String((input as any).submissionStatus || "pending"))
+        ? String((input as any).submissionStatus || "pending")
+        : "pending") as "pending" | "approved" | "rejected",
+      moderationMemo: String((input as any).moderationMemo || "").trim(),
+      reviewedBy: (input as any).reviewedBy ? String((input as any).reviewedBy).trim() : null,
+      reviewedAt: (input as any).reviewedAt ? new Date((input as any).reviewedAt) : null,
+      createdAt: now,
+      updatedAt: now,
+    } as UserComposedArticle;
+    this.userComposedArticles.set(String(row.id), row);
+    return row;
+  }
+
+  async deleteUserComposedArticle(userId: string, articleId: string): Promise<boolean> {
+    const current = this.userComposedArticles.get(String(articleId));
+    if (!current) return false;
+    if (String(current.userId) !== String(userId || "").trim()) return false;
+    return this.userComposedArticles.delete(String(articleId));
+  }
+
+  async updateUserComposedArticle(userId: string, articleId: string, updates: Partial<InsertUserComposedArticle>): Promise<UserComposedArticle | null> {
+    const current = this.userComposedArticles.get(String(articleId));
+    if (!current) return null;
+    if (String(current.userId) !== String(userId || "").trim()) return null;
+    const next: UserComposedArticle = {
+      ...current,
+      generatedTitle: updates.generatedTitle ? String(updates.generatedTitle).trim().slice(0, 220) : current.generatedTitle,
+      generatedSummary: updates.generatedSummary ? String(updates.generatedSummary).trim().slice(0, 1000) : current.generatedSummary,
+      generatedContent: updates.generatedContent ? String(updates.generatedContent).trim().slice(0, 24000) : current.generatedContent,
+      sourceCategory: updates.sourceCategory ? String(updates.sourceCategory).trim().slice(0, 120) : (current as any).sourceCategory,
+      sourceEmotion: updates.sourceEmotion ? String(updates.sourceEmotion).trim().toLowerCase().slice(0, 32) : (current as any).sourceEmotion,
+      updatedAt: new Date(),
+    } as UserComposedArticle;
+    this.userComposedArticles.set(String(articleId), next);
+    return next;
+  }
+
+  async getReaderComposedArticles(status?: "pending" | "approved" | "rejected"): Promise<UserComposedArticle[]> {
+    const safeStatus = status && ["pending", "approved", "rejected"].includes(status) ? status : null;
+    return Array.from(this.userComposedArticles.values())
+      .filter((row) => (safeStatus ? String((row as any).submissionStatus || "pending") === safeStatus : true))
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }
+
+  async updateReaderComposedArticleDecision(articleId: string, input: ReaderArticleDecisionInput): Promise<UserComposedArticle | null> {
+    const current = this.userComposedArticles.get(String(articleId));
+    if (!current) return null;
+    const next: UserComposedArticle = {
+      ...current,
+      submissionStatus: input.submissionStatus,
+      moderationMemo: String(input.moderationMemo || "").trim(),
+      reviewedBy: input.reviewedBy ? String(input.reviewedBy).trim() : null,
+      reviewedAt: new Date(),
+      updatedAt: new Date(),
+    } as UserComposedArticle;
+    this.userComposedArticles.set(String(articleId), next);
+    return next;
+  }
 }
 
 import { supabase } from "./supabase.js";
@@ -481,6 +622,8 @@ export class SupabaseStorage implements IStorage {
   private fallbackArticleReviews: Map<string, ArticleReview> = new Map();
   private fallbackAdminActionLogs: Map<string, AdminActionLog> = new Map();
   private fallbackUserConsents: Map<string, UserConsent> = new Map();
+  private fallbackUserInsights: Map<string, UserInsight> = new Map();
+  private fallbackUserComposedArticles: Map<string, UserComposedArticle> = new Map();
 
   private mapArticleReview(row: any): ArticleReview {
     const createdAtValue = row?.created_at ?? row?.createdAt ?? new Date();
@@ -498,7 +641,7 @@ export class SupabaseStorage implements IStorage {
 
   private isMissingTableError(error: any): boolean {
     const message = String(error?.message || "");
-    return /relation .* does not exist|could not find the table|schema cache|article_reviews|user_consents|admin_action_logs/i.test(message);
+    return /relation .* does not exist|could not find the table|schema cache|article_reviews|user_consents|admin_action_logs|user_insights|user_composed_articles/i.test(message);
   }
 
   private isRlsError(error: any): boolean {
@@ -531,6 +674,59 @@ export class SupabaseStorage implements IStorage {
       detail: row?.detail ?? null,
       createdAt: new Date(createdAtValue),
     } as AdminActionLog;
+  }
+
+  private mapUserInsight(row: any): UserInsight {
+    const createdAtValue = row?.created_at ?? row?.createdAt ?? new Date();
+    const updatedAtValue = row?.updated_at ?? row?.updatedAt ?? new Date();
+    return {
+      id: row?.id || randomUUID(),
+      userId: String(row?.user_id ?? row?.userId ?? ""),
+      articleId: String(row?.article_id ?? row?.articleId ?? ""),
+      originalTitle: String(row?.original_title ?? row?.originalTitle ?? ""),
+      userComment: String(row?.user_comment ?? row?.userComment ?? ""),
+      userEmotion: String(row?.user_emotion ?? row?.userEmotion ?? "spectrum") as EmotionType,
+      userFeelingText: String(row?.user_feeling_text ?? row?.userFeelingText ?? ""),
+      selectedTags: Array.isArray(row?.selected_tags ?? row?.selectedTags)
+        ? (row?.selected_tags ?? row?.selectedTags).map((tag: unknown) => String(tag || "").trim()).filter(Boolean).slice(0, 3)
+        : [],
+      createdAt: new Date(createdAtValue),
+      updatedAt: new Date(updatedAtValue),
+    } as UserInsight;
+  }
+
+  private mapUserComposedArticle(row: any): UserComposedArticle {
+    const createdAtValue = row?.created_at ?? row?.createdAt ?? new Date();
+    const updatedAtValue = row?.updated_at ?? row?.updatedAt ?? new Date();
+    return {
+      id: row?.id || randomUUID(),
+      userId: String(row?.user_id ?? row?.userId ?? ""),
+      sourceArticleId: String(row?.source_article_id ?? row?.sourceArticleId ?? ""),
+      sourceTitle: String(row?.source_title ?? row?.sourceTitle ?? ""),
+      sourceUrl: row?.source_url ?? row?.sourceUrl ?? null,
+      sourceEmotion: String(row?.source_emotion ?? row?.sourceEmotion ?? "spectrum").trim().toLowerCase() || "spectrum",
+      sourceCategory: String(row?.source_category ?? row?.sourceCategory ?? "General").trim() || "General",
+      userOpinion: String(row?.user_opinion ?? row?.userOpinion ?? ""),
+      extraRequest: String(row?.extra_request ?? row?.extraRequest ?? ""),
+      requestedReferences: Array.isArray(row?.requested_references ?? row?.requestedReferences)
+        ? (row?.requested_references ?? row?.requestedReferences).map((value: unknown) => String(value || "").trim()).filter(Boolean).slice(0, 8)
+        : [],
+      generatedTitle: String(row?.generated_title ?? row?.generatedTitle ?? ""),
+      generatedSummary: String(row?.generated_summary ?? row?.generatedSummary ?? ""),
+      generatedContent: String(row?.generated_content ?? row?.generatedContent ?? ""),
+      referenceLinks: Array.isArray(row?.reference_links ?? row?.referenceLinks)
+        ? (row?.reference_links ?? row?.referenceLinks).map((value: unknown) => String(value || "").trim()).filter(Boolean).slice(0, 12)
+        : [],
+      status: String(row?.status ?? "draft") === "published" ? "published" : "draft",
+      submissionStatus: (["pending", "approved", "rejected"].includes(String(row?.submission_status ?? row?.submissionStatus ?? "pending"))
+        ? String(row?.submission_status ?? row?.submissionStatus ?? "pending")
+        : "pending") as "pending" | "approved" | "rejected",
+      moderationMemo: String(row?.moderation_memo ?? row?.moderationMemo ?? ""),
+      reviewedBy: row?.reviewed_by ?? row?.reviewedBy ?? null,
+      reviewedAt: row?.reviewed_at ? new Date(row.reviewed_at) : (row?.reviewedAt ? new Date(row.reviewedAt) : null),
+      createdAt: new Date(createdAtValue),
+      updatedAt: new Date(updatedAtValue),
+    } as UserComposedArticle;
   }
 
   private mergeWithFallback(dbRows: NewsItem[]): NewsItem[] {
@@ -1105,6 +1301,353 @@ export class SupabaseStorage implements IStorage {
 
     this.fallbackUserConsents.set(email, fallback);
     return fallback;
+  }
+
+  async getUserInsights(userId: string): Promise<UserInsight[]> {
+    const safeUserId = String(userId || "").trim();
+    const { data, error } = await supabase
+      .from("user_insights")
+      .select("*")
+      .eq("user_id", safeUserId)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      const rows = (data || []).map((row) => this.mapUserInsight(row));
+      rows.forEach((row) => this.fallbackUserInsights.set(String(row.id), row));
+      const merged = new Map<string, UserInsight>();
+      rows.forEach((row) => merged.set(String(row.id), row));
+      Array.from(this.fallbackUserInsights.values())
+        .filter((row) => String(row.userId) === safeUserId)
+        .forEach((row) => {
+          if (!merged.has(String(row.id))) merged.set(String(row.id), row);
+        });
+      return Array.from(merged.values())
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+    return Array.from(this.fallbackUserInsights.values())
+      .filter((row) => String(row.userId) === safeUserId)
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }
+
+  async createUserInsight(input: InsertUserInsight): Promise<UserInsight> {
+    const fallback: UserInsight = {
+      id: randomUUID(),
+      userId: String(input.userId || "").trim(),
+      articleId: String(input.articleId || "").trim(),
+      originalTitle: String(input.originalTitle || "").trim(),
+      userComment: String(input.userComment || "").trim(),
+      userEmotion: String(input.userEmotion || "spectrum") as EmotionType,
+      userFeelingText: String(input.userFeelingText || "").trim(),
+      selectedTags: Array.isArray((input as any).selectedTags)
+        ? (input as any).selectedTags.map((tag: unknown) => String(tag || "").trim()).filter(Boolean).slice(0, 3)
+        : [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const payload = {
+      user_id: fallback.userId,
+      article_id: fallback.articleId,
+      original_title: fallback.originalTitle,
+      user_comment: fallback.userComment,
+      user_emotion: fallback.userEmotion,
+      user_feeling_text: fallback.userFeelingText,
+      selected_tags: fallback.selectedTags,
+      updated_at: fallback.updatedAt.toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("user_insights")
+      .insert(payload)
+      .select()
+      .single();
+
+    if (!error && data) {
+      const mapped = this.mapUserInsight(data);
+      this.fallbackUserInsights.set(String(mapped.id), mapped);
+      return mapped;
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+    this.fallbackUserInsights.set(String(fallback.id), fallback);
+    return fallback;
+  }
+
+  async deleteUserInsight(userId: string, insightId: string): Promise<boolean> {
+    const safeUserId = String(userId || "").trim();
+    const safeInsightId = String(insightId || "").trim();
+    const { data, error } = await supabase
+      .from("user_insights")
+      .delete()
+      .eq("id", safeInsightId)
+      .eq("user_id", safeUserId)
+      .select("id")
+      .maybeSingle();
+
+    if (!error) {
+      const deleted = Boolean(data?.id);
+      if (deleted) this.fallbackUserInsights.delete(safeInsightId);
+      return deleted;
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+
+    const fallbackRow = this.fallbackUserInsights.get(safeInsightId);
+    if (!fallbackRow) return false;
+    if (String(fallbackRow.userId) !== safeUserId) return false;
+    this.fallbackUserInsights.delete(safeInsightId);
+    return true;
+  }
+
+  async getUserComposedArticles(userId: string): Promise<UserComposedArticle[]> {
+    const safeUserId = String(userId || "").trim();
+    const { data, error } = await supabase
+      .from("user_composed_articles")
+      .select("*")
+      .eq("user_id", safeUserId)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      const rows = (data || []).map((row) => this.mapUserComposedArticle(row));
+      rows.forEach((row) => this.fallbackUserComposedArticles.set(String(row.id), row));
+      const merged = new Map<string, UserComposedArticle>();
+      rows.forEach((row) => merged.set(String(row.id), row));
+      Array.from(this.fallbackUserComposedArticles.values())
+        .filter((row) => String(row.userId) === safeUserId)
+        .forEach((row) => {
+          if (!merged.has(String(row.id))) merged.set(String(row.id), row);
+        });
+      return Array.from(merged.values())
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+    return Array.from(this.fallbackUserComposedArticles.values())
+      .filter((row) => String(row.userId) === safeUserId)
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }
+
+  async createUserComposedArticle(input: InsertUserComposedArticle): Promise<UserComposedArticle> {
+    const now = new Date();
+    const fallback: UserComposedArticle = {
+      id: randomUUID(),
+      userId: String(input.userId || "").trim(),
+      sourceArticleId: String(input.sourceArticleId || "").trim(),
+      sourceTitle: String(input.sourceTitle || "").trim(),
+      sourceUrl: input.sourceUrl ? String(input.sourceUrl).trim() : null,
+      sourceEmotion: String((input as any).sourceEmotion || "spectrum").trim().toLowerCase() || "spectrum",
+      sourceCategory: String((input as any).sourceCategory || "General").trim() || "General",
+      userOpinion: String(input.userOpinion || "").trim(),
+      extraRequest: String(input.extraRequest || "").trim(),
+      requestedReferences: Array.isArray((input as any).requestedReferences)
+        ? (input as any).requestedReferences.map((value: unknown) => String(value || "").trim()).filter(Boolean).slice(0, 8)
+        : [],
+      generatedTitle: String(input.generatedTitle || "").trim(),
+      generatedSummary: String(input.generatedSummary || "").trim(),
+      generatedContent: String(input.generatedContent || "").trim(),
+      referenceLinks: Array.isArray((input as any).referenceLinks)
+        ? (input as any).referenceLinks.map((value: unknown) => String(value || "").trim()).filter(Boolean).slice(0, 12)
+        : [],
+      status: String((input as any).status || "draft") === "published" ? "published" : "draft",
+      submissionStatus: (["pending", "approved", "rejected"].includes(String((input as any).submissionStatus || "pending"))
+        ? String((input as any).submissionStatus || "pending")
+        : "pending") as "pending" | "approved" | "rejected",
+      moderationMemo: String((input as any).moderationMemo || "").trim(),
+      reviewedBy: (input as any).reviewedBy ? String((input as any).reviewedBy).trim() : null,
+      reviewedAt: (input as any).reviewedAt ? new Date((input as any).reviewedAt) : null,
+      createdAt: now,
+      updatedAt: now,
+    } as UserComposedArticle;
+
+    const payload = {
+      user_id: fallback.userId,
+      source_article_id: fallback.sourceArticleId,
+      source_title: fallback.sourceTitle,
+      source_url: fallback.sourceUrl,
+      source_emotion: fallback.sourceEmotion,
+      source_category: fallback.sourceCategory,
+      user_opinion: fallback.userOpinion,
+      extra_request: fallback.extraRequest,
+      requested_references: fallback.requestedReferences,
+      generated_title: fallback.generatedTitle,
+      generated_summary: fallback.generatedSummary,
+      generated_content: fallback.generatedContent,
+      reference_links: fallback.referenceLinks,
+      status: fallback.status,
+      submission_status: fallback.submissionStatus,
+      moderation_memo: fallback.moderationMemo,
+      reviewed_by: fallback.reviewedBy,
+      reviewed_at: fallback.reviewedAt ? fallback.reviewedAt.toISOString() : null,
+      updated_at: fallback.updatedAt.toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("user_composed_articles")
+      .insert(payload)
+      .select()
+      .single();
+
+    if (!error && data) {
+      const mapped = this.mapUserComposedArticle(data);
+      this.fallbackUserComposedArticles.set(String(mapped.id), mapped);
+      return mapped;
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+    this.fallbackUserComposedArticles.set(String(fallback.id), fallback);
+    return fallback;
+  }
+
+  async deleteUserComposedArticle(userId: string, articleId: string): Promise<boolean> {
+    const safeUserId = String(userId || "").trim();
+    const safeArticleId = String(articleId || "").trim();
+    const { data, error } = await supabase
+      .from("user_composed_articles")
+      .delete()
+      .eq("id", safeArticleId)
+      .eq("user_id", safeUserId)
+      .select("id")
+      .maybeSingle();
+
+    if (!error) {
+      const deleted = Boolean(data?.id);
+      if (deleted) this.fallbackUserComposedArticles.delete(safeArticleId);
+      return deleted;
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+
+    const fallbackRow = this.fallbackUserComposedArticles.get(safeArticleId);
+    if (!fallbackRow) return false;
+    if (String(fallbackRow.userId) !== safeUserId) return false;
+    this.fallbackUserComposedArticles.delete(safeArticleId);
+    return true;
+  }
+
+  async updateUserComposedArticle(userId: string, articleId: string, updates: Partial<InsertUserComposedArticle>): Promise<UserComposedArticle | null> {
+    const safeUserId = String(userId || "").trim();
+    const safeArticleId = String(articleId || "").trim();
+    const updatePayload: Record<string, any> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.generatedTitle) updatePayload.generated_title = String(updates.generatedTitle).trim().slice(0, 220);
+    if (updates.generatedSummary) updatePayload.generated_summary = String(updates.generatedSummary).trim().slice(0, 1000);
+    if (updates.generatedContent) updatePayload.generated_content = String(updates.generatedContent).trim().slice(0, 24000);
+    if ((updates as any).sourceCategory) updatePayload.source_category = String((updates as any).sourceCategory).trim().slice(0, 120);
+    if ((updates as any).sourceEmotion) updatePayload.source_emotion = String((updates as any).sourceEmotion).trim().toLowerCase().slice(0, 32);
+
+    const { data, error } = await supabase
+      .from("user_composed_articles")
+      .update(updatePayload)
+      .eq("id", safeArticleId)
+      .eq("user_id", safeUserId)
+      .select("*")
+      .maybeSingle();
+
+    if (!error && data) {
+      const mapped = this.mapUserComposedArticle(data);
+      this.fallbackUserComposedArticles.set(String(mapped.id), mapped);
+      return mapped;
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+    const fallback = this.fallbackUserComposedArticles.get(safeArticleId);
+    if (!fallback) return null;
+    if (String(fallback.userId) !== safeUserId) return null;
+    const next: UserComposedArticle = {
+      ...fallback,
+      generatedTitle: updates.generatedTitle ? String(updates.generatedTitle).trim().slice(0, 220) : fallback.generatedTitle,
+      generatedSummary: updates.generatedSummary ? String(updates.generatedSummary).trim().slice(0, 1000) : fallback.generatedSummary,
+      generatedContent: updates.generatedContent ? String(updates.generatedContent).trim().slice(0, 24000) : fallback.generatedContent,
+      sourceCategory: (updates as any).sourceCategory ? String((updates as any).sourceCategory).trim().slice(0, 120) : (fallback as any).sourceCategory,
+      sourceEmotion: (updates as any).sourceEmotion ? String((updates as any).sourceEmotion).trim().toLowerCase().slice(0, 32) : (fallback as any).sourceEmotion,
+      updatedAt: new Date(),
+    } as UserComposedArticle;
+    this.fallbackUserComposedArticles.set(safeArticleId, next);
+    return next;
+  }
+
+  async getReaderComposedArticles(status?: "pending" | "approved" | "rejected"): Promise<UserComposedArticle[]> {
+    let query = supabase
+      .from("user_composed_articles")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (status && ["pending", "approved", "rejected"].includes(status)) {
+      query = query.eq("submission_status", status);
+    }
+    const { data, error } = await query;
+
+    if (!error && data) {
+      const rows = (data || []).map((row) => this.mapUserComposedArticle(row));
+      rows.forEach((row) => this.fallbackUserComposedArticles.set(String(row.id), row));
+      const merged = new Map<string, UserComposedArticle>();
+      rows.forEach((row) => merged.set(String(row.id), row));
+      Array.from(this.fallbackUserComposedArticles.values())
+        .forEach((row) => {
+          if (!merged.has(String(row.id))) merged.set(String(row.id), row);
+        });
+      return Array.from(merged.values())
+        .filter((row) => (status ? String((row as any).submissionStatus || "pending") === status : true))
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+    return Array.from(this.fallbackUserComposedArticles.values())
+      .filter((row) => (status ? String((row as any).submissionStatus || "pending") === status : true))
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }
+
+  async updateReaderComposedArticleDecision(articleId: string, input: ReaderArticleDecisionInput): Promise<UserComposedArticle | null> {
+    const safeArticleId = String(articleId || "").trim();
+    const safeSubmissionStatus = ["pending", "approved", "rejected"].includes(String(input.submissionStatus))
+      ? input.submissionStatus
+      : "pending";
+    const payload = {
+      submission_status: safeSubmissionStatus,
+      moderation_memo: String(input.moderationMemo || "").trim(),
+      reviewed_by: input.reviewedBy ? String(input.reviewedBy).trim() : null,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("user_composed_articles")
+      .update(payload)
+      .eq("id", safeArticleId)
+      .select("*")
+      .maybeSingle();
+
+    if (!error && data) {
+      const mapped = this.mapUserComposedArticle(data);
+      this.fallbackUserComposedArticles.set(String(mapped.id), mapped);
+      return mapped;
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+
+    const fallback = this.fallbackUserComposedArticles.get(safeArticleId);
+    if (!fallback) return null;
+    const next: UserComposedArticle = {
+      ...fallback,
+      submissionStatus: safeSubmissionStatus,
+      moderationMemo: String(input.moderationMemo || "").trim(),
+      reviewedBy: input.reviewedBy ? String(input.reviewedBy).trim() : null,
+      reviewedAt: new Date(),
+      updatedAt: new Date(),
+    } as UserComposedArticle;
+    this.fallbackUserComposedArticles.set(safeArticleId, next);
+    return next;
   }
 }
 

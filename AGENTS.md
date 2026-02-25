@@ -174,6 +174,9 @@
 - Keep centered content alignment and always-visible footer actions.
 - 추천 뉴스는 맥락 연결 + 감정 균형을 동시에 만족하도록 배치합니다.
 - Recommendation area should satisfy both continuity and emotional balance.
+- 인사이트 피드백 UI/태그/리워드 동선 기준 문서:
+  - `docs/HueBrief_Insight_UIUX.md`
+- Use `docs/HueBrief_Insight_UIUX.md` as the source of truth for insight feedback UI/tag taxonomy/reward flow.
 
 ---
 

@@ -1,12 +1,13 @@
 ﻿import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check, RefreshCcw, AlertCircle, Link2, Copy, Globe, Instagram, MessageCircle, Youtube, ExternalLink } from 'lucide-react';
+import { useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { type NewsItem } from '@/hooks/useNews';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { DBService } from '@/services/DBService';
-import { AIServiceError, GeminiService } from '@/services/gemini';
+import { AIServiceError, GeminiService, type OpinionComposeResult } from '@/services/gemini';
 import type { InteractiveArticle } from '@shared/interactiveArticle';
 
 const LazyStoryRenderer = lazy(() =>
@@ -414,6 +415,99 @@ function createEmptyShareDraft(platform: SharePlatform): ShareDraft {
   };
 }
 
+type InsightTag = {
+  label: string;
+  tone: 'positive' | 'negative' | 'action';
+};
+
+const INSIGHT_TAGS: InsightTag[] = [
+  { label: '새로운 깨달음', tone: 'positive' },
+  { label: '흥미로움', tone: 'positive' },
+  { label: '영감받음', tone: 'positive' },
+  { label: '시야가 넓어짐', tone: 'positive' },
+  { label: '따뜻함', tone: 'positive' },
+  { label: '뭉클함', tone: 'positive' },
+  { label: '응원하고 싶음', tone: 'positive' },
+  { label: '위로받음', tone: 'positive' },
+  { label: '통쾌함', tone: 'positive' },
+  { label: '뿌듯함', tone: 'positive' },
+  { label: '희망참', tone: 'positive' },
+  { label: '든든함', tone: 'positive' },
+  { label: '반가움', tone: 'positive' },
+  { label: '차분해짐', tone: 'positive' },
+  { label: '답답함', tone: 'negative' },
+  { label: '화가 남', tone: 'negative' },
+  { label: '피로함', tone: 'negative' },
+  { label: '안타까움', tone: 'negative' },
+  { label: '걱정됨', tone: 'negative' },
+  { label: '허탈함', tone: 'negative' },
+  { label: '후속 이야기가 궁금함', tone: 'action' },
+  { label: '심층 기사 요청', tone: 'action' },
+];
+
+const RECOMMENDED_INSIGHT_TAGS: Record<EmotionType, string[]> = {
+  vibrance: ['흥미로움', '영감받음', '희망참', '통쾌함', '뿌듯함', '후속 이야기가 궁금함', '심층 기사 요청'],
+  immersion: ['답답함', '화가 남', '피로함', '안타까움', '걱정됨', '후속 이야기가 궁금함', '심층 기사 요청'],
+  clarity: ['새로운 깨달음', '시야가 넓어짐', '차분해짐', '든든함', '심층 기사 요청', '후속 이야기가 궁금함'],
+  gravity: ['걱정됨', '답답함', '든든함', '차분해짐', '새로운 깨달음', '심층 기사 요청', '후속 이야기가 궁금함'],
+  serenity: ['따뜻함', '위로받음', '반가움', '차분해짐', '뭉클함', '후속 이야기가 궁금함'],
+  spectrum: ['새로운 깨달음', '흥미로움', '따뜻함', '답답함', '걱정됨', '심층 기사 요청', '후속 이야기가 궁금함'],
+};
+
+const INSIGHT_TAG_TONE_STYLE: Record<InsightTag['tone'], { bg: string; text: string; selectedBg: string; selectedText: string }> = {
+  positive: { bg: '#eef4e8', text: '#4d6a3a', selectedBg: '#8db26a', selectedText: '#ffffff' },
+  negative: { bg: '#f8ecea', text: '#8a4f4a', selectedBg: '#d07a6f', selectedText: '#ffffff' },
+  action: { bg: '#ebeef8', text: '#4d5f8a', selectedBg: '#748cd5', selectedText: '#ffffff' },
+};
+
+function buildInsightPlaceholder(selectedTags: string[]): string {
+  if (!Array.isArray(selectedTags) || selectedTags.length === 0) {
+    return '기사를 읽고 난 후의 생각이나 느낌을 자유롭게 남겨주세요. (태그를 먼저 선택하시면 질문을 띄워드릴게요!)';
+  }
+
+  const has = (tag: string) => selectedTags.includes(tag);
+
+  if (has('화가 남') && has('답답함')) {
+    return '마음이 많이 무거우셨겠어요. 어떤 대목이 가장 답답하고 화가 나셨나요? 이곳에 편하게 털어놓아 보세요.';
+  }
+  if (has('화가 남') && has('심층 기사 요청')) {
+    return '분노에서 그치지 않고 더 깊은 진실을 원하시는군요! 어떤 부분에 대한 후속 분석을 기대하시나요?';
+  }
+  if (has('피로함') && has('차분해짐')) {
+    return '피로한 이슈 속에서도 차분함을 잃지 않으셨네요. 지금 머릿속에 드는 생각을 짧게 정리해 볼까요?';
+  }
+  if (has('답답함') && has('희망참')) {
+    return '답답한 현실 속에서도 작은 희망을 발견하셨군요. 그 희망의 씨앗은 무엇이었나요?';
+  }
+
+  // Priority: action > negative > positive
+  const actionTags = new Set(['후속 이야기가 궁금함', '심층 기사 요청']);
+  const negativeTags = new Set(['답답함', '화가 남', '피로함', '안타까움', '걱정됨', '허탈함']);
+  const growthTags = new Set(['새로운 깨달음', '흥미로움', '영감받음', '시야가 넓어짐']);
+  const empathyTags = new Set(['따뜻함', '뭉클함', '응원하고 싶음', '위로받음']);
+  const vitalityTags = new Set(['통쾌함', '뿌듯함', '희망참', '든든함', '반가움', '차분해짐']);
+
+  if (selectedTags.some((tag) => actionTags.has(tag))) {
+    return '어떤 점이 더 알고 싶으신가요? 궁금한 질문이나 배경 지식을 남겨주시면 다음 큐레이션에 참고할게요.';
+  }
+  if (selectedTags.some((tag) => ['답답함', '피로함'].includes(tag))) {
+    return '잠시 숨을 고르셔도 좋아요. 기사를 읽으며 어떤 점이 가장 피로하게 다가왔나요?';
+  }
+  if (selectedTags.some((tag) => ['안타까움', '걱정됨', '허탈함'].includes(tag))) {
+    return '안타까운 마음이 드셨군요. 이 이슈에서 어떤 부분이 가장 걱정되시나요?';
+  }
+  if (selectedTags.some((tag) => growthTags.has(tag))) {
+    return '이 기사에서 어떤 점을 새롭게 발견하셨나요? 인상 깊었던 문장이나 생각을 기록해 보세요.';
+  }
+  if (selectedTags.some((tag) => empathyTags.has(tag))) {
+    return '마음이 따뜻해지셨군요. 기사를 읽으며 어떤 대목이 가장 와닿으셨나요?';
+  }
+  if (selectedTags.some((tag) => vitalityTags.has(tag))) {
+    return '기분 좋은 에너지가 느껴지네요! 속 시원했거나 든든하게 느껴진 부분을 적어주세요.';
+  }
+  return '이 기사에 대한 당신의 해석, 근거, 관점을 적어주세요.';
+}
+
 function buildDefaultShareDraft(
   platform: SharePlatform,
   article: NewsItem,
@@ -454,13 +548,35 @@ function buildDefaultShareDraft(
   };
 }
 
+function sanitizeComposedContentForEditor(raw: string): string {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  const lines = text.split('\n');
+  const sourceSummaryIdx = lines.findIndex((line) => /^##\s*원문\s*요약/i.test(line.trim()));
+  if (sourceSummaryIdx < 0) return text;
+  const nextSectionIdx = lines.findIndex((line, idx) => idx > sourceSummaryIdx && /^##\s+/.test(line.trim()));
+  const trimmed = nextSectionIdx > sourceSummaryIdx ? lines.slice(nextSectionIdx).join('\n').trim() : '';
+  return trimmed || text;
+}
+
 interface CuratedArticle {
   id: number;
   originalArticle: NewsItem;
   userComment: string;
   userEmotion: EmotionType;
+  userFeelingText?: string;
+  selectedTags?: string[];
   createdAt: string;
 }
+
+type OpinionComposeDraft = OpinionComposeResult & {
+  sourceArticleId: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  userOpinion: string;
+  extraRequest: string;
+  requestedReferences: string[];
+};
 
 interface NewsDetailModalProps {
   article: NewsItem | null;
@@ -491,10 +607,22 @@ function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
 export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration, cardBackground, layoutId, relatedArticles = [], onSelectArticle }: NewsDetailModalProps) {
   const { toast } = useToast();
   const { user } = useEmotionStore();
+  const [, setLocation] = useLocation();
   const [isTransforming, setIsTransforming] = useState(false);
+  const [showOpinionComposer, setShowOpinionComposer] = useState(false);
+  const [opinionText, setOpinionText] = useState('');
+  const [opinionExtraRequest, setOpinionExtraRequest] = useState('');
+  const [opinionReferenceText, setOpinionReferenceText] = useState('');
+  const [composedDraft, setComposedDraft] = useState<OpinionComposeDraft | null>(null);
+  const [editableComposedTitle, setEditableComposedTitle] = useState('');
+  const [editableComposedContent, setEditableComposedContent] = useState('');
+  const [isSavingComposedDraft, setIsSavingComposedDraft] = useState(false);
   const [showInsightEditor, setShowInsightEditor] = useState(false);
   const [insightText, setInsightText] = useState('');
-  const [selectedEmotion, setSelectedEmotion] = useState<EmotionType>(emotionType);
+  const [selectedInsightTags, setSelectedInsightTags] = useState<string[]>([]);
+  const [showAllInsightTags, setShowAllInsightTags] = useState(false);
+  const [showInsightReward, setShowInsightReward] = useState(false);
+  const [isSavingInsight, setIsSavingInsight] = useState(false);
   const [interactiveArticle, setInteractiveArticle] = useState<InteractiveArticle | null>(null);
   const [interactiveError, setInteractiveError] = useState<{ message: string; retryAfterSeconds?: number } | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -519,11 +647,16 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const recommendationSectionRef = useRef<HTMLDivElement | null>(null);
   const dialogPanelRef = useRef<HTMLDivElement | null>(null);
   const insightPanelRef = useRef<HTMLDivElement | null>(null);
+  const opinionComposerPanelRef = useRef<HTMLDivElement | null>(null);
   const shareSheetRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const insightCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const opinionCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const shareCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const rewardPrimaryButtonRef = useRef<HTMLButtonElement | null>(null);
   const MAX_INSIGHT_LENGTH = 300;
+  const MAX_OPINION_LENGTH = 1000;
+  const MAX_INSIGHT_TAG_SELECTION = 3;
   const shouldReduceMotion = useReducedMotion();
   const isAiBusy = isTransforming || isSummarizing;
 
@@ -536,6 +669,19 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     setInteractiveError(null);
     setAiSummary(null);
     setAiActionError(null);
+    setInsightText('');
+    setSelectedInsightTags([]);
+    setShowAllInsightTags(false);
+    setShowInsightReward(false);
+    setShowInsightEditor(false);
+    setShowOpinionComposer(false);
+    setOpinionText('');
+    setOpinionExtraRequest('');
+    setOpinionReferenceText('');
+    setComposedDraft(null);
+    setEditableComposedTitle('');
+    setEditableComposedContent('');
+    setIsSavingComposedDraft(false);
     setShowShareSheet(false);
     setSharePlatform('web');
     setShareLink('');
@@ -554,10 +700,6 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   }, [article?.id]);
 
   useEffect(() => {
-    setSelectedEmotion(emotionType);
-  }, [emotionType]);
-
-  useEffect(() => {
     if (!article) return;
     const previousOverflow = document.body.style.overflow;
     const previousTouchAction = document.body.style.touchAction;
@@ -573,11 +715,15 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     if (!article) return;
     const focusTarget = showInsightEditor
       ? insightCloseButtonRef.current
+      : showOpinionComposer
+        ? opinionCloseButtonRef.current
+      : showInsightReward
+        ? rewardPrimaryButtonRef.current
       : showShareSheet
         ? shareCloseButtonRef.current
         : closeButtonRef.current;
     focusTarget?.focus();
-  }, [article, showInsightEditor, showShareSheet]);
+  }, [article, showInsightEditor, showOpinionComposer, showShareSheet, showInsightReward]);
 
   useEffect(() => {
     if (!article) return;
@@ -587,6 +733,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
         event.preventDefault();
         if (showInsightEditor) {
           setShowInsightEditor(false);
+        } else if (showOpinionComposer) {
+          setShowOpinionComposer(false);
+        } else if (showInsightReward) {
+          setShowInsightReward(false);
         } else if (showShareSheet) {
           setShowShareSheet(false);
         } else {
@@ -599,6 +749,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       const activeContainer = (
         showInsightEditor
           ? insightPanelRef.current
+          : showOpinionComposer
+            ? opinionComposerPanelRef.current
+          : showInsightReward
+            ? dialogPanelRef.current
           : showShareSheet
             ? shareSheetRef.current
             : dialogPanelRef.current
@@ -626,7 +780,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [article, onClose, showInsightEditor, showShareSheet]);
+  }, [article, onClose, showInsightEditor, showOpinionComposer, showShareSheet, showInsightReward]);
 
   const recommendationGroups = useMemo(() => {
     if (!article) {
@@ -679,6 +833,31 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const displayedRecommendations = flattenedRecommendations.slice(0, 3);
   const isBrightEmotion = article?.emotion === 'vibrance' || article?.emotion === 'serenity';
   const showNextHandoffCue = hasRecommendations && !interactiveArticle && bgTransitionProgress >= 0.72;
+  const recommendedInsightTags = RECOMMENDED_INSIGHT_TAGS[emotionType] || RECOMMENDED_INSIGHT_TAGS.spectrum;
+  const visibleInsightTags = (showAllInsightTags
+    ? INSIGHT_TAGS
+    : INSIGHT_TAGS.filter((tag) => recommendedInsightTags.includes(tag.label))
+  ).slice(0, showAllInsightTags ? INSIGHT_TAGS.length : 8);
+  const insightPlaceholder = buildInsightPlaceholder(selectedInsightTags);
+
+  const toggleInsightTag = (tagLabel: string) => {
+    const isSelected = selectedInsightTags.includes(tagLabel);
+    if (isSelected) {
+      setSelectedInsightTags((prev) => prev.filter((tag) => tag !== tagLabel));
+      return;
+    }
+    if (selectedInsightTags.length >= MAX_INSIGHT_TAG_SELECTION) {
+      toast({
+        title: '최대 3개 선택',
+        description: '감정 태그는 최대 3개까지 선택할 수 있습니다.',
+      });
+      return;
+    }
+    setSelectedInsightTags((prev) => [...prev, tagLabel]);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate?.(8);
+    }
+  };
 
   const handleContentScroll = () => {
     const node = scrollContainerRef.current;
@@ -722,55 +901,126 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
   const handleMyArticle = async () => {
     if (!article) return;
+    setAiActionError(null);
+    setShowOpinionComposer(true);
+  };
+
+  const parseRequestedReferences = (raw: string): string[] =>
+    String(raw || '')
+      .split(/\r?\n|,/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+
+  const handleGenerateOpinionArticle = async () => {
+    if (!article) return;
+    if (!opinionText.trim()) {
+      toast({ title: "의견 입력 필요", description: "먼저 나의 의견을 입력해 주세요.", variant: "destructive" });
+      return;
+    }
     if (isAiBusy && !isTransforming) {
       toast({ title: "AI 작업 진행 중", description: "현재 작업 완료 후 다시 시도해주세요." });
       return;
     }
+
     setInteractiveError(null);
     setAiActionError(null);
     setIsTransforming(true);
+    const requestedReferences = parseRequestedReferences(opinionReferenceText);
+    const sourceUrl = detectSourceUrl(article) || '';
+    const sourceSummary = stripArticleMeta(article.content || article.summary || '').slice(0, 900) || article.summary || '';
     try {
-      const keywords = [article.title, article.summary, article.category || article.emotion || 'interactive']
-        .map((value) => value?.trim())
-        .filter((value): value is string => Boolean(value));
-
-      const generated = await GeminiService.generateInteractiveArticle({
-        keywords,
-        tone: 'analytical',
-        targetAudience: 'digital news readers',
-        platform: 'web',
-        interactionIntensity: 'medium',
-        language: 'ko-KR',
-        constraints: {
-          minBlocks: 5,
-          maxCharsPerBlock: 280,
-        },
+      const generated = await GeminiService.composeArticleWithOpinion({
+        sourceArticleId: String(article.id),
+        sourceTitle: article.title,
+        sourceSummary,
+        sourceUrl,
+        opinionText: opinionText.trim(),
+        extraRequest: opinionExtraRequest.trim(),
+        requestedReferences,
       });
-      setInteractiveArticle(generated);
+      const sanitizedGeneratedContent = sanitizeComposedContentForEditor(generated.content);
+      const initialEditableContent = [
+        `## 독자 의견`,
+        opinionText.trim(),
+        ``,
+        sanitizedGeneratedContent || generated.content,
+      ].join('\n').trim();
+      setComposedDraft({
+        ...generated,
+        sourceArticleId: String(article.id),
+        sourceTitle: article.title,
+        sourceUrl,
+        userOpinion: opinionText.trim(),
+        extraRequest: opinionExtraRequest.trim(),
+        requestedReferences,
+      });
+      setEditableComposedTitle(generated.title);
+      setEditableComposedContent(initialEditableContent);
       toast({
-        title: "인터랙티브 기사 생성 완료",
-        description: "스토리 블록 기반 렌더링으로 전환되었습니다.",
+        title: generated.fallbackUsed ? "기사 초안 생성 완료(안정 모드)" : "기사 초안 생성 완료",
+        description: "원문을 수정하지 않고 의견 기반 신규 기사 초안을 만들었습니다.",
       });
     } catch (e: any) {
       const aiError = e as AIServiceError;
       const isOverloaded = aiError.retryable || aiError.status === 503 || aiError.status === 504;
-      const retryAfterSeconds = aiError.retryAfterSeconds;
-      const friendlyMessage = isOverloaded
-        ? `AI 요청이 지연되고 있습니다.${typeof retryAfterSeconds === 'number' ? ` 약 ${retryAfterSeconds}초 후` : ' 잠시 후'} 다시 시도해 주세요.`
-        : (aiError.message || "인터랙티브 기사 생성 중 오류가 발생했습니다.");
+      const message = isOverloaded
+        ? `AI 요청이 지연되고 있습니다.${typeof aiError.retryAfterSeconds === 'number' ? ` 약 ${aiError.retryAfterSeconds}초 후` : ' 잠시 후'} 다시 시도해 주세요.`
+        : (aiError.message || "의견 기반 기사 생성 중 오류가 발생했습니다.");
+      setAiActionError(message);
+      toast({ title: "생성 실패", description: message, variant: "destructive" });
+    } finally {
+      setIsTransforming(false);
+    }
+  };
 
-      setInteractiveError({
-        message: friendlyMessage,
-        retryAfterSeconds,
-      });
-
+  const handleSaveComposedArticle = async () => {
+    if (!article || !user || !composedDraft) return;
+    const nextTitle = editableComposedTitle.trim();
+    const nextContent = editableComposedContent.trim();
+    if (!nextTitle || !nextContent) {
       toast({
-        title: "생성 실패",
-        description: friendlyMessage,
+        title: "입력 필요",
+        description: "기사 제목과 본문을 확인해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const nextSummary = nextContent.replace(/\s+/g, ' ').slice(0, 220);
+    setIsSavingComposedDraft(true);
+    try {
+      await DBService.saveUserComposedArticle(String(user.id), {
+        sourceArticleId: composedDraft.sourceArticleId,
+        sourceTitle: composedDraft.sourceTitle,
+        sourceUrl: composedDraft.sourceUrl,
+        sourceEmotion: article.emotion,
+        sourceCategory: String(article.category || 'General'),
+        userOpinion: composedDraft.userOpinion,
+        extraRequest: composedDraft.extraRequest,
+        requestedReferences: composedDraft.requestedReferences,
+        generatedTitle: nextTitle,
+        generatedSummary: nextSummary,
+        generatedContent: nextContent,
+        referenceLinks: (composedDraft.references || []).map((ref) => ref.url).filter(Boolean),
+        status: 'published',
+        submissionStatus: 'pending',
+      });
+      toast({
+        title: "내가 쓴 기사 저장 완료",
+        description: "마이페이지에 저장되었고, 커뮤니티 검증 대기열에도 등록되었습니다.",
+      });
+      setShowOpinionComposer(false);
+      setComposedDraft(null);
+      setLocation('/mypage?tab=custom');
+      onClose();
+    } catch (error: any) {
+      toast({
+        title: "기사 저장 실패",
+        description: error?.message || "잠시 후 다시 시도해주세요.",
         variant: "destructive",
       });
     } finally {
-      setIsTransforming(false);
+      setIsSavingComposedDraft(false);
     }
   };
 
@@ -795,11 +1045,19 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       setIsSummarizing(false);
     }
   };
-  const handleSaveInsight = () => {
+  const handleSaveInsight = async () => {
     if (!article || !insightText.trim()) {
       toast({
         title: "입력 필요",
         description: "인사이트 내용을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!user) {
+      toast({
+        title: "로그인 필요",
+        description: "인사이트는 로그인 후 저장됩니다.",
         variant: "destructive",
       });
       return;
@@ -809,22 +1067,46 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       id: Date.now(),
       originalArticle: article,
       userComment: insightText.trim(),
-      userEmotion: selectedEmotion,
+      userEmotion: emotionType,
+      userFeelingText: selectedInsightTags[0] || '',
+      selectedTags: selectedInsightTags,
       createdAt: new Date().toISOString(),
     };
 
-    if (onSaveCuration) {
-      onSaveCuration(curation);
+    setIsSavingInsight(true);
+    try {
+      await DBService.saveUserInsight(String(user.id), {
+        articleId: String(article.id),
+        originalTitle: article.title,
+        userComment: insightText.trim(),
+        userEmotion: emotionType,
+        userFeelingText: selectedInsightTags[0] || '',
+        selectedTags: selectedInsightTags,
+      });
+
+      if (onSaveCuration) {
+        onSaveCuration(curation);
+      }
+
+      toast({
+        title: "인사이트 저장 완료",
+        description: "마이페이지 > 내 인사이트에 저장되었습니다.",
+      });
+
+      setShowInsightEditor(false);
+      setShowInsightReward(true);
+      setInsightText('');
+      setSelectedInsightTags([]);
+      setShowAllInsightTags(false);
+    } catch (error: any) {
+      toast({
+        title: "인사이트 저장 실패",
+        description: error?.message || "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingInsight(false);
     }
-
-    toast({
-      title: "인사이트 저장 완료",
-      description: "마이페이지에서 확인할 수 있습니다.",
-    });
-
-    setShowInsightEditor(false);
-    setInsightText('');
-    setSelectedEmotion(emotionType);
   };
 
   const formatTimeAgo = (date: Date | string | null | undefined): string => {
@@ -1477,10 +1759,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                       <Button
                         onClick={() => {
                           if (!user) {
-                            toast({ title: "로그인 필요", description: "AI 변환은 로그인 후 이용 가능합니다.", variant: "destructive" });
+                            toast({ title: "로그인 필요", description: "의견 기반 기사 작성은 로그인 후 이용 가능합니다.", variant: "destructive" });
                             return;
                           }
-                          handleMyArticle();
+                          void handleMyArticle();
                         }}
                         disabled={isAiBusy && !isTransforming}
                         className="w-full sm:w-auto h-9 px-2.5 sm:px-3 text-xs sm:text-sm bg-white/75 text-white hover:bg-white transition-all font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-700 focus-visible:ring-offset-2"
@@ -1494,12 +1776,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                         {isTransforming ? (
                           <>
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            변환 중...
+                            생성 중...
                           </>
                         ) : (
                           <>
                             <Sparkles className="w-4 h-4" />
-                            AI 변환
+                            내 의견으로 기사 만들기
                           </>
                         )}
                       </Button>
@@ -1765,107 +2047,345 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               )}
             </AnimatePresence>
 
+            {/* Opinion Article Composer Overlay */}
+            <AnimatePresence>
+              {showOpinionComposer && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 z-20 flex items-center justify-center px-4 py-6"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Opinion article composer"
+                >
+                  <div className="absolute inset-0 bg-[#f4efe4]/78 backdrop-blur-sm" onClick={() => setShowOpinionComposer(false)} />
+                  <motion.div
+                    ref={opinionComposerPanelRef}
+                    initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 14, scale: 0.98 }}
+                    transition={{ duration: 0.18 }}
+                    className="relative z-10 w-full max-w-[760px] max-h-[82vh] overflow-hidden rounded-2xl border border-[#dfd4bf] bg-[#fbf7ef] shadow-[0_20px_50px_rgba(64,48,28,0.18)] flex flex-col"
+                  >
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-[#e6dcc8]">
+                      <h3 className="text-lg font-semibold text-[#2d2a25] flex items-center gap-2">
+                        <Sparkles className="w-5 h-5" style={{ color }} />
+                        내 의견으로 기사 만들기
+                      </h3>
+                      <Button
+                        ref={opinionCloseButtonRef}
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowOpinionComposer(false)}
+                        className="text-[#4b4439] hover:bg-[#efe6d4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8a7758]"
+                        aria-label="Close opinion composer"
+                        data-testid="button-close-opinion-composer"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <div className="p-5 overflow-y-auto space-y-4 flex-1 min-h-0">
+                      <div className="rounded-xl bg-[#f6efdf] border border-[#e6dcc8] p-3">
+                        <p className="text-xs text-[#6b6254] mb-1">원문 기사 (읽기 전용)</p>
+                        <p className="text-sm text-[#2f2a23] font-medium line-clamp-2">{article?.title}</p>
+                        <p className="mt-2 text-[11px] text-[#7a6f61]">
+                          원문은 수정되지 않으며, 독립된 신규 기사로 저장됩니다.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-[#4a4338] mb-2">
+                          나의 의견 ({opinionText.length}/{MAX_OPINION_LENGTH})
+                        </label>
+                        <textarea
+                          value={opinionText}
+                          onChange={(e) => setOpinionText(e.target.value.slice(0, MAX_OPINION_LENGTH))}
+                          placeholder="예: 이 기사에서 정책 실행 시점과 현장 체감의 간극이 가장 중요하다고 봅니다. 어떤 지표로 실제 변화를 검증할지 함께 다뤄주세요."
+                          rows={4}
+                          className="w-full px-4 py-3 rounded-lg border border-[#dacfb9] bg-[#fffdfa] text-[#292521] placeholder-[#9a8f7f] focus:outline-none focus:ring-2 focus:ring-[#bda885] resize-none"
+                          data-testid="textarea-opinion-input"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-[#4a4338] mb-2">추가 요청 (선택)</label>
+                        <textarea
+                          value={opinionExtraRequest}
+                          onChange={(e) => setOpinionExtraRequest(e.target.value.slice(0, 600))}
+                          placeholder="예: 국내외 유사 사례 비교, 최근 3년 추세 데이터, 반대 관점의 근거도 함께 포함"
+                          rows={2}
+                          className="w-full px-4 py-3 rounded-lg border border-[#dacfb9] bg-[#fffdfa] text-[#292521] placeholder-[#9a8f7f] focus:outline-none focus:ring-2 focus:ring-[#bda885] resize-none"
+                          data-testid="textarea-opinion-extra-request"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm text-[#4a4338] mb-2">요청 출처/데이터 (선택, 줄바꿈 또는 쉼표 구분)</label>
+                        <textarea
+                          value={opinionReferenceText}
+                          onChange={(e) => setOpinionReferenceText(e.target.value.slice(0, 1000))}
+                          placeholder={`예:\n통계청 가계동향조사\n고용노동부 월간 고용동향\nOECD 관련 보고서`}
+                          rows={3}
+                          className="w-full px-4 py-3 rounded-lg border border-[#dacfb9] bg-[#fffdfa] text-[#292521] placeholder-[#9a8f7f] focus:outline-none focus:ring-2 focus:ring-[#bda885] resize-none"
+                          data-testid="textarea-opinion-references"
+                        />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button
+                          onClick={handleGenerateOpinionArticle}
+                          disabled={isTransforming}
+                          className="sm:flex-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8a7758]"
+                          style={{ backgroundColor: color, color: '#1f2937' }}
+                          data-testid="button-generate-opinion-article"
+                        >
+                          {isTransforming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                          기사 초안 생성
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="border-[#d8ccb5] text-[#4e463b]"
+                          onClick={() => setShowOpinionComposer(false)}
+                        >
+                          닫기
+                        </Button>
+                      </div>
+
+                      {aiActionError && (
+                        <p className="text-xs text-red-600">{aiActionError}</p>
+                      )}
+
+                      {composedDraft && (
+                        <div className="rounded-xl border border-[#dfd4bf] bg-[#fffaf1] p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-[#2d2a25]">생성된 기사 편집</p>
+                            {composedDraft.fallbackUsed && (
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-[#f3ead7] text-[#7a6444]">안정 모드</span>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs text-[#6b6254] mb-1">기사 제목</label>
+                            <input
+                              value={editableComposedTitle}
+                              onChange={(e) => setEditableComposedTitle(e.target.value.slice(0, 220))}
+                              className="w-full px-3 py-2 rounded-lg border border-[#dacfb9] bg-white text-[#292521] focus:outline-none focus:ring-2 focus:ring-[#bda885]"
+                              data-testid="input-composed-title"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-[#6b6254] mb-1">기사 본문(수정 가능)</label>
+                            <textarea
+                              value={editableComposedContent}
+                              onChange={(e) => setEditableComposedContent(e.target.value.slice(0, 24000))}
+                              rows={12}
+                              className="w-full max-h-64 overflow-y-auto px-3 py-2 rounded-lg border border-[#dacfb9] bg-white text-[#292521] whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-[#bda885] resize-y"
+                              data-testid="textarea-composed-content"
+                            />
+                          </div>
+                          {Array.isArray(composedDraft.references) && composedDraft.references.length > 0 && (
+                            <div>
+                              <p className="text-xs text-[#6b6254] mb-1">참고 출처</p>
+                              <ul className="space-y-1">
+                                {composedDraft.references.map((ref, idx) => (
+                                  <li key={`${ref.title}-${idx}`} className="text-xs text-[#4e463b]">
+                                    - {ref.title || ref.source || '출처'} {ref.url ? `(${ref.url})` : ''}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          <Button
+                            onClick={handleSaveComposedArticle}
+                            disabled={isSavingComposedDraft}
+                            className="w-full bg-[#2f2a24] text-white hover:bg-[#221e1a]"
+                            data-testid="button-save-opinion-article"
+                          >
+                            {isSavingComposedDraft ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                            내가 쓴 기사에 저장
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Insight Editor Overlay */}
             <AnimatePresence>
               {showInsightEditor && (
                 <motion.div
-                  ref={insightPanelRef}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 20 }}
-                  className="absolute inset-0 z-20 flex flex-col rounded-2xl overflow-visible"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 z-20 flex items-center justify-center px-4 py-6"
                   role="dialog"
                   aria-modal="true"
                   aria-label="Insight editor"
-                  style={{
-                    backgroundColor: 'rgba(20, 20, 25, 0.95)',
-                    backdropFilter: 'blur(24px)',
-                  }}
                 >
-                  <div className="flex items-center justify-between p-4 border-b border-white/10">
-                    <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                      <Lightbulb className="w-5 h-5" style={{ color }} />
-                      인사이트 추가
-                    </h3>
-                    <Button
-                      ref={insightCloseButtonRef}
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowInsightEditor(false)}
-                      className="bg-white/10 text-white/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2"
-                      aria-label="Close insight editor"
-                      data-testid="button-close-insight"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-
-                  <div className="flex-1 p-4 overflow-y-auto">
-                    {/* Original Article Context */}
-                    <div className="mb-4 p-3 rounded-lg bg-white/5 border border-white/10">
-                      <p className="text-xs text-white/50 mb-1">원문 기사</p>
-                      <p className="text-sm text-white/80 font-medium line-clamp-2">{article?.title}</p>
+                  <div className="absolute inset-0 bg-[#f4efe4]/78 backdrop-blur-sm" onClick={() => setShowInsightEditor(false)} />
+                  <motion.div
+                    ref={insightPanelRef}
+                    initial={{ opacity: 0, y: 14, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 14, scale: 0.98 }}
+                    transition={{ duration: 0.18 }}
+                    className="relative z-10 w-full max-w-[640px] max-h-[78vh] overflow-hidden rounded-2xl border border-[#dfd4bf] bg-[#fbf7ef] shadow-[0_20px_50px_rgba(64,48,28,0.18)]"
+                  >
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-[#e6dcc8]">
+                      <h3 className="text-lg font-semibold text-[#2d2a25] flex items-center gap-2">
+                        <Lightbulb className="w-5 h-5" style={{ color }} />
+                        인사이트 추가
+                      </h3>
+                      <Button
+                        ref={insightCloseButtonRef}
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowInsightEditor(false)}
+                        className="text-[#4b4439] hover:bg-[#efe6d4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8a7758]"
+                        aria-label="Close insight editor"
+                        data-testid="button-close-insight"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
                     </div>
 
-                    {/* User Input */}
-                    <div className="mb-4">
-                      <label className="block text-sm text-white/70 mb-2">
-                        나의 시선 ({insightText.length}/{MAX_INSIGHT_LENGTH})
-                      </label>
-                      <textarea
-                        value={insightText}
-                        onChange={(e) => setInsightText(e.target.value.slice(0, MAX_INSIGHT_LENGTH))}
-                        placeholder="이 기사에 대한 당신의 생각, 감정, 요약을 적어주세요..."
-                        rows={5}
-                        className="w-full px-4 py-3 rounded-lg border border-white/20 bg-white/5 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-white/30 resize-none"
-                        data-testid="textarea-insight"
-                      />
-                    </div>
+                    <div className="p-5 overflow-y-auto">
+                      <div className="mb-4 p-3 rounded-xl bg-[#f6efdf] border border-[#e6dcc8]">
+                        <p className="text-xs text-[#6b6254] mb-1">원문 기사</p>
+                        <p className="text-sm text-[#2f2a23] font-medium line-clamp-2">{article?.title}</p>
+                      </div>
 
-                    {/* Emotion Selection */}
-                    <div>
-                      <label className="block text-sm text-white/70 mb-2">
-                        나의 해석 감정
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {EMOTION_CONFIG.map((emotion) => (
+                      <div className="mt-1">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <label className="block text-sm text-[#4a4338]">
+                            감정 구름 태그 (최대 {MAX_INSIGHT_TAG_SELECTION}개)
+                          </label>
                           <button
-                            key={emotion.type}
                             type="button"
-                            onClick={() => setSelectedEmotion(emotion.type)}
-                            className={`px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${selectedEmotion === emotion.type
-                              ? 'ring-2 ring-offset-2 ring-offset-gray-900 opacity-100'
-                              : 'opacity-70'
-                              }`}
-                            style={{
-                              backgroundColor: `${emotion.color}30`,
-                              color: emotion.color,
-                              ...(selectedEmotion === emotion.type && { ringColor: emotion.color }),
-                            }}
-                            data-testid={`emotion-stamp-${emotion.type}`}
+                            onClick={() => setShowAllInsightTags((prev) => !prev)}
+                            className="text-xs px-2 py-1 rounded-md bg-[#efe6d4] text-[#5f5649] hover:bg-[#e6dbc5]"
+                            data-testid="button-toggle-insight-tag-more"
                           >
-                            {selectedEmotion === emotion.type && <Check className="w-3 h-3" />}
-                            {emotion.labelKo}
+                            {showAllInsightTags ? '핵심 태그만 보기' : '+ 내 감정 더 찾기'}
                           </button>
-                        ))}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {visibleInsightTags.map((tag, idx) => {
+                            const toneStyle = INSIGHT_TAG_TONE_STYLE[tag.tone];
+                            const selected = selectedInsightTags.includes(tag.label);
+                            return (
+                              <button
+                                key={tag.label}
+                                type="button"
+                                onClick={() => toggleInsightTag(tag.label)}
+                                className="text-xs sm:text-sm px-3 py-1.5 rounded-full transition-all duration-200"
+                                style={{
+                                  backgroundColor: selected ? toneStyle.selectedBg : toneStyle.bg,
+                                  color: selected ? toneStyle.selectedText : toneStyle.text,
+                                  transform: `rotate(${(idx % 3) - 1}deg)`,
+                                  boxShadow: selected ? '0 6px 14px rgba(93, 74, 42, 0.18)' : 'none',
+                                }}
+                                data-testid={`insight-tag-${tag.label}`}
+                              >
+                                {tag.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {selectedInsightTags.length === 0 && (
+                          <p className="mt-2 text-xs text-[#8f826f]">태그를 선택하면 질문 문구가 감정에 맞게 바뀝니다.</p>
+                        )}
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="block text-sm text-[#4a4338] mb-2">
+                          나의 시선 ({insightText.length}/{MAX_INSIGHT_LENGTH})
+                        </label>
+                        <textarea
+                          value={insightText}
+                          onChange={(e) => setInsightText(e.target.value.slice(0, MAX_INSIGHT_LENGTH))}
+                          placeholder={insightPlaceholder}
+                          rows={5}
+                          className="w-full px-4 py-3 rounded-lg border border-[#dacfb9] bg-[#fffdfa] text-[#292521] placeholder-[#9a8f7f] focus:outline-none focus:ring-2 focus:ring-[#bda885] resize-none"
+                          data-testid="textarea-insight"
+                        />
                       </div>
                     </div>
-                  </div>
 
-                  <div className="p-4 border-t border-white/10">
-                    <Button
-                      onClick={handleSaveInsight}
-                      className="w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2"
-                      style={{
-                        backgroundColor: EMOTION_CONFIG.find(e => e.type === selectedEmotion)?.color || color,
-                        color: '#1f2937',
-                      }}
-                      data-testid="button-save-insight"
-                    >
-                      <Check className="w-4 h-4" />
-                      인사이트 저장
-                    </Button>
-                  </div>
+                    <div className="px-5 py-4 border-t border-[#e6dcc8]">
+                      <Button
+                        onClick={handleSaveInsight}
+                        disabled={isSavingInsight}
+                        className="w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8a7758]"
+                        style={{
+                          backgroundColor: color,
+                          color: '#1f2937',
+                        }}
+                        data-testid="button-save-insight"
+                      >
+                        {isSavingInsight ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        인사이트 저장
+                      </Button>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {showInsightReward && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="absolute inset-0 z-30 flex items-center justify-center px-4"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Insight reward"
+                >
+                  <div className="absolute inset-0 bg-[#f4efe4]/84 backdrop-blur-[2px]" />
+                  <motion.div
+                    initial={{ opacity: 0, y: 18, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 14, scale: 0.98 }}
+                    className="relative z-10 w-full max-w-[520px] rounded-2xl bg-[#fffaf1] border border-[#dfd4bf] p-6 text-center shadow-[0_22px_55px_rgba(85,67,41,0.24)]"
+                    style={{
+                      boxShadow: `0 0 0 2px ${color}22, 0 0 42px ${color}44, 0 22px 55px rgba(85,67,41,0.24)`,
+                    }}
+                  >
+                    <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ backgroundColor: `${color}2e` }}>
+                      <Check className="w-6 h-6" style={{ color }} />
+                    </div>
+                    <p className="text-lg font-semibold text-[#2d2a25]">오늘 하루, 세상을 바라본 당신의 색깔이 하나 더 채워졌어요.</p>
+                    <p className="mt-2 text-sm text-[#6f6658]">인사이트가 내 기록 보드에 저장되었습니다.</p>
+                    <div className="mt-5 flex flex-col sm:flex-row gap-2 justify-center">
+                      <Button
+                        type="button"
+                        ref={rewardPrimaryButtonRef}
+                        className="bg-[#2f2a24] text-white hover:bg-[#221e1a]"
+                        onClick={() => {
+                          setShowInsightReward(false);
+                          onClose();
+                          setLocation('/mypage?tab=curated');
+                        }}
+                        data-testid="button-go-mypage-insight"
+                      >
+                        나의 인사이트 보러가기
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-[#d8ccb5] text-[#4e463b]"
+                        onClick={() => setShowInsightReward(false)}
+                      >
+                        계속 읽기
+                      </Button>
+                    </div>
+                  </motion.div>
                 </motion.div>
               )}
             </AnimatePresence>

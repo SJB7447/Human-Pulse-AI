@@ -1,5 +1,6 @@
 ﻿import { supabase } from './supabaseClient';
 import { useEmotionStore } from '@/lib/store';
+import type { EmotionType } from '@/lib/store';
 
 type ApiError = Error & { status?: number };
 
@@ -29,7 +30,44 @@ export type UserSocialConnections = {
     updatedAt: string;
 };
 
+export type UserInsightRecord = {
+    id: string;
+    articleId: string;
+    originalTitle: string;
+    userComment: string;
+    userEmotion: EmotionType;
+    userFeelingText: string;
+    selectedTags: string[];
+    createdAt: string;
+};
+
+export type UserComposedArticleRecord = {
+    id: string;
+    userId: string;
+    sourceArticleId: string;
+    sourceTitle: string;
+    sourceUrl: string;
+    sourceEmotion: EmotionType;
+    sourceCategory: string;
+    userOpinion: string;
+    extraRequest: string;
+    requestedReferences: string[];
+    generatedTitle: string;
+    generatedSummary: string;
+    generatedContent: string;
+    referenceLinks: string[];
+    status: 'draft' | 'published';
+    submissionStatus: 'pending' | 'approved' | 'rejected';
+    moderationMemo: string;
+    reviewedBy: string;
+    reviewedAt: string;
+    createdAt: string;
+    updatedAt: string;
+};
+
 const SOCIAL_CONNECTIONS_STORAGE_PREFIX = 'huebrief.socialConnections.v1';
+const USER_INSIGHTS_STORAGE_PREFIX = 'huebrief.userInsights.v1';
+const USER_COMPOSED_ARTICLES_STORAGE_PREFIX = 'huebrief.userComposedArticles.v1';
 
 const createDefaultSocialConnections = (): UserSocialConnections => ({
     webUrl: '',
@@ -38,6 +76,113 @@ const createDefaultSocialConnections = (): UserSocialConnections => ({
     youtubeChannelUrl: '',
     updatedAt: new Date(0).toISOString(),
 });
+
+const normalizeInsightEmotion = (value: unknown): EmotionType => {
+    const raw = String(value || '').trim().toLowerCase();
+    const valid: EmotionType[] = ['vibrance', 'immersion', 'clarity', 'gravity', 'serenity', 'spectrum'];
+    return valid.includes(raw as EmotionType) ? (raw as EmotionType) : 'spectrum';
+};
+
+const createInsightStorageKey = (userId: string): string =>
+    `${USER_INSIGHTS_STORAGE_PREFIX}:${String(userId || '').trim()}`;
+
+const createComposedStorageKey = (userId: string): string =>
+    `${USER_COMPOSED_ARTICLES_STORAGE_PREFIX}:${String(userId || '').trim()}`;
+
+const parseInsightRows = (raw: string | null): UserInsightRecord[] => {
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((row: any): UserInsightRecord | null => {
+                const id = String(row?.id || '').trim();
+                const articleId = String(row?.articleId || '').trim();
+                const originalTitle = String(row?.originalTitle || '').trim();
+                const userComment = String(row?.userComment || '').trim();
+                const userFeelingText = String(row?.userFeelingText || '').trim();
+                const selectedTags = Array.isArray(row?.selectedTags)
+                    ? row.selectedTags.map((tag: unknown) => String(tag || '').trim()).filter(Boolean).slice(0, 3)
+                    : [];
+                if (!id || !articleId || !originalTitle || !userComment) return null;
+                return {
+                    id,
+                    articleId,
+                    originalTitle,
+                    userComment,
+                    userFeelingText,
+                    selectedTags,
+                    userEmotion: normalizeInsightEmotion(row?.userEmotion),
+                    createdAt: new Date(row?.createdAt || Date.now()).toISOString(),
+                };
+            })
+            .filter((row): row is UserInsightRecord => Boolean(row))
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch {
+        return [];
+    }
+};
+
+const parseComposedRows = (raw: string | null): UserComposedArticleRecord[] => {
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((row: any): UserComposedArticleRecord | null => {
+                const id = String(row?.id || '').trim();
+                const userId = String(row?.userId || row?.user_id || '').trim();
+                const sourceArticleId = String(row?.sourceArticleId || row?.source_article_id || '').trim();
+                const sourceTitle = String(row?.sourceTitle || row?.source_title || '').trim();
+                const userOpinion = String(row?.userOpinion || row?.user_opinion || '').trim();
+                const generatedTitle = String(row?.generatedTitle || row?.generated_title || '').trim();
+                const generatedSummary = String(row?.generatedSummary || row?.generated_summary || '').trim();
+                const generatedContent = String(row?.generatedContent || row?.generated_content || '').trim();
+                if (!id || !userId || !sourceArticleId || !sourceTitle || !userOpinion || !generatedTitle || !generatedSummary || !generatedContent) {
+                    return null;
+                }
+
+                const requestedReferences = Array.isArray(row?.requestedReferences ?? row?.requested_references)
+                    ? (row?.requestedReferences ?? row?.requested_references).map((v: unknown) => String(v || '').trim()).filter(Boolean).slice(0, 8)
+                    : [];
+                const referenceLinks = Array.isArray(row?.referenceLinks ?? row?.reference_links)
+                    ? (row?.referenceLinks ?? row?.reference_links).map((v: unknown) => String(v || '').trim()).filter(Boolean).slice(0, 12)
+                    : [];
+
+                return {
+                    id,
+                    userId,
+                    sourceArticleId,
+                    sourceTitle,
+                    sourceUrl: String(row?.sourceUrl ?? row?.source_url ?? '').trim(),
+                    sourceEmotion: normalizeInsightEmotion(row?.sourceEmotion ?? row?.source_emotion),
+                    sourceCategory: String(row?.sourceCategory ?? row?.source_category ?? '').trim() || 'General',
+                    userOpinion,
+                    extraRequest: String(row?.extraRequest ?? row?.extra_request ?? '').trim(),
+                    requestedReferences,
+                    generatedTitle,
+                    generatedSummary,
+                    generatedContent,
+                    referenceLinks,
+                    status: String(row?.status || 'draft') === 'published' ? 'published' : 'draft',
+                    submissionStatus: String(row?.submissionStatus ?? row?.submission_status ?? 'pending') === 'approved'
+                        ? 'approved'
+                        : String(row?.submissionStatus ?? row?.submission_status ?? 'pending') === 'rejected'
+                            ? 'rejected'
+                            : 'pending',
+                    moderationMemo: String(row?.moderationMemo ?? row?.moderation_memo ?? '').trim(),
+                    reviewedBy: String(row?.reviewedBy ?? row?.reviewed_by ?? '').trim(),
+                    reviewedAt: String(row?.reviewedAt ?? row?.reviewed_at ?? '').trim(),
+                    createdAt: new Date(row?.createdAt ?? row?.created_at ?? Date.now()).toISOString(),
+                    updatedAt: new Date(row?.updatedAt ?? row?.updated_at ?? Date.now()).toISOString(),
+                };
+            })
+            .filter((row): row is UserComposedArticleRecord => Boolean(row))
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } catch {
+        return [];
+    }
+};
 
 const createApiError = async (response: Response, fallbackMessage: string): Promise<ApiError> => {
     let message = fallbackMessage;
@@ -284,6 +429,26 @@ export const DBService = {
         return await response.json();
     },
 
+    async getAdminReaderArticles(status?: 'pending' | 'approved' | 'rejected') {
+        const search = status ? `?status=${encodeURIComponent(status)}` : '';
+        const response = await fetch(`/api/admin/reader-articles${search}`);
+        if (!response.ok) throw await createApiError(response, 'Failed to fetch reader articles');
+        return parseComposedRows(JSON.stringify(await response.json()));
+    },
+
+    async decideAdminReaderArticle(
+        articleId: string,
+        payload: { submissionStatus: 'pending' | 'approved' | 'rejected'; moderationMemo?: string },
+    ) {
+        const response = await fetch(`/api/admin/reader-articles/${encodeURIComponent(articleId)}/decision`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...buildActorHeaders() },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw await createApiError(response, 'Failed to update reader article decision');
+        return parseComposedRows(JSON.stringify([await response.json()]))[0];
+    },
+
     async updateAdminReportStatus(
         reportId: string,
         payload: { status: ReportStatus; resolution?: string; sanctionType?: ReportSanction },
@@ -471,6 +636,270 @@ export const DBService = {
 
         window.localStorage.setItem(storageKey, JSON.stringify(next));
         return next;
+    },
+
+    async getUserInsights(userId: string): Promise<UserInsightRecord[]> {
+        if (!userId || typeof window === 'undefined') return [];
+        try {
+            const response = await fetch(`/api/mypage/insights?userId=${encodeURIComponent(String(userId).trim())}`, {
+                headers: { Accept: 'application/json' },
+            });
+            if (!response.ok) throw await createApiError(response, 'Failed to fetch user insights');
+            const payload = await response.json();
+            const rows = parseInsightRows(JSON.stringify(payload));
+            window.localStorage.setItem(createInsightStorageKey(userId), JSON.stringify(rows));
+            return rows;
+        } catch {
+            const raw = window.localStorage.getItem(createInsightStorageKey(userId));
+            return parseInsightRows(raw);
+        }
+    },
+
+    async saveUserInsight(
+        userId: string,
+        payload: Omit<UserInsightRecord, 'id' | 'createdAt'>,
+    ): Promise<UserInsightRecord> {
+        if (!userId || typeof window === 'undefined') {
+            throw new Error('로그인이 필요합니다.');
+        }
+        const normalizedPayload = {
+            userId: String(userId).trim(),
+            articleId: String(payload.articleId || '').trim(),
+            originalTitle: String(payload.originalTitle || '').trim(),
+            userComment: String(payload.userComment || '').trim(),
+            userEmotion: normalizeInsightEmotion(payload.userEmotion),
+            userFeelingText: String(payload.userFeelingText || '').trim(),
+            selectedTags: Array.isArray(payload.selectedTags)
+                ? payload.selectedTags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 3)
+                : [],
+        };
+
+        if (!normalizedPayload.articleId || !normalizedPayload.originalTitle || !normalizedPayload.userComment) {
+            throw new Error('인사이트 저장 형식이 올바르지 않습니다.');
+        }
+
+        try {
+            const response = await fetch('/api/mypage/insights', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(normalizedPayload),
+            });
+            if (!response.ok) throw await createApiError(response, 'Failed to save insight');
+            const saved = await response.json() as UserInsightRecord;
+            const current = await this.getUserInsights(userId);
+            const next = [saved, ...current.filter((row) => row.id !== saved.id)].slice(0, 200);
+            window.localStorage.setItem(createInsightStorageKey(userId), JSON.stringify(next));
+            return saved;
+        } catch {
+            const current = await this.getUserInsights(userId);
+            const nextRow: UserInsightRecord = {
+                id: `insight-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                articleId: normalizedPayload.articleId,
+                originalTitle: normalizedPayload.originalTitle,
+                userComment: normalizedPayload.userComment,
+                userFeelingText: normalizedPayload.userFeelingText,
+                selectedTags: normalizedPayload.selectedTags,
+                userEmotion: normalizedPayload.userEmotion,
+                createdAt: new Date().toISOString(),
+            };
+            const next = [nextRow, ...current].slice(0, 200);
+            window.localStorage.setItem(createInsightStorageKey(userId), JSON.stringify(next));
+            return nextRow;
+        }
+    },
+
+    async deleteUserInsight(userId: string, insightId: string): Promise<boolean> {
+        if (!userId || typeof window === 'undefined') return false;
+        try {
+            const response = await fetch(`/api/mypage/insights/${encodeURIComponent(insightId)}?userId=${encodeURIComponent(String(userId).trim())}`, {
+                method: 'DELETE',
+            });
+            if (!response.ok) throw await createApiError(response, 'Failed to delete insight');
+        } catch {
+            // fallback to local delete
+        }
+
+        const current = await this.getUserInsights(userId);
+        const next = current.filter((row) => row.id !== insightId);
+        window.localStorage.setItem(createInsightStorageKey(userId), JSON.stringify(next));
+        return next.length !== current.length;
+    },
+
+    async getUserComposedArticles(userId: string): Promise<UserComposedArticleRecord[]> {
+        if (!userId || typeof window === 'undefined') return [];
+        try {
+            const response = await fetch(`/api/mypage/composed-articles?userId=${encodeURIComponent(String(userId).trim())}`, {
+                headers: { Accept: 'application/json' },
+            });
+            if (!response.ok) throw await createApiError(response, 'Failed to fetch composed articles');
+            const payload = await response.json();
+            const rows = parseComposedRows(JSON.stringify(payload));
+            window.localStorage.setItem(createComposedStorageKey(userId), JSON.stringify(rows));
+            return rows;
+        } catch {
+            const raw = window.localStorage.getItem(createComposedStorageKey(userId));
+            return parseComposedRows(raw);
+        }
+    },
+
+    async saveUserComposedArticle(
+        userId: string,
+        payload: Omit<UserComposedArticleRecord, 'id' | 'createdAt' | 'updatedAt' | 'userId' | 'moderationMemo' | 'reviewedBy' | 'reviewedAt'> & {
+            moderationMemo?: string;
+            reviewedBy?: string;
+            reviewedAt?: string;
+        },
+    ): Promise<UserComposedArticleRecord> {
+        if (!userId || typeof window === 'undefined') {
+            throw new Error('로그인이 필요합니다.');
+        }
+
+        const normalizedPayload = {
+            userId: String(userId).trim(),
+            sourceArticleId: String(payload.sourceArticleId || '').trim(),
+            sourceTitle: String(payload.sourceTitle || '').trim(),
+            sourceUrl: String(payload.sourceUrl || '').trim(),
+            sourceEmotion: normalizeInsightEmotion(payload.sourceEmotion),
+            sourceCategory: String(payload.sourceCategory || '').trim().slice(0, 120) || 'General',
+            userOpinion: String(payload.userOpinion || '').trim(),
+            extraRequest: String(payload.extraRequest || '').trim(),
+            requestedReferences: Array.isArray(payload.requestedReferences)
+                ? payload.requestedReferences.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 8)
+                : [],
+            generatedTitle: String(payload.generatedTitle || '').trim(),
+            generatedSummary: String(payload.generatedSummary || '').trim(),
+            generatedContent: String(payload.generatedContent || '').trim(),
+            referenceLinks: Array.isArray(payload.referenceLinks)
+                ? payload.referenceLinks.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 12)
+                : [],
+            status: payload.status === 'published' ? 'published' : 'draft',
+            submissionStatus: payload.submissionStatus === 'approved'
+                ? 'approved'
+                : payload.submissionStatus === 'rejected'
+                    ? 'rejected'
+                    : 'pending',
+            moderationMemo: String(payload.moderationMemo || '').trim(),
+            reviewedBy: String(payload.reviewedBy || '').trim(),
+            reviewedAt: String(payload.reviewedAt || '').trim(),
+        } as const;
+
+        if (!normalizedPayload.sourceArticleId || !normalizedPayload.sourceTitle || !normalizedPayload.userOpinion || !normalizedPayload.generatedTitle || !normalizedPayload.generatedSummary || !normalizedPayload.generatedContent) {
+            throw new Error('생성 기사 저장 형식이 올바르지 않습니다.');
+        }
+
+        try {
+            const response = await fetch('/api/mypage/composed-articles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(normalizedPayload),
+            });
+            if (!response.ok) throw await createApiError(response, 'Failed to save composed article');
+            const savedPayload = await response.json();
+            const parsed = parseComposedRows(JSON.stringify([savedPayload]));
+            const saved = parsed[0];
+            if (!saved) throw new Error('Invalid saved composed article payload');
+            const current = await this.getUserComposedArticles(userId);
+            const next = [saved, ...current.filter((row) => row.id !== saved.id)].slice(0, 200);
+            window.localStorage.setItem(createComposedStorageKey(userId), JSON.stringify(next));
+            return saved;
+        } catch {
+            const current = await this.getUserComposedArticles(userId);
+            const nextRow: UserComposedArticleRecord = {
+                id: `composed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                userId: normalizedPayload.userId,
+                sourceArticleId: normalizedPayload.sourceArticleId,
+                sourceTitle: normalizedPayload.sourceTitle,
+                sourceUrl: normalizedPayload.sourceUrl,
+                sourceEmotion: normalizedPayload.sourceEmotion,
+                sourceCategory: normalizedPayload.sourceCategory,
+                userOpinion: normalizedPayload.userOpinion,
+                extraRequest: normalizedPayload.extraRequest,
+                requestedReferences: normalizedPayload.requestedReferences,
+                generatedTitle: normalizedPayload.generatedTitle,
+                generatedSummary: normalizedPayload.generatedSummary,
+                generatedContent: normalizedPayload.generatedContent,
+                referenceLinks: normalizedPayload.referenceLinks,
+                status: normalizedPayload.status,
+                submissionStatus: normalizedPayload.submissionStatus,
+                moderationMemo: normalizedPayload.moderationMemo,
+                reviewedBy: normalizedPayload.reviewedBy,
+                reviewedAt: normalizedPayload.reviewedAt,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            };
+            const next = [nextRow, ...current].slice(0, 200);
+            window.localStorage.setItem(createComposedStorageKey(userId), JSON.stringify(next));
+            return nextRow;
+        }
+    },
+
+    async deleteUserComposedArticle(userId: string, articleId: string): Promise<boolean> {
+        if (!userId || typeof window === 'undefined') return false;
+        try {
+            const response = await fetch(`/api/mypage/composed-articles/${encodeURIComponent(articleId)}?userId=${encodeURIComponent(String(userId).trim())}`, {
+                method: 'DELETE',
+            });
+            if (!response.ok) throw await createApiError(response, 'Failed to delete composed article');
+        } catch {
+            // fallback to local delete
+        }
+
+        const current = await this.getUserComposedArticles(userId);
+        const next = current.filter((row) => row.id !== articleId);
+        window.localStorage.setItem(createComposedStorageKey(userId), JSON.stringify(next));
+        return next.length !== current.length;
+    },
+
+    async updateUserComposedArticle(
+        userId: string,
+        articleId: string,
+        updates: Partial<Pick<
+            UserComposedArticleRecord,
+            | 'sourceTitle'
+            | 'sourceUrl'
+            | 'sourceEmotion'
+            | 'sourceCategory'
+            | 'userOpinion'
+            | 'extraRequest'
+            | 'requestedReferences'
+            | 'generatedTitle'
+            | 'generatedSummary'
+            | 'generatedContent'
+            | 'referenceLinks'
+            | 'status'
+        >>,
+    ): Promise<UserComposedArticleRecord> {
+        if (!userId || !articleId || typeof window === 'undefined') {
+            throw new Error('유효한 사용자/기사가 필요합니다.');
+        }
+        const payload: Record<string, unknown> = {};
+        if (typeof updates.sourceTitle === 'string') payload.sourceTitle = updates.sourceTitle.trim();
+        if (typeof updates.sourceUrl === 'string') payload.sourceUrl = updates.sourceUrl.trim();
+        if (typeof updates.sourceEmotion === 'string') payload.sourceEmotion = normalizeInsightEmotion(updates.sourceEmotion);
+        if (typeof updates.sourceCategory === 'string') payload.sourceCategory = updates.sourceCategory.trim().slice(0, 120);
+        if (typeof updates.userOpinion === 'string') payload.userOpinion = updates.userOpinion.trim();
+        if (typeof updates.extraRequest === 'string') payload.extraRequest = updates.extraRequest.trim();
+        if (Array.isArray(updates.requestedReferences)) payload.requestedReferences = updates.requestedReferences.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 8);
+        if (typeof updates.generatedTitle === 'string') payload.generatedTitle = updates.generatedTitle.trim();
+        if (typeof updates.generatedSummary === 'string') payload.generatedSummary = updates.generatedSummary.trim();
+        if (typeof updates.generatedContent === 'string') payload.generatedContent = updates.generatedContent.trim();
+        if (Array.isArray(updates.referenceLinks)) payload.referenceLinks = updates.referenceLinks.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 12);
+        if (typeof updates.status === 'string') payload.status = updates.status === 'published' ? 'published' : 'draft';
+
+        const response = await fetch(`/api/mypage/composed-articles/${encodeURIComponent(articleId)}?userId=${encodeURIComponent(String(userId).trim())}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw await createApiError(response, 'Failed to update composed article');
+        const parsed = parseComposedRows(JSON.stringify([await response.json()]));
+        const updated = parsed[0];
+        if (!updated) throw new Error('Invalid updated composed article payload');
+
+        const current = await this.getUserComposedArticles(userId);
+        const next = [updated, ...current.filter((row) => row.id !== updated.id)].slice(0, 200);
+        window.localStorage.setItem(createComposedStorageKey(userId), JSON.stringify(next));
+        return updated;
     },
 
     async getCommunityFeed(limit = 24) {
