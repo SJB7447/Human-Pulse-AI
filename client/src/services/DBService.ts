@@ -891,7 +891,14 @@ export const DBService = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
-        if (!response.ok) throw await createApiError(response, 'Failed to update composed article');
+        if (!response.ok) {
+            const apiError = await createApiError(response, 'Failed to update composed article');
+            const message = String(apiError?.message || '');
+            if (response.status === 404 && /cannot put/i.test(message)) {
+                throw new Error('서버에 수정 API가 아직 반영되지 않았습니다. 테스트 서버를 재기동하거나 최신 배포를 반영해 주세요.');
+            }
+            throw apiError;
+        }
         const parsed = parseComposedRows(JSON.stringify([await response.json()]));
         const updated = parsed[0];
         if (!updated) throw new Error('Invalid updated composed article payload');

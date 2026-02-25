@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { Header } from '@/components/Header';
 import { EMOTION_CONFIG, type EmotionType, useEmotionStore } from '@/lib/store';
@@ -6,6 +6,7 @@ import { Loader2, Send } from 'lucide-react';
 import { DBService } from '@/services/DBService';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 interface CommunityItem {
   id: string;
@@ -46,7 +47,7 @@ export default function CommunityPage() {
   const [emotion, setEmotion] = useState<EmotionType>('spectrum');
   const [drafts, setDrafts] = useState<InsightDraft[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
-  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const [selectedPost, setSelectedPost] = useState<CommunityItem | null>(null);
   const [lastPublishedLink, setLastPublishedLink] = useState('');
   const canPublish = Boolean(user);
 
@@ -64,7 +65,7 @@ export default function CommunityPage() {
   };
 
   useEffect(() => {
-    loadFeed();
+    void loadFeed();
   }, []);
 
   useEffect(() => {
@@ -82,16 +83,16 @@ export default function CommunityPage() {
           updatedAt: String(row.updatedAt || new Date().toISOString()),
         })) as InsightDraft[];
       setDrafts(restored.slice(0, 20));
-    } catch (err) {
-      console.warn('Failed to restore community drafts', err);
+    } catch (restoreError) {
+      console.warn('Failed to restore community drafts', restoreError);
     }
   }, []);
 
   useEffect(() => {
     try {
       localStorage.setItem(COMMUNITY_DRAFTS_KEY, JSON.stringify(drafts.slice(0, 20)));
-    } catch (err) {
-      console.warn('Failed to persist community drafts', err);
+    } catch (persistError) {
+      console.warn('Failed to persist community drafts', persistError);
     }
   }, [drafts]);
 
@@ -108,7 +109,7 @@ export default function CommunityPage() {
     if (!opinion.trim()) {
       toast({
         title: '임시저장 실패',
-        description: '내용을 입력한 뒤 임시저장해 주세요.',
+        description: '의견을 먼저 입력해 주세요.',
         variant: 'destructive',
       });
       return;
@@ -131,7 +132,7 @@ export default function CommunityPage() {
       setActiveDraftId(draftId);
       toast({
         title: '임시저장 완료',
-        description: 'UGC Insight 초안이 저장되었습니다.',
+        description: '커뮤니티 초안이 저장되었습니다.',
       });
     } finally {
       setSavingDraft(false);
@@ -143,7 +144,7 @@ export default function CommunityPage() {
     if (!canPublish) {
       toast({
         title: '로그인 필요',
-        description: '게스트는 임시저장/공유만 가능하며 게시는 로그인 후 가능합니다.',
+        description: '게시하려면 로그인이 필요합니다.',
         variant: 'destructive',
       });
       setLocation('/login?redirect=/community');
@@ -159,7 +160,9 @@ export default function CommunityPage() {
       });
 
       const publishedId = created?.id ? String(created.id) : '';
-      const publishedLink = publishedId ? `${window.location.origin}/community#post-${publishedId}` : `${window.location.origin}/community`;
+      const publishedLink = publishedId
+        ? `${window.location.origin}/community#post-${publishedId}`
+        : `${window.location.origin}/community`;
       setLastPublishedLink(publishedLink);
 
       if (activeDraftId) {
@@ -170,14 +173,14 @@ export default function CommunityPage() {
       setOpinion('');
       toast({
         title: '등록 완료',
-        description: '의견이 커뮤니티 피드에 반영되었습니다.',
+        description: '커뮤니티 피드에 반영되었습니다.',
       });
 
       await loadFeed();
     } catch (e: any) {
       toast({
         title: '등록 실패',
-        description: e?.message || '먼저 로그인해주세요.',
+        description: e?.message || '잠시 후 다시 시도해 주세요.',
         variant: 'destructive',
       });
     } finally {
@@ -191,7 +194,7 @@ export default function CommunityPage() {
     setOpinion(draft.opinion);
     toast({
       title: '초안 불러오기 완료',
-      description: '선택한 임시저장을 편집 중입니다.',
+      description: '선택한 임시저장 글을 불러왔습니다.',
     });
   };
 
@@ -222,7 +225,9 @@ export default function CommunityPage() {
 
       toast({
         title: '공유 준비 완료',
-        description: typeof navigator.share === 'function' ? '공유 시트를 열었습니다.' : '링크를 클립보드에 복사했습니다.',
+        description: typeof navigator.share === 'function'
+          ? '공유 시트를 열었습니다.'
+          : '링크를 클립보드에 복사했습니다.',
       });
     } catch (e: any) {
       toast({
@@ -278,9 +283,9 @@ export default function CommunityPage() {
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-gray-500">
-              정책: 게스트는 임시저장/공유만 가능, 게시는 로그인 사용자만 가능합니다.
+              정책: 게스트는 임시저장만 가능하며, 게시는 로그인 사용자만 가능합니다.
             </p>
-            <Button size="sm" variant="secondary" onClick={() => handleShare()} disabled={sharing}>
+            <Button size="sm" variant="secondary" onClick={() => void handleShare()} disabled={sharing}>
               {sharing ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
               공유
             </Button>
@@ -373,22 +378,15 @@ export default function CommunityPage() {
                       </span>
                     </div>
                   )}
+
                   <button
                     type="button"
                     className="text-left w-full"
-                    onClick={() => setExpandedPostId((prev) => (prev === item.id ? null : item.id))}
+                    onClick={() => setSelectedPost(item)}
                   >
                     <h2 className="font-semibold text-gray-900 mb-2 leading-snug hover:underline">{item.title}</h2>
                     <p className="text-sm text-gray-600 leading-relaxed">{item.excerpt}</p>
                   </button>
-                  {expandedPostId === item.id && (
-                    <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                      <p className="text-[11px] text-gray-500 mb-1">Full article</p>
-                      <p className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed">
-                        {String(item.content || item.excerpt || '')}
-                      </p>
-                    </div>
-                  )}
 
                   <div className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
                     작성자: {item.author}
@@ -401,9 +399,35 @@ export default function CommunityPage() {
 
         <div className="mt-10">
           <Link href="/" className="text-sm text-blue-600 hover:text-blue-800">
-            ← 홈으로 돌아가기
+            홈으로 돌아가기
           </Link>
         </div>
+
+        <Dialog open={Boolean(selectedPost)} onOpenChange={(open) => { if (!open) setSelectedPost(null); }}>
+          <DialogContent className="max-w-3xl max-h-[82vh] overflow-hidden bg-[#fffdf7] border border-[#ece4d4]">
+            <DialogHeader>
+              <DialogTitle className="text-lg font-semibold text-gray-900 break-words">
+                {selectedPost?.title || ''}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+              <span>{selectedPost?.createdAt ? new Date(selectedPost.createdAt).toLocaleString() : '-'}</span>
+              <span>·</span>
+              <span>{selectedPost?.author || '-'}</span>
+              {selectedPost?.category ? (
+                <>
+                  <span>·</span>
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{selectedPost.category}</span>
+                </>
+              ) : null}
+            </div>
+            <div className="mt-3 max-h-[56vh] overflow-y-auto rounded-lg border border-[#ebe3d3] bg-white/90 p-4">
+              <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
+                {String(selectedPost?.content || selectedPost?.excerpt || '')}
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
