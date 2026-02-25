@@ -255,6 +255,23 @@ export default function MyPage() {
     }
   };
 
+  const handleResubmitComposedArticle = async (articleId: string) => {
+    try {
+      const updated = await DBService.resubmitUserComposedArticle(socialOwnerId, articleId);
+      setComposedArticles((prev) => [updated, ...prev.filter((row) => row.id !== updated.id)]);
+      toast({
+        title: '재승인 요청 완료',
+        description: '관리자 검증 대기열로 다시 전달되었습니다.',
+      });
+    } catch (error: any) {
+      toast({
+        title: '재승인 요청 실패',
+        description: error?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const resolveInsightCategory = (row: UserInsightRecord): InsightCategoryKey => {
     const tags = Array.isArray(row.selectedTags) ? row.selectedTags : [];
     for (const tag of tags) {
@@ -752,6 +769,15 @@ export default function MyPage() {
                           >
                             {article.submissionStatus === 'approved' ? '커뮤니티 승인' : article.submissionStatus === 'rejected' ? '반려' : '검증 대기'}
                           </span>
+                          {article.submissionStatus === 'rejected' && (
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                              onClick={() => void handleResubmitComposedArticle(article.id)}
+                            >
+                              재승인 요청
+                            </button>
+                          )}
                           <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
                             {article.sourceCategory || 'General'}
                           </span>
@@ -760,6 +786,11 @@ export default function MyPage() {
                           </span>
                         </div>
                         <p className="mt-2 text-[11px] text-gray-500 line-clamp-1">원문: {article.sourceTitle}</p>
+                        {article.submissionStatus === 'rejected' && article.moderationMemo && (
+                          <p className="mt-1 text-[11px] text-rose-600 line-clamp-2">
+                            반려 사유: {article.moderationMemo}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">

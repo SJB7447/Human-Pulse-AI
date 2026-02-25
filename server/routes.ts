@@ -3703,6 +3703,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.post("/api/mypage/composed-articles/:id/resubmit", async (req, res) => {
+    try {
+      const userId = normalizeInsightUserId(req.query.userId || req.body?.userId);
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+      const articleId = String(req.params.id || "").trim();
+      if (!articleId) return res.status(400).json({ error: "article id is required." });
+
+      const updated = await storage.resubmitUserComposedArticle(userId, articleId);
+      if (!updated) {
+        return res.status(404).json({ error: "Resubmit target not found or not rejected." });
+      }
+      return res.json(updated);
+    } catch (error) {
+      console.error("[API] /api/mypage/composed-articles/:id/resubmit failed:", error);
+      return res.status(500).json({ error: "Failed to request resubmission." });
+    }
+  });
+
   app.get("/api/admin/reader-articles", async (req, res) => {
     try {
       const statusRaw = String(req.query.status || "").trim().toLowerCase();

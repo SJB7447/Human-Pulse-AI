@@ -86,6 +86,7 @@ export interface IStorage {
   createUserComposedArticle(input: InsertUserComposedArticle): Promise<UserComposedArticle>;
   deleteUserComposedArticle(userId: string, articleId: string): Promise<boolean>;
   updateUserComposedArticle(userId: string, articleId: string, updates: Partial<InsertUserComposedArticle>): Promise<UserComposedArticle | null>;
+  resubmitUserComposedArticle(userId: string, articleId: string): Promise<UserComposedArticle | null>;
   getReaderComposedArticles(status?: "pending" | "approved" | "rejected"): Promise<UserComposedArticle[]>;
   updateReaderComposedArticleDecision(articleId: string, input: ReaderArticleDecisionInput): Promise<UserComposedArticle | null>;
 }
@@ -585,6 +586,24 @@ export class MemStorage implements IStorage {
       generatedContent: updates.generatedContent ? String(updates.generatedContent).trim().slice(0, 24000) : current.generatedContent,
       sourceCategory: updates.sourceCategory ? String(updates.sourceCategory).trim().slice(0, 120) : (current as any).sourceCategory,
       sourceEmotion: updates.sourceEmotion ? String(updates.sourceEmotion).trim().toLowerCase().slice(0, 32) : (current as any).sourceEmotion,
+      updatedAt: new Date(),
+    } as UserComposedArticle;
+    this.userComposedArticles.set(String(articleId), next);
+    return next;
+  }
+
+  async resubmitUserComposedArticle(userId: string, articleId: string): Promise<UserComposedArticle | null> {
+    const current = this.userComposedArticles.get(String(articleId));
+    if (!current) return null;
+    if (String(current.userId) !== String(userId || "").trim()) return null;
+    if (String((current as any).submissionStatus || "pending") !== "rejected") return null;
+
+    const next: UserComposedArticle = {
+      ...current,
+      submissionStatus: "pending",
+      moderationMemo: "",
+      reviewedBy: null,
+      reviewedAt: null,
       updatedAt: new Date(),
     } as UserComposedArticle;
     this.userComposedArticles.set(String(articleId), next);
@@ -1570,6 +1589,64 @@ export class SupabaseStorage implements IStorage {
       generatedContent: updates.generatedContent ? String(updates.generatedContent).trim().slice(0, 24000) : fallback.generatedContent,
       sourceCategory: (updates as any).sourceCategory ? String((updates as any).sourceCategory).trim().slice(0, 120) : (fallback as any).sourceCategory,
       sourceEmotion: (updates as any).sourceEmotion ? String((updates as any).sourceEmotion).trim().toLowerCase().slice(0, 32) : (fallback as any).sourceEmotion,
+      updatedAt: new Date(),
+    } as UserComposedArticle;
+    this.fallbackUserComposedArticles.set(safeArticleId, next);
+    return next;
+  }
+
+  async resubmitUserComposedArticle(userId: string, articleId: string): Promise<UserComposedArticle | null> {
+    const safeUserId = String(userId || "").trim();
+    const safeArticleId = String(articleId || "").trim();
+
+    const { data: currentRow, error: currentError } = await supabase
+      .from("user_composed_articles")
+      .select("*")
+      .eq("id", safeArticleId)
+      .eq("user_id", safeUserId)
+      .maybeSingle();
+
+    if (!currentError && currentRow) {
+      const current = this.mapUserComposedArticle(currentRow);
+      if (String((current as any).submissionStatus || "pending") !== "rejected") return null;
+
+      const { data, error } = await supabase
+        .from("user_composed_articles")
+        .update({
+          submission_status: "pending",
+          moderation_memo: "",
+          reviewed_by: null,
+          reviewed_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", safeArticleId)
+        .eq("user_id", safeUserId)
+        .select("*")
+        .maybeSingle();
+
+      if (!error && data) {
+        const mapped = this.mapUserComposedArticle(data);
+        this.fallbackUserComposedArticles.set(String(mapped.id), mapped);
+        return mapped;
+      }
+      if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+        throw error;
+      }
+    } else if (currentError && !this.isMissingTableError(currentError) && !this.isRlsError(currentError)) {
+      throw currentError;
+    }
+
+    const fallback = this.fallbackUserComposedArticles.get(safeArticleId);
+    if (!fallback) return null;
+    if (String(fallback.userId) !== safeUserId) return null;
+    if (String((fallback as any).submissionStatus || "pending") !== "rejected") return null;
+
+    const next: UserComposedArticle = {
+      ...fallback,
+      submissionStatus: "pending",
+      moderationMemo: "",
+      reviewedBy: null,
+      reviewedAt: null,
       updatedAt: new Date(),
     } as UserComposedArticle;
     this.fallbackUserComposedArticles.set(safeArticleId, next);

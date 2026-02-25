@@ -460,7 +460,7 @@ export default function AdminPage() {
         DBService.getAdminStats(),
         DBService.getAdminReviews(),
         DBService.getAdminReports(),
-        DBService.getAdminReaderArticles('pending'),
+        DBService.getAdminReaderArticles(),
         DBService.getAdminExportHistory(10),
         DBService.getAdminExportSchedule(),
         DBService.getAdminAlerts(8),
@@ -1436,7 +1436,7 @@ export default function AdminPage() {
         moderationMemo,
       });
       if (!updated) throw new Error('업데이트된 독자 기사를 찾지 못했습니다.');
-      setReaderArticles((prev) => prev.filter((row) => row.id !== article.id));
+      setReaderArticles((prev) => [updated, ...prev.filter((row) => row.id !== article.id)]);
       toast({
         title: submissionStatus === 'approved' ? '독자 기사 승인 완료' : '독자 기사 반려 완료',
       });
@@ -1455,6 +1455,30 @@ export default function AdminPage() {
   const longformModeOps = stats?.aiDraftOps?.byMode?.['interactive-longform'] || {};
   const newsOpsStats = stats?.aiNewsOps?.totals || {};
   const newsOpsByEmotion = stats?.aiNewsOps?.byEmotion || {};
+  const pendingReaderArticles = useMemo(
+    () => readerArticles.filter((row) => row.submissionStatus === 'pending'),
+    [readerArticles],
+  );
+  const recentReaderArticleHistory = useMemo(() => {
+    const now = Date.now();
+    const windowMs = 7 * 24 * 60 * 60 * 1000;
+    return readerArticles
+      .filter((row) => row.submissionStatus !== 'pending')
+      .filter((row) => {
+        const reviewedAtMs = row.reviewedAt ? new Date(row.reviewedAt).getTime() : 0;
+        const updatedAtMs = row.updatedAt ? new Date(row.updatedAt).getTime() : 0;
+        const createdAtMs = row.createdAt ? new Date(row.createdAt).getTime() : 0;
+        const base = Math.max(reviewedAtMs || 0, updatedAtMs || 0, createdAtMs || 0);
+        if (!base || Number.isNaN(base)) return false;
+        return now - base <= windowMs;
+      })
+      .sort((a, b) => {
+        const aBase = Math.max(new Date(a.reviewedAt || a.updatedAt || a.createdAt || 0).getTime(), 0);
+        const bBase = Math.max(new Date(b.reviewedAt || b.updatedAt || b.createdAt || 0).getTime(), 0);
+        return bBase - aBase;
+      })
+      .slice(0, 40);
+  }, [readerArticles]);
   const selectedCount = Array.from(selectedArticleIds).filter((id) => filteredArticleIdSet.has(id)).length;
   const selectedCountOnPage = Array.from(selectedArticleIds).filter((id) => currentPageIdSet.has(id)).length;
   const allSelected = pagedArticles.length > 0 && selectedCountOnPage === pagedArticles.length;
@@ -2284,9 +2308,9 @@ export default function AdminPage() {
           <p className="text-xs text-amber-700 mt-1">내 의견으로 생성된 기사의 커뮤니티 노출 승인/반려를 처리합니다.</p>
         </div>
         <div className="p-4 sm:p-5 space-y-3">
-          {readerArticles.length === 0 ? (
+          {pendingReaderArticles.length === 0 ? (
             <p className="text-sm text-gray-500">검증 대기 중인 독자 기사가 없습니다.</p>
-          ) : readerArticles.slice(0, 20).map((item) => (
+          ) : pendingReaderArticles.slice(0, 20).map((item) => (
             <div key={`reader-article-${item.id}`} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -2343,6 +2367,50 @@ export default function AdminPage() {
                   반려
                 </Button>
               </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className={`${showArticlesTab ? '' : 'hidden'} bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4`}>
+        <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/70">
+          <p className="text-sm font-semibold text-slate-900">이전 기록 보기 (최근 7일)</p>
+          <p className="text-xs text-slate-600 mt-1">승인/반려 처리된 독자 기사 이력을 확인합니다.</p>
+        </div>
+        <div className="p-4 sm:p-5 space-y-3">
+          {recentReaderArticleHistory.length === 0 ? (
+            <p className="text-sm text-gray-500">최근 7일 처리 이력이 없습니다.</p>
+          ) : recentReaderArticleHistory.map((item) => (
+            <div key={`reader-article-history-${item.id}`} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-gray-900 line-clamp-1 text-left hover:underline"
+                    onClick={() => setExpandedReaderArticleId((prev) => (prev === item.id ? null : item.id))}
+                  >
+                    {item.generatedTitle}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1">작성자: {item.userId}</p>
+                  <p className="text-xs text-gray-500">
+                    처리시각: {new Date(item.reviewedAt || item.updatedAt || item.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                    item.submissionStatus === 'approved'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-rose-100 text-rose-700'
+                  }`}
+                >
+                  {item.submissionStatus === 'approved' ? '승인' : '반려'}
+                </span>
+              </div>
+              {item.moderationMemo ? (
+                <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-md px-2 py-1">
+                  메모: {item.moderationMemo}
+                </p>
+              ) : null}
             </div>
           ))}
         </div>

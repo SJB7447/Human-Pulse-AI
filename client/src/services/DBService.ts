@@ -909,6 +909,28 @@ export const DBService = {
         return updated;
     },
 
+    async resubmitUserComposedArticle(userId: string, articleId: string): Promise<UserComposedArticleRecord> {
+        if (!userId || !articleId || typeof window === 'undefined') {
+            throw new Error('유효한 사용자/기사가 필요합니다.');
+        }
+
+        const response = await fetch(`/api/mypage/composed-articles/${encodeURIComponent(articleId)}/resubmit?userId=${encodeURIComponent(String(userId).trim())}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: String(userId).trim() }),
+        });
+        if (!response.ok) throw await createApiError(response, 'Failed to request resubmission');
+
+        const parsed = parseComposedRows(JSON.stringify([await response.json()]));
+        const updated = parsed[0];
+        if (!updated) throw new Error('Invalid resubmitted composed article payload');
+
+        const current = await this.getUserComposedArticles(userId);
+        const next = [updated, ...current.filter((row) => row.id !== updated.id)].slice(0, 200);
+        window.localStorage.setItem(createComposedStorageKey(userId), JSON.stringify(next));
+        return updated;
+    },
+
     async getCommunityFeed(limit = 24) {
         const response = await fetch(`/api/community?limit=${limit}`);
         if (!response.ok) throw await createApiError(response, '커뮤니티 피드를 불러오지 못했습니다.');
