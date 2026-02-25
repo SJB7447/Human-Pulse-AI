@@ -3363,35 +3363,40 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/community", async (req, res) => {
-    const limit = Math.min(Number(req.query.limit || 30), 100);
-    const feedFromFallback = [...communityFallback]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .map((row) => ({
-        id: row.id,
-        title: "Community Story",
-        emotion: row.emotion,
-        excerpt: row.userOpinion,
-        author: row.username,
-        createdAt: row.createdAt,
-      }));
+    try {
+      const limit = Math.min(Number(req.query.limit || 30), 100);
+      const feedFromFallback = [...communityFallback]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .map((row) => ({
+          id: row.id,
+          title: "Community Story",
+          emotion: row.emotion,
+          excerpt: row.userOpinion,
+          author: row.username,
+          createdAt: row.createdAt,
+        }));
 
-    const approvedReaderArticles = (await storage.getReaderComposedArticles("approved"))
-      .map((row: any) => ({
-        id: String(row.id),
-        title: String(row.generatedTitle || "Reader Article"),
-        emotion: toEmotion(row.sourceEmotion),
-        category: String(row.sourceCategory || "General"),
-        content: String(row.generatedContent || ""),
-        excerpt: String(row.generatedSummary || row.userOpinion || "").slice(0, 300),
-        author: String(row.userId || "reader"),
-        createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
-      }));
+      const approvedReaderArticles = (await storage.getReaderComposedArticles("approved"))
+        .map((row: any) => ({
+          id: String(row.id),
+          title: String(row.generatedTitle || "Reader Article"),
+          emotion: toEmotion(row.sourceEmotion),
+          category: String(row.sourceCategory || "General"),
+          content: String(row.generatedContent || ""),
+          excerpt: String(row.generatedSummary || row.userOpinion || "").slice(0, 300),
+          author: String(row.userId || "reader"),
+          createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
+        }));
 
-    const merged = [...approvedReaderArticles, ...feedFromFallback]
-      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-      .slice(0, limit);
+      const merged = [...approvedReaderArticles, ...feedFromFallback]
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+        .slice(0, limit);
 
-    res.json(merged);
+      res.json(merged);
+    } catch (error) {
+      console.error("[API] /api/community failed:", error);
+      res.status(200).json([]);
+    }
   });
 
   app.post("/api/community", async (req, res) => {

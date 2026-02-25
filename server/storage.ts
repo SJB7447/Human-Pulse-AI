@@ -641,7 +641,7 @@ export class SupabaseStorage implements IStorage {
 
   private isMissingTableError(error: any): boolean {
     const message = String(error?.message || "");
-    return /relation .* does not exist|could not find the table|schema cache|article_reviews|user_consents|admin_action_logs|user_insights|user_composed_articles/i.test(message);
+    return /relation .* does not exist|column .* does not exist|could not find the table|schema cache|article_reviews|user_consents|admin_action_logs|user_insights|user_composed_articles|source_emotion|source_category|submission_status/i.test(message);
   }
 
   private isRlsError(error: any): boolean {

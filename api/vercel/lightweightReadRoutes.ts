@@ -118,4 +118,56 @@ export function registerLightweightReadRoutes(app: Express, options: Lightweight
       return res.status(200).json([]);
     }
   });
+
+  app.get("/api/community", async (req: Request, res: Response, next: NextFunction) => {
+    if (bypassIfNeeded(next)) return;
+
+    try {
+      const limit = Math.min(Number(req.query.limit || 30), 100);
+      const supabase = getSupabase();
+      if (!supabase) return res.status(200).json([]);
+
+      const withSourceMeta = await supabase
+        .from("user_composed_articles")
+        .select("id,user_id,generated_title,generated_summary,generated_content,user_opinion,created_at,submission_status,source_emotion,source_category")
+        .eq("submission_status", "approved")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      let data: any[] | null = withSourceMeta.data as any[] | null;
+      let error: any = withSourceMeta.error;
+
+      if (error) {
+        const fallbackQuery = await supabase
+          .from("user_composed_articles")
+          .select("id,user_id,generated_title,generated_summary,generated_content,user_opinion,created_at,submission_status")
+          .eq("submission_status", "approved")
+          .order("created_at", { ascending: false })
+          .limit(limit);
+        data = fallbackQuery.data;
+        error = fallbackQuery.error;
+      }
+
+      if (error) {
+        console.error("[Lightweight API] /api/community query failed:", error);
+        return res.status(200).json([]);
+      }
+
+      const items = (data || []).map((row: any) => ({
+        id: String(row?.id || ""),
+        title: String(row?.generated_title || "Reader Article"),
+        emotion: toEmotion(row?.source_emotion),
+        category: String(row?.source_category || "General"),
+        content: String(row?.generated_content || ""),
+        excerpt: String(row?.generated_summary || row?.user_opinion || "").slice(0, 300),
+        author: String(row?.user_id || "reader"),
+        createdAt: row?.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+      })).filter((row: any) => row.id);
+
+      return res.status(200).json(items);
+    } catch (error) {
+      console.error("[Lightweight API] /api/community failed:", error);
+      return res.status(200).json([]);
+    }
+  });
 }

@@ -26,7 +26,7 @@ function getRequestPath(url: unknown): string {
 
 function isLightweightReadPath(method: unknown, path: string): boolean {
   if (String(method || "").toUpperCase() !== "GET") return false;
-  if (path === "/api/news" || path === "/api/articles") return true;
+  if (path === "/api/news" || path === "/api/articles" || path === "/api/community") return true;
   return path.startsWith("/api/news/");
 }
 
