@@ -1,19 +1,7 @@
-import { createServer } from "http";
-import express from "express";
-import { registerLightweightReadRoutes } from "./vercel/lightweightReadRoutes";
-import { loadServerRegisterRoutes } from "./vercel/loadServerRoutes";
+type ApiMode = "lightweight";
 
-const app = express();
-const httpServer = createServer(app);
-
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: false }));
-
-let lightweightRoutesRegistered = false;
-let fullRoutesRegistered = false;
-let fullRoutesBootstrapAttempted = false;
-let errorMiddlewareRegistered = false;
-let routeBootstrapError: string | null = null;
+const EMOTION_TYPES = ["vibrance", "immersion", "clarity", "gravity", "serenity", "spectrum"] as const;
+type EmotionType = typeof EMOTION_TYPES[number];
 
 function getRequestPath(url: unknown): string {
   const raw = String(url || "/");
@@ -24,96 +12,152 @@ function getRequestPath(url: unknown): string {
   }
 }
 
-function isLightweightReadPath(method: unknown, path: string): boolean {
-  if (String(method || "").toUpperCase() !== "GET") return false;
-  if (path === "/api/news" || path === "/api/articles" || path === "/api/community") return true;
-  return path.startsWith("/api/news/");
-}
-
-function resolveApiMode(): "full" | "fallback" | "lightweight" {
-  if (fullRoutesRegistered) return "full";
-  if (routeBootstrapError) return "fallback";
-  return "lightweight";
-}
-
-function ensureLightweightRoutes() {
-  if (lightweightRoutesRegistered) return;
-  registerLightweightReadRoutes(app, {
-    shouldBypassLightweight: () => fullRoutesRegistered,
-  });
-  lightweightRoutesRegistered = true;
-}
-
-function ensureErrorMiddleware() {
-  if (errorMiddlewareRegistered) return;
-  app.use((err: any, _req: any, res: any, _next: any) => {
-    const status = err?.status || err?.statusCode || 500;
-    const message = err?.message || "Internal Server Error";
-    console.error(err);
-    res.status(status).json({ message });
-  });
-  errorMiddlewareRegistered = true;
-}
-
-async function ensureFullRoutes() {
-  if (fullRoutesRegistered || fullRoutesBootstrapAttempted) return;
-
-  fullRoutesBootstrapAttempted = true;
+function getQuery(url: unknown): URLSearchParams {
+  const raw = String(url || "/");
   try {
-    const registerRoutes = await loadServerRegisterRoutes();
-    await registerRoutes(httpServer, app);
-    fullRoutesRegistered = true;
-    routeBootstrapError = null;
-    console.log("[Vercel API] Full routes registered");
-  } catch (error) {
-    routeBootstrapError = String(error);
-    console.error("[Vercel API] Full route bootstrap failed:", error);
-    console.warn("[Vercel API] Lightweight mode remains active");
-  } finally {
-    ensureErrorMiddleware();
+    return new URL(raw, "http://localhost").searchParams;
+  } catch {
+    const query = raw.includes("?") ? raw.slice(raw.indexOf("?")) : "";
+    return new URLSearchParams(query);
   }
 }
 
+function toEmotion(value: unknown): EmotionType {
+  const normalized = String(value || "").toLowerCase().trim();
+  return (EMOTION_TYPES as readonly string[]).includes(normalized) ? (normalized as EmotionType) : "spectrum";
+}
+
+function getSupabaseConfig(): { url: string; key: string } | null {
+  const url = String(process.env.VITE_SUPABASE_URL || "").trim();
+  const anonKey = String(process.env.VITE_SUPABASE_ANON_KEY || "").trim();
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  const key = serviceRoleKey || anonKey;
+  if (!url || !key) return null;
+  return { url, key };
+}
+
+function buildRestUrl(base: string, table: string, query: string): string {
+  return `${base.replace(/\/+$/, "")}/rest/v1/${table}?${query}`;
+}
+
+async function fetchRows(table: string, query: string): Promise<any[]> {
+  const config = getSupabaseConfig();
+  if (!config) return [];
+
+  const response = await fetch(buildRestUrl(config.url, table, query), {
+    method: "GET",
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${config.key}`,
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase REST ${response.status}: ${text || "request failed"}`);
+  }
+
+  const payload = await response.json().catch(() => []);
+  return Array.isArray(payload) ? payload : [];
+}
+
+function sendJson(res: any, status: number, body: unknown): void {
+  if (typeof res?.status === "function" && typeof res?.json === "function") {
+    res.status(status).json(body);
+    return;
+  }
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(body));
+}
+
 export default async function handler(req: any, res: any) {
+  const method = String(req?.method || "GET").toUpperCase();
   const path = getRequestPath(req?.url);
+  const query = getQuery(req?.url);
+
   try {
-    console.log(`API Request: ${req.method} ${path}`);
-
-    ensureLightweightRoutes();
-
     if (path === "/api/health") {
-      return res.status(200).json({
+      return sendJson(res, 200, {
         status: "ok",
-        mode: resolveApiMode(),
-        routeBootstrapError,
+        mode: "lightweight" as ApiMode,
         timestamp: new Date().toISOString(),
       });
     }
 
-    const isLightweight = isLightweightReadPath(req?.method, path);
-
-    if (!isLightweight && !fullRoutesRegistered) {
-      await ensureFullRoutes();
-    }
-
-    if (path.startsWith("/api/") && !isLightweight && !fullRoutesRegistered) {
-      return res.status(503).json({
-        message: "API is running in fallback mode. This route is unavailable.",
-        mode: resolveApiMode(),
-        routeBootstrapError,
+    if (method !== "GET") {
+      return sendJson(res, 503, {
+        message: "API is running in lightweight mode. This route is unavailable.",
+        mode: "lightweight" as ApiMode,
       });
     }
 
-    app(req, res);
-  } catch (error) {
-    console.error("[Vercel API] handler fatal:", error);
-    if (isLightweightReadPath(req?.method, path)) {
-      return res.status(200).json([]);
+    if (path === "/api/news" || path === "/api/articles") {
+      const includeHidden = query.get("all") === "true";
+      const select = "select=*&order=created_at.desc";
+      const rows = await fetchRows("news_items", includeHidden ? select : `${select}&is_published=eq.true`);
+      return sendJson(res, 200, rows);
     }
-    return res.status(503).json({
+
+    if (path.startsWith("/api/news/")) {
+      const emotion = toEmotion(path.slice("/api/news/".length));
+      const rows = await fetchRows(
+        "news_items",
+        `select=*&emotion=eq.${encodeURIComponent(emotion)}&is_published=eq.true&order=created_at.desc`,
+      );
+      return sendJson(res, 200, rows);
+    }
+
+    if (path === "/api/community") {
+      const limit = Math.min(Number(query.get("limit") || 30), 100);
+
+      let data: any[] = [];
+      try {
+        data = await fetchRows(
+          "user_composed_articles",
+          `select=id,user_id,generated_title,generated_summary,generated_content,user_opinion,created_at,submission_status,source_emotion,source_category&submission_status=eq.approved&order=created_at.desc&limit=${limit}`,
+        );
+      } catch {
+        data = await fetchRows(
+          "user_composed_articles",
+          `select=id,user_id,generated_title,generated_summary,generated_content,user_opinion,created_at,submission_status&submission_status=eq.approved&order=created_at.desc&limit=${limit}`,
+        );
+      }
+
+      const items = (data || [])
+        .map((row: any) => ({
+          id: String(row?.id || ""),
+          title: String(row?.generated_title || "Reader Article"),
+          emotion: toEmotion(row?.source_emotion),
+          category: String(row?.source_category || "General"),
+          content: String(row?.generated_content || ""),
+          excerpt: String(row?.generated_summary || row?.user_opinion || "").slice(0, 300),
+          author: String(row?.user_id || "reader"),
+          createdAt: row?.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+        }))
+        .filter((row: any) => row.id);
+
+      return sendJson(res, 200, items);
+    }
+
+    if (path.includes("/comments")) {
+      return sendJson(res, 200, []);
+    }
+
+    return sendJson(res, 503, {
+      message: "API is running in lightweight mode. This route is unavailable.",
+      mode: "lightweight" as ApiMode,
+    });
+  } catch (error) {
+    console.error("[Vercel API] fatal:", error);
+    if (method === "GET" && (path === "/api/news" || path === "/api/articles" || path === "/api/community" || path.startsWith("/api/news/"))) {
+      return sendJson(res, 200, []);
+    }
+    return sendJson(res, 503, {
       message: "API fallback error",
-      mode: resolveApiMode(),
-      routeBootstrapError: routeBootstrapError || String(error),
+      mode: "lightweight" as ApiMode,
+      error: String(error),
     });
   }
 }
