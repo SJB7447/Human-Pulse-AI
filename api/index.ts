@@ -76,32 +76,44 @@ async function ensureFullRoutes() {
 
 export default async function handler(req: any, res: any) {
   const path = getRequestPath(req?.url);
-  console.log(`API Request: ${req.method} ${path}`);
+  try {
+    console.log(`API Request: ${req.method} ${path}`);
 
-  ensureLightweightRoutes();
+    ensureLightweightRoutes();
 
-  if (path === "/api/health") {
-    return res.status(200).json({
-      status: "ok",
-      mode: resolveApiMode(),
-      routeBootstrapError,
-      timestamp: new Date().toISOString(),
-    });
-  }
+    if (path === "/api/health") {
+      return res.status(200).json({
+        status: "ok",
+        mode: resolveApiMode(),
+        routeBootstrapError,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
-  const isLightweight = isLightweightReadPath(req?.method, path);
+    const isLightweight = isLightweightReadPath(req?.method, path);
 
-  if (!isLightweight && !fullRoutesRegistered) {
-    await ensureFullRoutes();
-  }
+    if (!isLightweight && !fullRoutesRegistered) {
+      await ensureFullRoutes();
+    }
 
-  if (path.startsWith("/api/") && !isLightweight && !fullRoutesRegistered) {
+    if (path.startsWith("/api/") && !isLightweight && !fullRoutesRegistered) {
+      return res.status(503).json({
+        message: "API is running in fallback mode. This route is unavailable.",
+        mode: resolveApiMode(),
+        routeBootstrapError,
+      });
+    }
+
+    app(req, res);
+  } catch (error) {
+    console.error("[Vercel API] handler fatal:", error);
+    if (isLightweightReadPath(req?.method, path)) {
+      return res.status(200).json([]);
+    }
     return res.status(503).json({
-      message: "API is running in fallback mode. This route is unavailable.",
+      message: "API fallback error",
       mode: resolveApiMode(),
-      routeBootstrapError,
+      routeBootstrapError: routeBootstrapError || String(error),
     });
   }
-
-  app(req, res);
 }

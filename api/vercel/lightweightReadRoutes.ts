@@ -1,5 +1,4 @@
 import type { Express, NextFunction, Request, Response } from "express";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const EMOTION_TYPES = ["vibrance", "immersion", "clarity", "gravity", "serenity", "spectrum"] as const;
 type EmotionType = typeof EMOTION_TYPES[number];
@@ -13,27 +12,40 @@ function toEmotion(value: unknown): EmotionType {
   return (EMOTION_TYPES as readonly string[]).includes(normalized) ? (normalized as EmotionType) : "spectrum";
 }
 
-function isPublishedVisible(row: any): boolean {
-  if (typeof row?.isPublished === "boolean") return row.isPublished;
-  if (typeof row?.is_published === "boolean") return row.is_published;
-  return true;
-}
-
 export function registerLightweightReadRoutes(app: Express, options: LightweightOptions): void {
-  let supabaseClient: SupabaseClient | null = null;
-
-  const getSupabase = (): SupabaseClient | null => {
-    if (supabaseClient) return supabaseClient;
-
+  const getSupabaseConfig = (): { url: string; key: string } | null => {
     const url = String(process.env.VITE_SUPABASE_URL || "").trim();
     const anonKey = String(process.env.VITE_SUPABASE_ANON_KEY || "").trim();
     const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
     const key = serviceRoleKey || anonKey;
-
     if (!url || !key) return null;
+    return { url, key };
+  };
 
-    supabaseClient = createClient(url, key);
-    return supabaseClient;
+  const buildUrl = (base: string, table: string, query: string): string => {
+    return `${base.replace(/\/+$/, "")}/rest/v1/${table}?${query}`;
+  };
+
+  const fetchRows = async (table: string, query: string): Promise<any[]> => {
+    const config = getSupabaseConfig();
+    if (!config) return [];
+
+    const response = await fetch(buildUrl(config.url, table, query), {
+      method: "GET",
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`Supabase REST ${response.status}: ${text || "request failed"}`);
+    }
+
+    const payload = await response.json().catch(() => []);
+    return Array.isArray(payload) ? payload : [];
   };
 
   const bypassIfNeeded = (next: NextFunction): boolean => {
@@ -47,19 +59,9 @@ export function registerLightweightReadRoutes(app: Express, options: Lightweight
 
     try {
       const includeHidden = req.query.all === "true";
-      const supabase = getSupabase();
-      if (!supabase) return res.status(200).json([]);
-
-      let query = supabase.from("news_items").select("*").order("created_at", { ascending: false });
-      if (!includeHidden) query = query.eq("is_published", true);
-
-      const { data, error } = await query;
-      if (error) {
-        console.error("[Lightweight API] /api/news query failed:", error);
-        return res.status(200).json([]);
-      }
-
-      const rows = (data || []).filter((row: any) => includeHidden || isPublishedVisible(row));
+      const select = "select=*&order=created_at.desc";
+      const query = includeHidden ? select : `${select}&is_published=eq.true`;
+      const rows = await fetchRows("news_items", query);
       return res.status(200).json(rows);
     } catch (error) {
       console.error("[Lightweight API] /api/news failed:", error);
@@ -72,22 +74,11 @@ export function registerLightweightReadRoutes(app: Express, options: Lightweight
 
     try {
       const emotion = toEmotion(req.params.emotion);
-      const supabase = getSupabase();
-      if (!supabase) return res.status(200).json([]);
-
-      const { data, error } = await supabase
-        .from("news_items")
-        .select("*")
-        .eq("emotion", emotion)
-        .eq("is_published", true)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("[Lightweight API] /api/news/:emotion query failed:", error);
-        return res.status(200).json([]);
-      }
-
-      return res.status(200).json(data || []);
+      const rows = await fetchRows(
+        "news_items",
+        `select=*&emotion=eq.${encodeURIComponent(emotion)}&is_published=eq.true&order=created_at.desc`,
+      );
+      return res.status(200).json(rows);
     } catch (error) {
       console.error("[Lightweight API] /api/news/:emotion failed:", error);
       return res.status(200).json([]);
@@ -99,19 +90,9 @@ export function registerLightweightReadRoutes(app: Express, options: Lightweight
 
     try {
       const includeHidden = req.query.all === "true";
-      const supabase = getSupabase();
-      if (!supabase) return res.status(200).json([]);
-
-      let query = supabase.from("news_items").select("*").order("created_at", { ascending: false });
-      if (!includeHidden) query = query.eq("is_published", true);
-
-      const { data, error } = await query;
-      if (error) {
-        console.error("[Lightweight API] /api/articles query failed:", error);
-        return res.status(200).json([]);
-      }
-
-      const rows = (data || []).filter((row: any) => includeHidden || isPublishedVisible(row));
+      const select = "select=*&order=created_at.desc";
+      const query = includeHidden ? select : `${select}&is_published=eq.true`;
+      const rows = await fetchRows("news_items", query);
       return res.status(200).json(rows);
     } catch (error) {
       console.error("[Lightweight API] /api/articles failed:", error);
@@ -124,33 +105,17 @@ export function registerLightweightReadRoutes(app: Express, options: Lightweight
 
     try {
       const limit = Math.min(Number(req.query.limit || 30), 100);
-      const supabase = getSupabase();
-      if (!supabase) return res.status(200).json([]);
-
-      const withSourceMeta = await supabase
-        .from("user_composed_articles")
-        .select("id,user_id,generated_title,generated_summary,generated_content,user_opinion,created_at,submission_status,source_emotion,source_category")
-        .eq("submission_status", "approved")
-        .order("created_at", { ascending: false })
-        .limit(limit);
-
-      let data: any[] | null = withSourceMeta.data as any[] | null;
-      let error: any = withSourceMeta.error;
-
-      if (error) {
-        const fallbackQuery = await supabase
-          .from("user_composed_articles")
-          .select("id,user_id,generated_title,generated_summary,generated_content,user_opinion,created_at,submission_status")
-          .eq("submission_status", "approved")
-          .order("created_at", { ascending: false })
-          .limit(limit);
-        data = fallbackQuery.data;
-        error = fallbackQuery.error;
-      }
-
-      if (error) {
-        console.error("[Lightweight API] /api/community query failed:", error);
-        return res.status(200).json([]);
+      let data: any[] = [];
+      try {
+        data = await fetchRows(
+          "user_composed_articles",
+          `select=id,user_id,generated_title,generated_summary,generated_content,user_opinion,created_at,submission_status,source_emotion,source_category&submission_status=eq.approved&order=created_at.desc&limit=${limit}`,
+        );
+      } catch {
+        data = await fetchRows(
+          "user_composed_articles",
+          `select=id,user_id,generated_title,generated_summary,generated_content,user_opinion,created_at,submission_status&submission_status=eq.approved&order=created_at.desc&limit=${limit}`,
+        );
       }
 
       const items = (data || []).map((row: any) => ({
