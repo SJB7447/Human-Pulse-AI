@@ -587,6 +587,7 @@ interface NewsDetailModalProps {
   layoutId?: string;
   relatedArticles?: NewsItem[];
   onSelectArticle?: (article: NewsItem) => void;
+  onConsumeEvidence?: (articleId: string, evidence: 'scroll20') => void;
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -604,7 +605,7 @@ function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
     .filter((el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true');
 }
 
-export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration, cardBackground, layoutId, relatedArticles = [], onSelectArticle }: NewsDetailModalProps) {
+export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration, cardBackground, layoutId, relatedArticles = [], onSelectArticle, onConsumeEvidence }: NewsDetailModalProps) {
   const { toast } = useToast();
   const { user } = useEmotionStore();
   const [, setLocation] = useLocation();
@@ -659,6 +660,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const MAX_INSIGHT_TAG_SELECTION = 3;
   const shouldReduceMotion = useReducedMotion();
   const isAiBusy = isTransforming || isSummarizing;
+  const consumeEvidenceSentRef = useRef(false);
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
   const articleEmotionConfig = EMOTION_CONFIG.find((entry) => entry.type === article?.emotion) || emotionConfig;
@@ -866,6 +868,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     const maxScroll = Math.max(node.scrollHeight - node.clientHeight, 1);
     const progress = Math.max(0, Math.min(1, node.scrollTop / maxScroll));
     setBgTransitionProgress(progress);
+    if (!consumeEvidenceSentRef.current && progress >= 0.2 && article?.id) {
+      consumeEvidenceSentRef.current = true;
+      onConsumeEvidence?.(String(article.id), 'scroll20');
+    }
 
     const totalParagraphs = proseBlocks.length;
     if (totalParagraphs <= 1) {
@@ -887,6 +893,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     const targetReveal = 1 + Math.ceil(progress * (totalParagraphs - 1));
     setRevealedParagraphCount((prev) => Math.max(prev, Math.min(totalParagraphs, targetReveal)));
   };
+
+  useEffect(() => {
+    consumeEvidenceSentRef.current = false;
+  }, [article?.id]);
 
   const handleSave = () => {
     toast({
@@ -1046,10 +1056,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     }
   };
   const handleSaveInsight = async () => {
-    if (!article || !insightText.trim()) {
+    const trimmedInsight = insightText.trim();
+    const hasSelectedTags = selectedInsightTags.length > 0;
+    if (!article || (!trimmedInsight && !hasSelectedTags)) {
       toast({
         title: "입력 필요",
-        description: "인사이트 내용을 입력해주세요.",
+        description: "인사이트 내용을 입력하거나 감정 태그를 선택해주세요.",
         variant: "destructive",
       });
       return;
@@ -1063,10 +1075,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       return;
     }
 
+    const normalizedInsightComment = trimmedInsight || `[태그 인사이트] ${selectedInsightTags.join(', ')}`;
+
     const curation: CuratedArticle = {
       id: Date.now(),
       originalArticle: article,
-      userComment: insightText.trim(),
+      userComment: normalizedInsightComment,
       userEmotion: emotionType,
       userFeelingText: selectedInsightTags[0] || '',
       selectedTags: selectedInsightTags,
@@ -1078,7 +1092,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       await DBService.saveUserInsight(String(user.id), {
         articleId: String(article.id),
         originalTitle: article.title,
-        userComment: insightText.trim(),
+        userComment: normalizedInsightComment,
         userEmotion: emotionType,
         userFeelingText: selectedInsightTags[0] || '',
         selectedTags: selectedInsightTags,
@@ -1130,12 +1144,6 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     };
   };
 
-  const emotionTintAlpha = 0.12 + bgTransitionProgress * 0.16;
-  const neutralTintAlpha = 0.74 + bgTransitionProgress * 0.2;
-  const settleTintAlpha = 0.9 + bgTransitionProgress * 0.08;
-  const backdropBackground = shouldReduceMotion
-    ? `radial-gradient(circle at 30% 20%, ${color}26 0%, rgba(255,255,255,0.78) 35%, rgba(255,255,255,0.94) 100%)`
-    : `radial-gradient(circle at ${30 + bgTransitionProgress * 18}% ${20 + bgTransitionProgress * 26}%, ${color}${Math.round(emotionTintAlpha * 255).toString(16).padStart(2, '0')} 0%, rgba(255,255,255,${neutralTintAlpha.toFixed(2)}) 35%, rgba(255,255,255,${settleTintAlpha.toFixed(2)}) 100%)`;
 
   const proseBlocks = useMemo(() => {
     const plainContent = stripArticleMeta(article?.content);
@@ -1389,6 +1397,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const currentEmotionMeta = article?.emotion ? getEmotionMeta(article.emotion) : null;
   const isBackdropDark = isDarkHexColor(color);
   const readingProgress = Math.round(bgTransitionProgress * 100);
+  const articleDepth = Math.max(0, Math.min(100, Number(article?.intensity ?? 50)));
+  const useLightBodyText = articleDepth > 60;
 
   return (
     <AnimatePresence>
@@ -1410,8 +1420,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
             className="absolute inset-0"
             style={{
               WebkitBackdropFilter: 'blur(12px)',
-              background: backdropBackground,
-              transition: 'background 260ms ease-out',
+              background: 'transparent',
             }}
           />
 
@@ -1432,7 +1441,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               damping: 25,
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative w-full h-[100dvh] flex flex-col overflow-hidden"
+            className="relative w-[calc(100vw-12px)] sm:w-[calc(100vw-48px)] max-w-[860px] h-[100dvh] sm:h-[96dvh] sm:my-[2dvh] mx-auto flex flex-col overflow-hidden rounded-none sm:rounded-[28px] shadow-[0_28px_80px_rgba(20,20,24,0.30)]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="news-detail-title"
@@ -1441,6 +1450,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               background: cardBackground || `linear-gradient(180deg, ${color}20 0%, rgba(250,250,252,0.98) 35%, rgba(248,248,250,0.98) 100%)`,
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
+              border: '1px solid rgba(255,255,255,0.36)',
             }}
           >
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-white/30 z-30">
@@ -1476,9 +1486,9 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
             <div
               ref={scrollContainerRef}
               onScroll={handleContentScroll}
-              className="flex-1 overflow-y-auto px-5 sm:px-7 md:px-10 pb-20 sm:pb-20 md:pb-20 pt-10 z-10"
+              className="flex-1 overflow-y-auto minimal-scrollbar px-0 pb-20 sm:pb-20 md:pb-20 pt-10 z-10"
             >
-              <div className="max-w-4xl w-full mx-auto bg-white/72 rounded-[28px] px-5 sm:px-6 md:px-8 py-5 md:py-7">
+              <div className="w-full px-[30px] py-5 md:py-7">
                 <div className="flex justify-end mb-4">
                   <Button
                     ref={closeButtonRef}
@@ -1493,7 +1503,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   </Button>
                 </div>
 
-                <div className="max-w-3xl mx-auto">
+                <div className="w-full">
                   {article.image && (
                     <div className="mb-8">
                       <div className="w-full rounded-2xl overflow-hidden bg-white/55 border border-black/10 aspect-video">
@@ -1547,7 +1557,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                     )}
                   </div>
 
-                  <div id="news-detail-content" className="text-gray-900 text-[17px] md:text-[18px] leading-8 md:leading-9 font-normal mb-12 min-h-[120px] whitespace-pre-wrap tracking-wide">
+                  <div id="news-detail-content" className={`${useLightBodyText ? 'text-white font-normal' : 'text-gray-900 font-normal'} text-[17px] md:text-[18px] leading-8 md:leading-9 mb-12 min-h-[120px] whitespace-pre-wrap tracking-wide`}>
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">

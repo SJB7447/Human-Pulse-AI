@@ -1,6 +1,7 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useParams, Link, useLocation } from 'wouter';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, Search } from 'lucide-react';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,12 @@ import { useNews, type NewsItem } from '@/hooks/useNews';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
 import { EmotionTag } from '@/components/ui/EmotionTag';
+import {
+  emitPeripheralNudgeEvent,
+  getDwellThresholdSeconds,
+  getPeripheralRecommendations,
+  PERIPHERAL_NUDGE_Z_INDEX,
+} from '@/lib/peripheralNudge';
 
 const EMOTION_ICONS: Record<EmotionType, typeof Heart> = {
   vibrance: Sparkles,
@@ -148,7 +155,17 @@ export default function EmotionPage() {
   const [sortKey, setSortKey] = useState<'latest' | 'oldest' | 'intensity_desc' | 'intensity_asc' | 'title_asc'>('latest');
   const [visibleCount, setVisibleCount] = useState(9);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [showPeripheralNudge, setShowPeripheralNudge] = useState(false);
+  const [expandPeripheralNudge, setExpandPeripheralNudge] = useState(false);
+  const [suppressPeripheralNudge, setSuppressPeripheralNudge] = useState(false);
+  const [sameEmotionConsumeCount, setSameEmotionConsumeCount] = useState(0);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const dwellVisibleSecRef = useRef(0);
+  const sameEmotionConsumeRef = useRef(0);
+  const consumedArticleIdsRef = useRef<Set<string>>(new Set());
+  const triggeredPeripheralNudgeRef = useRef(false);
+  const detailConsumeTimerRef = useRef<number | null>(null);
+  const detailQuickConsumeTimerRef = useRef<number | null>(null);
   const shouldReduceMotion = useReducedMotion();
 
   const openArticleDetail = (item: NewsItem, cardBgColor: string) => {
@@ -158,7 +175,157 @@ export default function EmotionPage() {
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' });
+    setSelectedArticle(null);
+    dwellVisibleSecRef.current = 0;
+    sameEmotionConsumeRef.current = 0;
+    consumedArticleIdsRef.current = new Set();
+    triggeredPeripheralNudgeRef.current = false;
+    setSameEmotionConsumeCount(0);
+    setShowPeripheralNudge(false);
+    setExpandPeripheralNudge(false);
+    setSuppressPeripheralNudge(false);
   }, [type]);
+
+  useEffect(() => {
+    if (!type || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('nudge') === '1') {
+      triggeredPeripheralNudgeRef.current = true;
+      setSuppressPeripheralNudge(false);
+      setShowPeripheralNudge(true);
+      emitPeripheralNudgeEvent('peripheral_nudge_shown', {
+        emotion: type,
+        reason: 'query_force',
+      });
+    }
+  }, [type]);
+
+  useEffect(() => {
+    if (!selectedArticle || !type) return;
+    const articleId = String(selectedArticle.id || '');
+    if (!articleId) return;
+
+    if (selectedArticle.emotion !== type) {
+      sameEmotionConsumeRef.current = 0;
+      consumedArticleIdsRef.current = new Set();
+      setSameEmotionConsumeCount(0);
+      return;
+    }
+
+    const markConsumed = (reason: 'quick_open' | 'dwell_6s') => {
+      if (consumedArticleIdsRef.current.has(articleId)) return;
+      consumedArticleIdsRef.current.add(articleId);
+      sameEmotionConsumeRef.current = consumedArticleIdsRef.current.size;
+      setSameEmotionConsumeCount(sameEmotionConsumeRef.current);
+      if (import.meta.env.DEV) {
+        console.info('[PeripheralNudge.consume]', {
+          articleId,
+          reason,
+          consumeCount: sameEmotionConsumeRef.current,
+        });
+      }
+    };
+
+    if (detailQuickConsumeTimerRef.current) {
+      window.clearTimeout(detailQuickConsumeTimerRef.current);
+    }
+    if (detailConsumeTimerRef.current) {
+      window.clearTimeout(detailConsumeTimerRef.current);
+    }
+    detailQuickConsumeTimerRef.current = window.setTimeout(() => {
+      markConsumed('quick_open');
+    }, 400);
+    detailConsumeTimerRef.current = window.setTimeout(() => {
+      markConsumed('dwell_6s');
+    }, 6000);
+
+    return () => {
+      if (detailQuickConsumeTimerRef.current) {
+        window.clearTimeout(detailQuickConsumeTimerRef.current);
+        detailQuickConsumeTimerRef.current = null;
+      }
+      if (detailConsumeTimerRef.current) {
+        window.clearTimeout(detailConsumeTimerRef.current);
+        detailConsumeTimerRef.current = null;
+      }
+    };
+  }, [selectedArticle?.id, type]);
+
+  const handleArticleConsumeEvidence = (articleId: string, evidence: 'scroll20') => {
+    if (!type) return;
+    if (!selectedArticle || String(selectedArticle.id || '') !== String(articleId || '')) return;
+    if (selectedArticle.emotion !== type) return;
+    if (consumedArticleIdsRef.current.has(articleId)) return;
+    consumedArticleIdsRef.current.add(articleId);
+    sameEmotionConsumeRef.current = consumedArticleIdsRef.current.size;
+    setSameEmotionConsumeCount(sameEmotionConsumeRef.current);
+    if (import.meta.env.DEV) {
+      console.info('[PeripheralNudge.consume]', {
+        articleId,
+        reason: evidence,
+        consumeCount: sameEmotionConsumeRef.current,
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (!type || suppressPeripheralNudge) return;
+    const targetEmotion = type === 'immersion' || type === 'gravity';
+    if (!targetEmotion || triggeredPeripheralNudgeRef.current) return;
+    if (sameEmotionConsumeCount < 6) return;
+
+    triggeredPeripheralNudgeRef.current = true;
+    setShowPeripheralNudge(true);
+    emitPeripheralNudgeEvent('peripheral_nudge_triggered', {
+      emotion: type,
+      dwellVisibleSec: dwellVisibleSecRef.current,
+      sameEmotionConsumeCount,
+      reason: 'consume',
+    });
+    emitPeripheralNudgeEvent('peripheral_nudge_shown', {
+      emotion: type,
+    });
+  }, [type, suppressPeripheralNudge, sameEmotionConsumeCount]);
+
+  useEffect(() => {
+    if (!type || suppressPeripheralNudge) return;
+    const threshold = getDwellThresholdSeconds(type);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      dwellVisibleSecRef.current += 1;
+
+      if (dwellVisibleSecRef.current >= threshold && !triggeredPeripheralNudgeRef.current) {
+        triggeredPeripheralNudgeRef.current = true;
+        setShowPeripheralNudge(true);
+        emitPeripheralNudgeEvent('peripheral_nudge_triggered', {
+          emotion: type,
+          dwellVisibleSec: dwellVisibleSecRef.current,
+          sameEmotionConsumeCount,
+          reason: 'dwell',
+        });
+        emitPeripheralNudgeEvent('peripheral_nudge_shown', {
+          emotion: type,
+        });
+      }
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [type, suppressPeripheralNudge, sameEmotionConsumeCount]);
+
+  useEffect(() => {
+    const onNavigateEmotion = (event: Event) => {
+      const custom = event as CustomEvent<{ emotion?: string }>;
+      const nextEmotion = String(custom?.detail?.emotion || '').trim().toLowerCase();
+      setSelectedArticle(null);
+      setShowPeripheralNudge(false);
+      if (nextEmotion && nextEmotion !== type) {
+        setLocation(`/emotion/${nextEmotion}`);
+      }
+    };
+
+    window.addEventListener('huebrief:navigate-emotion', onNavigateEmotion as EventListener);
+    return () => window.removeEventListener('huebrief:navigate-emotion', onNavigateEmotion as EventListener);
+  }, [type, setLocation]);
 
   const handleRestrictedNavigation = (path: string) => {
     if (!user) {
@@ -326,6 +493,7 @@ export default function EmotionPage() {
     ? news
     : [...news, ...spectrumNews.filter((item) => !news.some((current) => current.id === item.id))]
   );
+  const peripheralRecommendations = type ? getPeripheralRecommendations(type) : [];
 
   const handleGenerateNews = async () => {
     if (!type) return;
@@ -867,10 +1035,135 @@ export default function EmotionPage() {
           setSelectedArticle(nextArticle);
         }}
         onClose={() => setSelectedArticle(null)}
+        onConsumeEvidence={handleArticleConsumeEvidence}
       />
+      {mounted && typeof document !== 'undefined' && type && showPeripheralNudge && !suppressPeripheralNudge ? (
+        createPortal(
+        <>
+          <div
+            className="fixed inset-0 pointer-events-none overflow-hidden"
+            style={{ zIndex: PERIPHERAL_NUDGE_Z_INDEX + 2 }}
+          >
+            {peripheralRecommendations.map((emotion, index) => {
+              const config = EMOTION_CONFIG.find((entry) => entry.type === emotion);
+              const color = config?.color || '#00abaf';
+              const side: 'left' | 'right' = emotion === 'spectrum' ? 'right' : 'left';
+              const seed = index;
+              const driftClass =
+                seed % 3 === 0
+                  ? 'peripheral-bubble-drift-a'
+                  : seed % 3 === 1
+                    ? 'peripheral-bubble-drift-b'
+                    : 'peripheral-bubble-drift-c';
+              const baseStyle: CSSProperties = {
+                bottom: `${-160 - (seed % 3) * 26}px`,
+                animationDelay: `${seed * 460}ms`,
+                animationDuration: `${13600 + (seed % 3) * 1000}ms`,
+              };
+              const sideStyle: CSSProperties = side === 'right'
+                ? { right: `clamp(-18px, calc((100vw - 1200px)/2 + ${24 + (index % 2) * 10}px), 94px)` }
+                : { left: `clamp(-18px, calc((100vw - 1200px)/2 + ${24 + (index % 2) * 10}px), 94px)` };
+              const bubbleStyle: CSSProperties = { ...baseStyle, ...sideStyle };
+
+              return (
+                <div
+                  key={`peripheral-sphere-${emotion}-${side}`}
+                  className={`absolute pointer-events-auto ${shouldReduceMotion ? '' : 'peripheral-bubble-rise'}`}
+                  style={bubbleStyle}
+                >
+                  <button
+                    type="button"
+                    title={`${emotion.toUpperCase()} 카테고리로 이동`}
+                    aria-label={`${emotion} 카테고리로 이동`}
+                    className={`relative h-16 w-16 rounded-full inline-flex items-center justify-center transition-transform hover:scale-[1.06] ${shouldReduceMotion ? '' : `peripheral-bubble-orb ${driftClass}`}`}
+                    style={{
+                      opacity: 0.8,
+                      background: `radial-gradient(circle at 28% 22%, rgba(255,255,255,0.98) 0%, ${color} 36%, ${color} 78%, rgba(8,12,18,0.06) 100%)`,
+                      boxShadow: `0 20px 36px ${color}66, inset 0 -10px 18px rgba(0,0,0,0.10), inset 0 8px 18px rgba(255,255,255,0.26)`,
+                    }}
+                    onClick={() => {
+                      emitPeripheralNudgeEvent('peripheral_nudge_click', { from: type, to: emotion, source: 'edge_sphere' });
+                      handleEmotionCategorySelect(emotion);
+                    }}
+                  >
+                    <span className="absolute left-[10px] top-[9px] h-5 w-8 rounded-full bg-white/58 blur-[1.2px]" aria-hidden="true" />
+                    <span className="absolute right-[10px] bottom-[11px] h-4 w-4 rounded-full bg-black/8 blur-[2px]" aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            className="fixed rounded-2xl border border-gray-200 bg-white/95 backdrop-blur-sm shadow-[0_8px_24px_rgba(35,34,33,0.14)] p-3 w-[min(320px,calc(100vw-150px))]"
+            style={{
+              zIndex: PERIPHERAL_NUDGE_Z_INDEX,
+              bottom: '1.5rem',
+              right: 'calc(1.5rem + 56px + 30px)',
+            }}
+          >
+            <p className="text-sm font-semibold text-gray-900">다른 색을 추천해 드릴까요?</p>
+            <p className="text-xs text-gray-600 mt-1">
+              같은 감정 뉴스를 오래 읽고 있어요. 다른 관점도 함께 보면 균형에 도움이 됩니다.
+            </p>
+            {expandPeripheralNudge ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {peripheralRecommendations.map((emotion) => (
+                  <button
+                    key={`peripheral-nudge-${emotion}`}
+                    type="button"
+                    className="h-7 px-2.5 rounded-full text-[11px] bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    onClick={() => {
+                      emitPeripheralNudgeEvent('peripheral_nudge_click', { from: type, to: emotion });
+                      handleEmotionCategorySelect(emotion);
+                    }}
+                  >
+                    {emotion.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className="mt-3 flex items-center gap-2 justify-end">
+              <button
+                type="button"
+                className="h-8 px-2.5 rounded-md text-xs bg-slate-100 text-slate-700 hover:bg-slate-200"
+                onClick={() => {
+                  setSuppressPeripheralNudge(true);
+                  setShowPeripheralNudge(false);
+                  emitPeripheralNudgeEvent('peripheral_nudge_suppressed', { emotion: type });
+                }}
+              >
+                오늘은 숨기기
+              </button>
+              <button
+                type="button"
+                className="h-8 px-2.5 rounded-md text-xs bg-[#00abaf] text-white hover:bg-[#01979a]"
+                onClick={() => {
+                  setExpandPeripheralNudge(false);
+                  setShowPeripheralNudge(false);
+                  emitPeripheralNudgeEvent('peripheral_nudge_click', {
+                    emotion: type,
+                    action: 'open_huebot',
+                  });
+                  emitPeripheralNudgeEvent('huebot_nudge_opened', {
+                    fromEmotion: type,
+                    recommendations: peripheralRecommendations,
+                  });
+                }}
+              >
+                다른 색 보러가기
+              </button>
+            </div>
+          </div>
+        </>,
+        document.body,
+        )
+      ) : null}
     </div>
   );
 }
+
+
 
 
 

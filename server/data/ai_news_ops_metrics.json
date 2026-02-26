@@ -1,23 +1,23 @@
 {
   "version": "emotion_mapping_v3_2026_02_23",
   "startedAt": "2026-02-23T04:09:38.858Z",
-  "updatedAt": "2026-02-23T09:25:43.787Z",
+  "updatedAt": "2026-02-24T10:53:54.141Z",
   "persistence": {
     "mode": "file",
     "hydrated": true
   },
   "totals": {
-    "requests": 15,
-    "success": 7,
-    "fallbackRecoveries": 8,
-    "parseFailures": 1,
-    "qualityBlocks": 0,
-    "modelEmpty": 7,
+    "requests": 45,
+    "success": 16,
+    "fallbackRecoveries": 19,
+    "parseFailures": 4,
+    "qualityBlocks": 4,
+    "modelEmpty": 11,
     "rssFallbacks": 0
   },
   "byEmotion": {
     "vibrance": {
-      "requests": 7,
+      "requests": 10,
       "success": 3,
       "fallbackRecoveries": 4,
       "parseFailures": 0,
@@ -35,11 +35,11 @@
       "rssFallbacks": 0
     },
     "clarity": {
-      "requests": 5,
-      "success": 2,
-      "fallbackRecoveries": 3,
-      "parseFailures": 1,
-      "qualityBlocks": 0,
+      "requests": 19,
+      "success": 7,
+      "fallbackRecoveries": 6,
+      "parseFailures": 3,
+      "qualityBlocks": 1,
       "modelEmpty": 2,
       "rssFallbacks": 0
     },
@@ -53,12 +53,12 @@
       "rssFallbacks": 0
     },
     "serenity": {
-      "requests": 2,
-      "success": 1,
-      "fallbackRecoveries": 1,
-      "parseFailures": 0,
-      "qualityBlocks": 0,
-      "modelEmpty": 1,
+      "requests": 15,
+      "success": 5,
+      "fallbackRecoveries": 9,
+      "parseFailures": 1,
+      "qualityBlocks": 3,
+      "modelEmpty": 5,
       "rssFallbacks": 0
     },
     "spectrum": {

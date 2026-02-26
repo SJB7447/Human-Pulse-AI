@@ -18,3 +18,8 @@
 - No overlap/clipping in key breakpoints.
 - Back-navigation restores prior context (screen position/list state).
 - Color contrast remains legible for depth/category badges.
+- Detail body typography must adapt to background intensity:
+  - low depth/bright bg: dark text
+  - mid/deep bg: light text
+- If contextual recommendation nudge is visible, avoid additional floating promo messages that compete for attention.
+- Insight submission UI should allow either narrative text or emotion-tag-only submission when policy permits.

@@ -402,6 +402,7 @@ export default function AdminPage() {
   const [reports, setReports] = useState<AdminReportPayload[]>([]);
   const [readerArticles, setReaderArticles] = useState<UserComposedArticleRecord[]>([]);
   const [expandedReaderArticleId, setExpandedReaderArticleId] = useState<string | null>(null);
+  const [selectedReaderHistoryArticle, setSelectedReaderHistoryArticle] = useState<UserComposedArticleRecord | null>(null);
   const [exportHistory, setExportHistory] = useState<ExportJob[]>([]);
   const [exportSchedule, setExportSchedule] = useState<ExportSchedule>({
     enabled: false,
@@ -1449,6 +1450,24 @@ export default function AdminPage() {
     }
   };
 
+  const handleDeleteReaderHistory = async (article: UserComposedArticleRecord) => {
+    if (!confirm('이 처리 이력을 삭제하시겠습니까? 삭제 후 복구할 수 없습니다.')) return;
+    try {
+      await DBService.deleteAdminReaderArticle(article.id);
+      setReaderArticles((prev) => prev.filter((row) => row.id !== article.id));
+      setSelectedReaderHistoryArticle((prev) => (prev?.id === article.id ? null : prev));
+      toast({
+        title: '처리 이력 삭제 완료',
+      });
+    } catch (error: any) {
+      toast({
+        title: '처리 이력 삭제 실패',
+        description: error?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const topStats = stats?.stats || {};
   const draftOpsStats = stats?.aiDraftOps?.totals || {};
   const draftModeOps = stats?.aiDraftOps?.byMode?.draft || {};
@@ -2317,7 +2336,7 @@ export default function AdminPage() {
                   <button
                     type="button"
                     className="text-sm font-semibold text-gray-900 line-clamp-1 text-left hover:underline"
-                    onClick={() => setExpandedReaderArticleId((prev) => (prev === item.id ? null : item.id))}
+                    onClick={() => setSelectedReaderHistoryArticle(item)}
                   >
                     {item.generatedTitle}
                   </button>
@@ -2406,11 +2425,31 @@ export default function AdminPage() {
                   {item.submissionStatus === 'approved' ? '승인' : '반려'}
                 </span>
               </div>
+              <button
+                type="button"
+                className="w-full text-left text-sm text-gray-700 line-clamp-2 hover:text-gray-900"
+                onClick={() => setSelectedReaderHistoryArticle(item)}
+              >
+                {item.generatedSummary}
+              </button>
               {item.moderationMemo ? (
                 <p className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-md px-2 py-1">
                   메모: {item.moderationMemo}
                 </p>
               ) : null}
+              <div className="flex items-center justify-end">
+                <Button size="sm" variant="outline" onClick={() => setSelectedReaderHistoryArticle(item)}>
+                  기사 전체 보기
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handleDeleteReaderHistory(item)}
+                  className="ml-2 text-rose-700 border-rose-200 hover:bg-rose-50"
+                >
+                  삭제
+                </Button>
+              </div>
             </div>
           ))}
         </div>
@@ -2824,6 +2863,64 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={Boolean(selectedReaderHistoryArticle)} onOpenChange={(open) => !open && setSelectedReaderHistoryArticle(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden">
+          {selectedReaderHistoryArticle ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>독자 기사 처리 이력 상세</DialogTitle>
+                <DialogDescription>최근 7일 이력 기사의 전체 내용을 확인합니다.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 overflow-y-auto pr-1 max-h-[calc(88vh-8rem)]">
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                  <p className="text-[11px] text-gray-500">제목</p>
+                  <p className="text-sm font-semibold text-gray-900 mt-1">{selectedReaderHistoryArticle.generatedTitle}</p>
+                  <p className="text-[11px] text-gray-500 mt-2">
+                    작성자: {selectedReaderHistoryArticle.userId} · 처리시각: {new Date(
+                      selectedReaderHistoryArticle.reviewedAt || selectedReaderHistoryArticle.updatedAt || selectedReaderHistoryArticle.createdAt,
+                    ).toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 mb-1">요약</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{selectedReaderHistoryArticle.generatedSummary}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 mb-1">본문</p>
+                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{selectedReaderHistoryArticle.generatedContent}</p>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-1">
+                  <p className="text-xs text-gray-600">원문 기사: {selectedReaderHistoryArticle.sourceTitle}</p>
+                  <p className="text-xs text-gray-600">감정/카테고리: {selectedReaderHistoryArticle.sourceEmotion} / {selectedReaderHistoryArticle.sourceCategory || 'General'}</p>
+                  <p className="text-xs text-gray-600">
+                    처리 결과: {selectedReaderHistoryArticle.submissionStatus === 'approved' ? '승인' : '반려'}
+                  </p>
+                  {selectedReaderHistoryArticle.moderationMemo ? (
+                    <p className="text-xs text-gray-600">메모: {selectedReaderHistoryArticle.moderationMemo}</p>
+                  ) : null}
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-700 mb-1">독자 의견</p>
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{selectedReaderHistoryArticle.userOpinion}</p>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleDeleteReaderHistory(selectedReaderHistoryArticle)}
+                    className="text-rose-700 border-rose-200 hover:bg-rose-50"
+                  >
+                    이 이력 삭제
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(selectedArticle)} onOpenChange={(open) => !open && setSelectedArticle(null)}>
         <DialogContent className="max-w-2xl max-h-[88vh] overflow-hidden overflow-x-hidden">

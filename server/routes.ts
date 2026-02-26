@@ -3039,7 +3039,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     userOpinion: string;
     articleId?: string | null;
     createdAt: string;
+    updatedAt?: string;
   }> = [];
+  const communityCommentsFallback: Array<{
+    id: string;
+    postId: string;
+    userId: string;
+    username: string;
+    content: string;
+    createdAt: string;
+    updatedAt: string;
+  }> = [];
+  const communityCommentLikes = new Map<string, Set<string>>();
+  const communityCommentRate = new Map<string, { windowStartedAt: number; count: number; lastPostedAt: number }>();
 
   // Demo-only OTP store (no SMS provider)
   const phoneOtpFallback = new Map<string, {
@@ -3371,9 +3383,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           id: row.id,
           title: "Community Story",
           emotion: row.emotion,
-          excerpt: row.userOpinion,
+          content: row.userOpinion,
+          excerpt: row.userOpinion.slice(0, 300),
           author: row.username,
+          ownerId: row.userId,
+          sourceType: "community_post",
           createdAt: row.createdAt,
+          updatedAt: row.updatedAt || row.createdAt,
         }));
 
       const approvedReaderArticles = (await storage.getReaderComposedArticles("approved"))
@@ -3385,7 +3401,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           content: String(row.generatedContent || ""),
           excerpt: String(row.generatedSummary || row.userOpinion || "").slice(0, 300),
           author: String(row.userId || "reader"),
+          ownerId: String(row.userId || ""),
+          sourceType: "reader_article",
           createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
+          updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : (row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString()),
         }));
 
       const merged = [...approvedReaderArticles, ...feedFromFallback]
@@ -3415,6 +3434,411 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     };
     if (isPublic) communityFallback.push(row);
     res.status(201).json({ id: row.id, createdAt: row.createdAt });
+  });
+
+  const isCommunityPostExists = async (postId: string): Promise<boolean> => {
+    if (communityFallback.some((row) => row.id === postId)) return true;
+    const approved = await storage.getReaderComposedArticles("approved");
+    return approved.some((row) => String((row as any)?.id || "").trim() === postId);
+  };
+
+  const mapCommunityCommentForViewer = (
+    row: {
+      id: string;
+      postId: string;
+      userId: string;
+      username: string;
+      content: string;
+      createdAt: string;
+      updatedAt: string;
+    },
+    viewerUserId: string,
+  ) => {
+    const likedUsers = communityCommentLikes.get(row.id) || new Set<string>();
+    const normalizedViewer = String(viewerUserId || "").trim();
+    return {
+      ...row,
+      likeCount: likedUsers.size,
+      likedByMe: normalizedViewer ? likedUsers.has(normalizedViewer) : false,
+    };
+  };
+
+  type CommentModerationDecision = {
+    status: "allow" | "block" | "review";
+    labels: string[];
+    reason: string;
+    confidence: number;
+    source: "rule" | "ai" | "hybrid";
+  };
+
+  const COMMENT_BLOCK_PATTERNS: Array<{ label: string; pattern: RegExp; reason: string }> = [
+    { label: "profanity", pattern: /(씨발|시발|병신|개새끼|좆|꺼져|fuck|shit|bitch)/i, reason: "욕설/모욕 표현이 포함되어 있습니다." },
+    { label: "violent_threat", pattern: /(죽여|죽인다|죽어라|찢어버리|폭탄|테러|살해|kill you|die\b)/i, reason: "위협/폭력성 표현이 포함되어 있습니다." },
+    { label: "hate", pattern: /(혐오|멸종해야|인종차별|여혐|남혐|장애혐오|nazi|slur)/i, reason: "혐오/차별 표현이 포함되어 있습니다." },
+  ];
+  const COMMENT_REVIEW_PATTERNS: Array<{ label: string; pattern: RegExp; reason: string }> = [
+    { label: "harassment", pattern: /(멍청|한심|패배자|역겹|쓰레기|정신병|루저)/i, reason: "강한 인신공격성 표현이 감지되었습니다." },
+    { label: "spam", pattern: /(https?:\/\/\S+.*https?:\/\/\S+|무료\s*수익|고수익|코인방|텔레그램|카톡\s*문의|광고)/i, reason: "광고/스팸성 문구가 감지되었습니다." },
+  ];
+
+  const evaluateCommentByRules = (raw: string): CommentModerationDecision => {
+    const text = String(raw || "").trim().replace(/\s+/g, " ");
+    if (!text) {
+      return { status: "block", labels: ["empty"], reason: "빈 댓글은 등록할 수 없습니다.", confidence: 1, source: "rule" };
+    }
+    for (const row of COMMENT_BLOCK_PATTERNS) {
+      if (row.pattern.test(text)) {
+        return { status: "block", labels: [row.label], reason: row.reason, confidence: 0.98, source: "rule" };
+      }
+    }
+    for (const row of COMMENT_REVIEW_PATTERNS) {
+      if (row.pattern.test(text)) {
+        return { status: "review", labels: [row.label], reason: row.reason, confidence: 0.78, source: "rule" };
+      }
+    }
+    return { status: "allow", labels: [], reason: "rule_pass", confidence: 0.91, source: "rule" };
+  };
+
+  const evaluateCommentByAi = async (raw: string): Promise<CommentModerationDecision | null> => {
+    const text = String(raw || "").trim();
+    if (!text) return null;
+    if (!String(process.env.GEMINI_API_KEY || "").trim()) return null;
+
+    const prompt = [
+      "You are a moderation classifier for Korean/English community comments.",
+      "Return STRICT JSON only.",
+      "Schema:",
+      '{"status":"allow|review|block","labels":["profanity|harassment|hate|violent_threat|sexual|privacy|spam|other"],"reason":"string<=120","confidence":0.0}',
+      "Policy:",
+      "- block: explicit profanity, threats, hate speech, severe abuse, explicit sexual/illegal harm.",
+      "- review: borderline insult, harassment tone, suspicious spam.",
+      "- allow: neutral/constructive text.",
+      `comment: """${text.slice(0, 1200)}"""`,
+    ].join("\n");
+
+    const aiRaw = await Promise.race<string | null>([
+      generateGeminiText(prompt),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500)),
+    ]);
+    if (!aiRaw) return null;
+
+    try {
+      const matchedJson = String(aiRaw).match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(matchedJson ? matchedJson[0] : String(aiRaw));
+      const statusRaw = String(parsed?.status || "").trim().toLowerCase();
+      const status = statusRaw === "block" ? "block" : statusRaw === "review" ? "review" : "allow";
+      const labels = Array.isArray(parsed?.labels)
+        ? parsed.labels.map((v: unknown) => String(v || "").trim()).filter(Boolean).slice(0, 6)
+        : [];
+      const reason = String(parsed?.reason || "ai_classifier").trim().slice(0, 120) || "ai_classifier";
+      const confidence = Math.max(0, Math.min(Number(parsed?.confidence || 0.75), 1));
+      return { status, labels, reason, confidence, source: "ai" };
+    } catch {
+      return null;
+    }
+  };
+
+  const moderateCommunityComment = async (raw: string): Promise<CommentModerationDecision> => {
+    const ruleResult = evaluateCommentByRules(raw);
+    if (ruleResult.status === "block") return ruleResult;
+
+    const aiResult = await evaluateCommentByAi(raw);
+    if (!aiResult) return ruleResult;
+
+    if (aiResult.status === "block") {
+      // Guard against false positives: AI-only block is downgraded to review.
+      return {
+        status: "review",
+        labels: Array.from(new Set([...(ruleResult.labels || []), ...(aiResult.labels || [])])).slice(0, 8),
+        reason: aiResult.reason || "ai_review_required",
+        confidence: aiResult.confidence,
+        source: ruleResult.status === "allow" ? "ai" : "hybrid",
+      };
+    }
+    if (ruleResult.status === "review" || aiResult.status === "review") {
+      return {
+        status: "review",
+        labels: Array.from(new Set([...(ruleResult.labels || []), ...(aiResult.labels || [])])).slice(0, 8),
+        reason: ruleResult.status === "review" ? ruleResult.reason : aiResult.reason,
+        confidence: Math.max(ruleResult.confidence, aiResult.confidence),
+        source: "hybrid",
+      };
+    }
+    return ruleResult;
+  };
+
+  app.get("/api/community/:id/comments", async (req, res) => {
+    try {
+      const postId = String(req.params.id || "").trim();
+      if (!postId) return res.status(400).json({ error: "postId is required." });
+      const limit = Math.max(1, Math.min(Number(req.query.limit || 80), 200));
+      const viewerUserId = String(req.query.userId || "").trim();
+      const rows = communityCommentsFallback
+        .filter((row) => row.postId === postId)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        .slice(-limit)
+        .map((row) => mapCommunityCommentForViewer(row, viewerUserId));
+      return res.json(rows);
+    } catch (error) {
+      console.error("[API] /api/community/:id/comments failed:", error);
+      return res.status(500).json({ error: "Failed to load comments." });
+    }
+  });
+
+  app.post("/api/community/:id/comments", async (req, res) => {
+    try {
+      const postId = String(req.params.id || "").trim();
+      if (!postId) return res.status(400).json({ error: "postId is required." });
+      const exists = await isCommunityPostExists(postId);
+      if (!exists) return res.status(404).json({ error: "Community post not found." });
+
+      const userId = String(req.body?.userId || "").trim();
+      const username = String(req.body?.username || "user").trim().slice(0, 120);
+      const content = String(req.body?.content || "").trim().slice(0, 800);
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+      if (!content) return res.status(400).json({ error: "comment content is required." });
+      const moderation = await moderateCommunityComment(content);
+      if (moderation.status === "block") {
+        return res.status(400).json({
+          error: "댓글이 안전성 정책에 의해 보류/차단되었습니다. 표현을 완화해 다시 시도해 주세요.",
+          code: "COMMENT_SAFETY_BLOCKED",
+          moderation,
+        });
+      }
+
+      const now = Date.now();
+      const key = `${userId}:${postId}`;
+      const current = communityCommentRate.get(key) || { windowStartedAt: now, count: 0, lastPostedAt: 0 };
+      const windowMs = 60 * 1000;
+      const minIntervalMs = 4000;
+      const maxPerWindow = 6;
+
+      if (now - current.lastPostedAt < minIntervalMs) {
+        return res.status(429).json({ error: "댓글 작성이 너무 빠릅니다. 잠시 후 다시 시도해 주세요." });
+      }
+      if (now - current.windowStartedAt > windowMs) {
+        current.windowStartedAt = now;
+        current.count = 0;
+      }
+      if (current.count >= maxPerWindow) {
+        return res.status(429).json({ error: "분당 댓글 작성 한도를 초과했습니다." });
+      }
+      current.count += 1;
+      current.lastPostedAt = now;
+      communityCommentRate.set(key, current);
+
+      const row = {
+        id: randomUUID(),
+        postId,
+        userId,
+        username: username || "user",
+        content,
+        createdAt: new Date(now).toISOString(),
+        updatedAt: new Date(now).toISOString(),
+      };
+      communityCommentsFallback.push(row);
+      return res.status(201).json(mapCommunityCommentForViewer(row, userId));
+    } catch (error) {
+      console.error("[API] /api/community/:id/comments create failed:", error);
+      return res.status(500).json({ error: "Failed to create comment." });
+    }
+  });
+
+  app.put("/api/community/:id/comments/:commentId", async (req, res) => {
+    try {
+      const postId = String(req.params.id || "").trim();
+      const commentId = String(req.params.commentId || "").trim();
+      if (!postId || !commentId) return res.status(400).json({ error: "postId and commentId are required." });
+
+      const userId = String(req.body?.userId || "").trim();
+      const actorRoleHeader = req.headers?.["x-actor-role"];
+      const actorRole = typeof actorRoleHeader === "string" ? actorRoleHeader.trim().toLowerCase() : "";
+      const isAdmin = actorRole === "admin";
+      if (!userId && !isAdmin) return res.status(400).json({ error: "userId is required for non-admin update." });
+
+      const content = String(req.body?.content || "").trim().slice(0, 800);
+      if (!content) return res.status(400).json({ error: "comment content is required." });
+      const moderation = await moderateCommunityComment(content);
+      if (moderation.status === "block") {
+        return res.status(400).json({
+          error: "댓글이 안전성 정책에 의해 보류/차단되었습니다. 표현을 완화해 다시 시도해 주세요.",
+          code: "COMMENT_SAFETY_BLOCKED",
+          moderation,
+        });
+      }
+
+      const index = communityCommentsFallback.findIndex((row) => row.postId === postId && row.id === commentId);
+      if (index < 0) return res.status(404).json({ error: "Comment not found." });
+
+      const target = communityCommentsFallback[index];
+      const isOwner = target.userId === userId;
+      if (!isOwner && !isAdmin) return res.status(403).json({ error: "본인 댓글만 수정할 수 있습니다." });
+
+      communityCommentsFallback[index] = {
+        ...target,
+        content,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (isAdmin && !isOwner) {
+        await writeAdminActionLog(req, "community_comment_override_edit", commentId, `post=${postId},owner=${target.userId}`, "community_comment");
+      }
+
+      return res.json(mapCommunityCommentForViewer(communityCommentsFallback[index], userId));
+    } catch (error) {
+      console.error("[API] /api/community/:id/comments/:commentId update failed:", error);
+      return res.status(500).json({ error: "Failed to update comment." });
+    }
+  });
+
+  app.delete("/api/community/:id/comments/:commentId", async (req, res) => {
+    try {
+      const postId = String(req.params.id || "").trim();
+      const commentId = String(req.params.commentId || "").trim();
+      if (!postId || !commentId) return res.status(400).json({ error: "postId and commentId are required." });
+
+      const userId = String(req.body?.userId || req.query.userId || "").trim();
+      const actorRoleHeader = req.headers?.["x-actor-role"];
+      const actorRole = typeof actorRoleHeader === "string" ? actorRoleHeader.trim().toLowerCase() : "";
+      const isAdmin = actorRole === "admin";
+      if (!userId && !isAdmin) return res.status(400).json({ error: "userId is required for non-admin delete." });
+
+      const index = communityCommentsFallback.findIndex((row) => row.postId === postId && row.id === commentId);
+      if (index < 0) return res.status(404).json({ error: "Comment not found." });
+      const target = communityCommentsFallback[index];
+      const isOwner = target.userId === userId;
+      if (!isOwner && !isAdmin) return res.status(403).json({ error: "본인 댓글만 삭제할 수 있습니다." });
+
+      communityCommentsFallback.splice(index, 1);
+      communityCommentLikes.delete(commentId);
+
+      if (isAdmin && !isOwner) {
+        await writeAdminActionLog(req, "community_comment_override_delete", commentId, `post=${postId},owner=${target.userId}`, "community_comment");
+      }
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("[API] /api/community/:id/comments/:commentId delete failed:", error);
+      return res.status(500).json({ error: "Failed to delete comment." });
+    }
+  });
+
+  app.post("/api/community/:id/comments/:commentId/like", async (req, res) => {
+    try {
+      const postId = String(req.params.id || "").trim();
+      const commentId = String(req.params.commentId || "").trim();
+      if (!postId || !commentId) return res.status(400).json({ error: "postId and commentId are required." });
+
+      const userId = String(req.body?.userId || req.query.userId || "").trim();
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+
+      const target = communityCommentsFallback.find((row) => row.postId === postId && row.id === commentId);
+      if (!target) return res.status(404).json({ error: "Comment not found." });
+
+      const current = communityCommentLikes.get(commentId) || new Set<string>();
+      if (current.has(userId)) {
+        current.delete(userId);
+      } else {
+        current.add(userId);
+      }
+      communityCommentLikes.set(commentId, current);
+
+      return res.json(mapCommunityCommentForViewer(target, userId));
+    } catch (error) {
+      console.error("[API] /api/community/:id/comments/:commentId/like failed:", error);
+      return res.status(500).json({ error: "Failed to toggle comment like." });
+    }
+  });
+
+  app.put("/api/community/:id", async (req, res) => {
+    try {
+      const communityId = String(req.params.id || "").trim();
+      if (!communityId) return res.status(400).json({ error: "community id is required." });
+
+      const actor = resolveActor(req);
+      const requesterUserId = String(req.body?.userId || "").trim();
+      const isAdmin = String(actor.actorRole || "").trim().toLowerCase() === "admin";
+      if (!requesterUserId && !isAdmin) {
+        return res.status(400).json({ error: "userId is required for non-admin update." });
+      }
+
+      const nextSummary = String(req.body?.summary ?? "").trim().slice(0, 1000);
+      const nextContent = String(req.body?.content ?? "").trim().slice(0, 24000);
+      if (!nextSummary && !nextContent) {
+        return res.status(400).json({ error: "summary or content is required." });
+      }
+
+      const fallbackIndex = communityFallback.findIndex((row) => row.id === communityId);
+      if (fallbackIndex >= 0) {
+        const current = communityFallback[fallbackIndex];
+        const isOwner = String(current.userId || "").trim() === requesterUserId;
+        if (!isOwner && !isAdmin) {
+          return res.status(403).json({ error: "본인 글만 수정할 수 있습니다. (관리자 override 허용)" });
+        }
+
+        const patchedOpinion = (nextContent || nextSummary).trim();
+        communityFallback[fallbackIndex] = {
+          ...current,
+          userOpinion: patchedOpinion,
+          updatedAt: new Date().toISOString(),
+        };
+        return res.json({
+          id: communityFallback[fallbackIndex].id,
+          title: "Community Story",
+          emotion: communityFallback[fallbackIndex].emotion,
+          content: communityFallback[fallbackIndex].userOpinion,
+          excerpt: communityFallback[fallbackIndex].userOpinion.slice(0, 300),
+          author: communityFallback[fallbackIndex].username,
+          ownerId: communityFallback[fallbackIndex].userId,
+          sourceType: "community_post",
+          createdAt: communityFallback[fallbackIndex].createdAt,
+          updatedAt: communityFallback[fallbackIndex].updatedAt || communityFallback[fallbackIndex].createdAt,
+        });
+      }
+
+      const approvedRows = await storage.getReaderComposedArticles("approved");
+      const target = approvedRows.find((row) => String((row as any)?.id || "").trim() === communityId);
+      if (!target) return res.status(404).json({ error: "Community article not found." });
+
+      const ownerId = String((target as any)?.userId || "").trim();
+      const isOwner = ownerId && ownerId === requesterUserId;
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ error: "본인 글만 수정할 수 있습니다. (관리자 override 허용)" });
+      }
+
+      const updates: Record<string, unknown> = {};
+      if (nextSummary) updates.generatedSummary = nextSummary;
+      if (nextContent) updates.generatedContent = nextContent;
+      const updated = await storage.updateUserComposedArticle(ownerId, communityId, updates as any);
+      if (!updated) return res.status(404).json({ error: "Community article not found." });
+
+      if (isAdmin && !isOwner) {
+        await writeAdminActionLog(
+          req,
+          "community_override_edit",
+          communityId,
+          `owner=${ownerId},summary=${nextSummary.length},content=${nextContent.length}`,
+          "community",
+        );
+      }
+
+      return res.json({
+        id: String((updated as any).id || ""),
+        title: String((updated as any).generatedTitle || "Reader Article"),
+        emotion: toEmotion((updated as any).sourceEmotion),
+        category: String((updated as any).sourceCategory || "General"),
+        content: String((updated as any).generatedContent || ""),
+        excerpt: String((updated as any).generatedSummary || (updated as any).userOpinion || "").slice(0, 300),
+        author: String((updated as any).userId || "reader"),
+        ownerId: String((updated as any).userId || ""),
+        sourceType: "reader_article",
+        createdAt: (updated as any).createdAt ? new Date((updated as any).createdAt).toISOString() : new Date().toISOString(),
+        updatedAt: (updated as any).updatedAt ? new Date((updated as any).updatedAt).toISOString() : ((updated as any).createdAt ? new Date((updated as any).createdAt).toISOString() : new Date().toISOString()),
+      });
+    } catch (error) {
+      console.error("[API] /api/community/:id update failed:", error);
+      return res.status(500).json({ error: "Failed to update community post." });
+    }
   });
 
   app.post("/api/ai/compose-opinion-article", async (req, res) => {
@@ -3755,6 +4179,36 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (error) {
       console.error("[API] /api/admin/reader-articles/:id/decision failed:", error);
       return res.status(500).json({ error: "Failed to update reader article decision." });
+    }
+  });
+
+  app.delete("/api/admin/reader-articles/:id", async (req, res) => {
+    try {
+      const articleId = String(req.params.id || "").trim();
+      if (!articleId) return res.status(400).json({ error: "articleId is required." });
+
+      const allRows = await storage.getReaderComposedArticles();
+      const target = allRows.find((row) => String(row.id) === articleId);
+      if (!target) return res.status(404).json({ error: "Reader article not found." });
+      if (String((target as any).submissionStatus || "pending") === "pending") {
+        return res.status(400).json({ error: "Pending article cannot be deleted from history." });
+      }
+
+      const deleted = await storage.deleteReaderComposedArticle(articleId);
+      if (!deleted) return res.status(404).json({ error: "Reader article not found." });
+
+      await writeAdminActionLog(
+        req,
+        "reader_article_delete",
+        articleId,
+        `status=${String((target as any).submissionStatus || "")},reviewedBy=${String((target as any).reviewedBy || "")}`,
+        "reader_article",
+      );
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("[API] /api/admin/reader-articles/:id delete failed:", error);
+      return res.status(500).json({ error: "Failed to delete reader article." });
     }
   });
 

@@ -65,6 +65,18 @@ export type UserComposedArticleRecord = {
     updatedAt: string;
 };
 
+export type CommunityCommentRecord = {
+    id: string;
+    postId: string;
+    userId: string;
+    username: string;
+    content: string;
+    createdAt: string;
+    updatedAt: string;
+    likeCount: number;
+    likedByMe: boolean;
+};
+
 const SOCIAL_CONNECTIONS_STORAGE_PREFIX = 'huebrief.socialConnections.v1';
 const USER_INSIGHTS_STORAGE_PREFIX = 'huebrief.userInsights.v1';
 const USER_COMPOSED_ARTICLES_STORAGE_PREFIX = 'huebrief.userComposedArticles.v1';
@@ -447,6 +459,15 @@ export const DBService = {
         });
         if (!response.ok) throw await createApiError(response, 'Failed to update reader article decision');
         return parseComposedRows(JSON.stringify([await response.json()]))[0];
+    },
+
+    async deleteAdminReaderArticle(articleId: string): Promise<boolean> {
+        const response = await fetch(`/api/admin/reader-articles/${encodeURIComponent(articleId)}`, {
+            method: 'DELETE',
+            headers: buildActorHeaders(),
+        });
+        if (!response.ok) throw await createApiError(response, 'Failed to delete reader article');
+        return true;
     },
 
     async updateAdminReportStatus(
@@ -960,6 +981,91 @@ export const DBService = {
         });
 
         if (!response.ok) throw await createApiError(response, '커뮤니티 글 등록에 실패했습니다.');
+        return await response.json();
+    },
+
+    async updateCommunityPost(
+        postId: string,
+        payload: { summary?: string; content?: string },
+    ) {
+        const auth = await this.getAuthContext();
+        if (!auth) throw new Error('로그인이 필요합니다.');
+
+        const response = await fetch(`/api/community/${encodeURIComponent(postId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...buildActorHeaders() },
+            body: JSON.stringify({
+                userId: auth.userId,
+                summary: typeof payload.summary === 'string' ? payload.summary : undefined,
+                content: typeof payload.content === 'string' ? payload.content : undefined,
+            }),
+        });
+
+        if (!response.ok) throw await createApiError(response, '커뮤니티 글 수정에 실패했습니다.');
+        return await response.json();
+    },
+
+    async getCommunityComments(postId: string, limit = 80): Promise<CommunityCommentRecord[]> {
+        const auth = await this.getAuthContext().catch(() => null);
+        const userQuery = auth?.userId ? `&userId=${encodeURIComponent(auth.userId)}` : '';
+        const response = await fetch(`/api/community/${encodeURIComponent(postId)}/comments?limit=${limit}${userQuery}`);
+        if (!response.ok) throw await createApiError(response, '커뮤니티 댓글을 불러오지 못했습니다.');
+        return await response.json();
+    },
+
+    async createCommunityComment(postId: string, content: string): Promise<CommunityCommentRecord> {
+        const auth = await this.getAuthContext();
+        if (!auth) throw new Error('로그인이 필요합니다.');
+        const response = await fetch(`/api/community/${encodeURIComponent(postId)}/comments`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...buildActorHeaders() },
+            body: JSON.stringify({
+                userId: auth.userId,
+                username: auth.username,
+                content,
+            }),
+        });
+        if (!response.ok) throw await createApiError(response, '커뮤니티 댓글 등록에 실패했습니다.');
+        return await response.json();
+    },
+
+    async updateCommunityComment(postId: string, commentId: string, content: string): Promise<CommunityCommentRecord> {
+        const auth = await this.getAuthContext();
+        if (!auth) throw new Error('로그인이 필요합니다.');
+        const response = await fetch(`/api/community/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...buildActorHeaders() },
+            body: JSON.stringify({
+                userId: auth.userId,
+                content,
+            }),
+        });
+        if (!response.ok) throw await createApiError(response, '커뮤니티 댓글 수정에 실패했습니다.');
+        return await response.json();
+    },
+
+    async deleteCommunityComment(postId: string, commentId: string): Promise<boolean> {
+        const auth = await this.getAuthContext();
+        if (!auth) throw new Error('로그인이 필요합니다.');
+        const response = await fetch(`/api/community/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}?userId=${encodeURIComponent(auth.userId)}`, {
+            method: 'DELETE',
+            headers: buildActorHeaders(),
+        });
+        if (!response.ok) throw await createApiError(response, '커뮤니티 댓글 삭제에 실패했습니다.');
+        return true;
+    },
+
+    async toggleCommunityCommentLike(postId: string, commentId: string): Promise<CommunityCommentRecord> {
+        const auth = await this.getAuthContext();
+        if (!auth) throw new Error('로그인이 필요합니다.');
+        const response = await fetch(`/api/community/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}/like`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...buildActorHeaders() },
+            body: JSON.stringify({
+                userId: auth.userId,
+            }),
+        });
+        if (!response.ok) throw await createApiError(response, '댓글 공감 처리에 실패했습니다.');
         return await response.json();
     },
 

@@ -89,6 +89,7 @@ export interface IStorage {
   resubmitUserComposedArticle(userId: string, articleId: string): Promise<UserComposedArticle | null>;
   getReaderComposedArticles(status?: "pending" | "approved" | "rejected"): Promise<UserComposedArticle[]>;
   updateReaderComposedArticleDecision(articleId: string, input: ReaderArticleDecisionInput): Promise<UserComposedArticle | null>;
+  deleteReaderComposedArticle(articleId: string): Promise<boolean>;
 }
 
 const REVIEW_SLA_TARGET_HOURS = 24;
@@ -630,6 +631,10 @@ export class MemStorage implements IStorage {
     } as UserComposedArticle;
     this.userComposedArticles.set(String(articleId), next);
     return next;
+  }
+
+  async deleteReaderComposedArticle(articleId: string): Promise<boolean> {
+    return this.userComposedArticles.delete(String(articleId || "").trim());
   }
 }
 
@@ -1725,6 +1730,30 @@ export class SupabaseStorage implements IStorage {
     } as UserComposedArticle;
     this.fallbackUserComposedArticles.set(safeArticleId, next);
     return next;
+  }
+
+  async deleteReaderComposedArticle(articleId: string): Promise<boolean> {
+    const safeArticleId = String(articleId || "").trim();
+    const { data, error } = await supabase
+      .from("user_composed_articles")
+      .delete()
+      .eq("id", safeArticleId)
+      .select("id")
+      .maybeSingle();
+
+    if (!error) {
+      const deleted = Boolean(data?.id);
+      if (deleted) this.fallbackUserComposedArticles.delete(safeArticleId);
+      return deleted;
+    }
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      throw error;
+    }
+
+    const fallback = this.fallbackUserComposedArticles.get(safeArticleId);
+    if (!fallback) return false;
+    this.fallbackUserComposedArticles.delete(safeArticleId);
+    return true;
   }
 }
 

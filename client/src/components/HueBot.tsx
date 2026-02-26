@@ -4,12 +4,14 @@ import { X, Send, Sparkles, Heart, ArrowRight } from 'lucide-react';
 import { GeminiService } from '@/services/gemini';
 import { getSupabase } from '@/services/supabaseClient';
 import { useLocation } from 'wouter';
+import { EMOTION_CONFIG } from '@/lib/store';
 
 interface ChatMessage {
   id: string;
   type: 'bot' | 'user';
   text: string;
   recommendation?: string;
+  quickRecommendations?: string[];
   warning?: string;
   timestamp: Date;
 }
@@ -40,6 +42,7 @@ export function HueBot() {
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
+  const [isPeripheralNudgeVisible, setIsPeripheralNudgeVisible] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatPanelRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
@@ -48,6 +51,67 @@ export function HueBot() {
   const [clientId, setClientId] = useState<string>('hue-bot-anon');
   const [cooldownUntil, setCooldownUntil] = useState<number>(0);
   const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
+
+  const getEmotionVisual = (emotion: string) => {
+    const normalized = String(emotion || '').trim().toLowerCase();
+    const config = EMOTION_CONFIG.find((entry) => entry.type === normalized);
+    return {
+      key: normalized,
+      label: config?.labelKo || normalized.toUpperCase(),
+      color: config?.color || '#00abaf',
+    };
+  };
+
+  useEffect(() => {
+    const onPeripheralNudgeEvent = (event: Event) => {
+      const custom = event as CustomEvent<{
+        event?: string;
+        payload?: {
+          fromEmotion?: string;
+          recommendations?: string[];
+        };
+      }>;
+      const evt = String(custom?.detail?.event || '');
+      if (evt === 'peripheral_nudge_shown') {
+        setIsPeripheralNudgeVisible(true);
+        setShowNotification(false);
+        return;
+      }
+
+      if (evt === 'peripheral_nudge_suppressed' || evt === 'peripheral_nudge_click' || evt === 'huebot_nudge_opened') {
+        setIsPeripheralNudgeVisible(false);
+      }
+
+      if (evt !== 'huebot_nudge_opened') return;
+
+      const fromEmotion = String(custom?.detail?.payload?.fromEmotion || '').trim();
+      const recommendations = Array.isArray(custom?.detail?.payload?.recommendations)
+        ? custom.detail.payload?.recommendations || []
+        : [];
+      const firstRecommendation = String(recommendations?.[0] || '').trim().toLowerCase();
+
+      const botText = fromEmotion
+        ? `지금 ${fromEmotion.toUpperCase()} 카테고리에 오래 머무르셨어요.\n균형을 위해 다른 감정 뉴스도 함께 볼까요?`
+        : '지금 뉴스 소비 흐름을 기준으로 다른 감정 뉴스도 함께 추천해드릴게요.';
+
+      setIsOpen(true);
+      setShowNotification(false);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-nudge`,
+          type: 'bot',
+          text: botText,
+          recommendation: firstRecommendation || undefined,
+          quickRecommendations: recommendations.slice(0, 3).map((v) => String(v || '').trim().toLowerCase()).filter(Boolean),
+          timestamp: new Date(),
+        },
+      ]);
+    };
+
+    window.addEventListener('huebrief:peripheral-nudge', onPeripheralNudgeEvent as EventListener);
+    return () => window.removeEventListener('huebrief:peripheral-nudge', onPeripheralNudgeEvent as EventListener);
+  }, []);
 
   useEffect(() => {
     const key = 'hue_bot_client_id';
@@ -76,14 +140,14 @@ export function HueBot() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!isOpen && Math.random() > 0.7) {
+      if (!isOpen && !isPeripheralNudgeVisible && Math.random() > 0.7) {
         setShowNotification(true);
         setTimeout(() => setShowNotification(false), 5000);
       }
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [isOpen]);
+  }, [isOpen, isPeripheralNudgeVisible]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -214,9 +278,9 @@ export function HueBot() {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-[100]" data-testid="hue-bot-container">
+    <div className="fixed bottom-6 right-6 z-[1100]" data-testid="hue-bot-container">
       <AnimatePresence>
-        {showNotification && !isOpen && (
+        {showNotification && !isOpen && !isPeripheralNudgeVisible && (
           <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -310,12 +374,53 @@ export function HueBot() {
                         <p className="mt-2 text-xs text-amber-600">{msg.warning}</p>
                       )}
 
-                      {msg.recommendation && (
+                      {Array.isArray(msg.quickRecommendations) && msg.quickRecommendations.length > 0 ? (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-[11px] text-gray-500">추천 감정 빠르게 이동</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {msg.quickRecommendations.map((emotion) => (
+                              (() => {
+                                const visual = getEmotionVisual(emotion);
+                                return (
+                                  <button
+                                    key={`${msg.id}-${emotion}`}
+                                    type="button"
+                                    className="h-7 px-2.5 rounded-full border text-[11px] text-gray-700 hover:brightness-95 transition"
+                                    style={{
+                                      borderColor: `${visual.color}66`,
+                                      backgroundColor: `${visual.color}1f`,
+                                    }}
+                                    onClick={() => {
+                                      window.dispatchEvent(new CustomEvent('huebrief:navigate-emotion', {
+                                        detail: { emotion },
+                                      }));
+                                      setIsOpen(false);
+                                      setLocation(`/emotion/${emotion}`);
+                                    }}
+                                  >
+                                    <span className="inline-flex items-center gap-1">
+                                      <span
+                                        className="inline-block h-1.5 w-1.5 rounded-full"
+                                        style={{ backgroundColor: visual.color }}
+                                        aria-hidden="true"
+                                      />
+                                      {visual.label}
+                                    </span>
+                                  </button>
+                                );
+                              })()
+                            ))}
+                          </div>
+                        </div>
+                      ) : msg.recommendation ? (
                         <motion.button
                           initial={{ opacity: 0, y: 5 }}
                           animate={{ opacity: 1, y: 0 }}
                           className="mt-3 w-full flex items-center justify-between p-2 rounded-xl bg-gray-50 hover:bg-gray-100 border border-gray-100 transition-colors group"
                           onClick={() => {
+                            window.dispatchEvent(new CustomEvent('huebrief:navigate-emotion', {
+                              detail: { emotion: msg.recommendation },
+                            }));
                             setIsOpen(false);
                             setLocation(`/emotion/${msg.recommendation}`);
                           }}
@@ -327,7 +432,7 @@ export function HueBot() {
                             <ArrowRight className="w-3 h-3 text-blue-500" />
                           </div>
                         </motion.button>
-                      )}
+                      ) : null}
                     </div>
                   </motion.div>
                 ))}
@@ -425,7 +530,7 @@ export function HueBot() {
           <Heart className="w-6 h-6 text-white" />
         )}
 
-        {showNotification && !isOpen && (
+        {showNotification && !isOpen && !isPeripheralNudgeVisible && (
           <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
         )}
       </button>

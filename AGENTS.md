@@ -172,11 +172,17 @@
 - Tier emotion-card contrast by intensity while avoiding extreme values.
 - 상세 모달은 중앙 본문 축 정렬과 하단 액션 가시성을 유지합니다.
 - Keep centered content alignment and always-visible footer actions.
+- 상세 모달 본문 텍스트 색/굵기는 감정 카테고리 고정값이 아니라 배경 강도(low/mid/deep) 기준으로 가독성 최우선 적용합니다.
+- For detail modals, body text color/weight must be driven by background intensity (low/mid/deep), prioritizing readability over fixed category mapping.
 - 추천 뉴스는 맥락 연결 + 감정 균형을 동시에 만족하도록 배치합니다.
 - Recommendation area should satisfy both continuity and emotional balance.
+- 하단 추천 메시지/넛지 UI가 노출 중일 때 HueBot의 별도 프로모션 알림은 중복 노출하지 않습니다.
+- When bottom recommendation/nudge UI is visible, suppress separate HueBot promo notification to avoid overlap/noise.
 - 인사이트 피드백 UI/태그/리워드 동선 기준 문서:
   - `docs/HueBrief_Insight_UIUX.md`
 - Use `docs/HueBrief_Insight_UIUX.md` as the source of truth for insight feedback UI/tag taxonomy/reward flow.
+- 인사이트 저장은 텍스트 입력 또는 태그 선택(>=1) 중 하나를 만족하면 허용합니다.
+- Insight save should be allowed when either text input exists or at least one tag is selected.
 
 ---
 

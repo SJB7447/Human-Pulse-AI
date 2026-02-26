@@ -2,8 +2,8 @@
 import { Link, useLocation } from 'wouter';
 import { Header } from '@/components/Header';
 import { EMOTION_CONFIG, type EmotionType, useEmotionStore } from '@/lib/store';
-import { Loader2, Send } from 'lucide-react';
-import { DBService } from '@/services/DBService';
+import { Heart, Loader2, Pencil, Send } from 'lucide-react';
+import { DBService, type CommunityCommentRecord } from '@/services/DBService';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -16,7 +16,10 @@ interface CommunityItem {
   content?: string;
   excerpt: string;
   author: string;
+  ownerId?: string;
+  sourceType?: 'community_post' | 'reader_article';
   createdAt: string | null;
+  updatedAt?: string | null;
 }
 
 interface InsightDraft {
@@ -48,8 +51,40 @@ export default function CommunityPage() {
   const [drafts, setDrafts] = useState<InsightDraft[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [selectedPost, setSelectedPost] = useState<CommunityItem | null>(null);
+  const [comments, setComments] = useState<CommunityCommentRecord[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentInput, setCommentInput] = useState('');
+  const [commentPosting, setCommentPosting] = useState(false);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [savingCommentEdit, setSavingCommentEdit] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [likingCommentId, setLikingCommentId] = useState<string | null>(null);
+  const [commentSort, setCommentSort] = useState<'latest' | 'popular'>('latest');
+  const [editingPost, setEditingPost] = useState<CommunityItem | null>(null);
+  const [editSummary, setEditSummary] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const [lastPublishedLink, setLastPublishedLink] = useState('');
   const canPublish = Boolean(user);
+  const isAdmin = String(user?.role || '').toLowerCase() === 'admin';
+
+  const loadComments = async (postId: string) => {
+    setCommentsLoading(true);
+    try {
+      const rows = await DBService.getCommunityComments(postId, 80);
+      setComments(Array.isArray(rows) ? rows : []);
+    } catch (e: any) {
+      toast({
+        title: '댓글 불러오기 실패',
+        description: e?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
 
   const loadFeed = async () => {
     setLoading(true);
@@ -241,6 +276,180 @@ export default function CommunityPage() {
   };
 
   const renderedItems = useMemo(() => items.slice(0, 24), [items]);
+  const sortedComments = useMemo(() => {
+    const rows = [...comments];
+    if (commentSort === 'popular') {
+      return rows.sort((a, b) => {
+        const likeGap = Number(b.likeCount || 0) - Number(a.likeCount || 0);
+        if (likeGap !== 0) return likeGap;
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      });
+    }
+    return rows.sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
+    );
+  }, [comments, commentSort]);
+  const canEditItem = (item: CommunityItem): boolean => {
+    if (!user) return false;
+    const ownerId = String(item.ownerId || '').trim();
+    const currentUserId = String(user.id || '').trim();
+    return (ownerId && ownerId === currentUserId) || isAdmin;
+  };
+
+  const openEditDialog = (item: CommunityItem) => {
+    setEditingPost(item);
+    setEditSummary(String(item.excerpt || '').trim());
+    setEditContent(String(item.content || item.excerpt || '').trim());
+  };
+
+  const handleSavePostEdit = async () => {
+    if (!editingPost) return;
+    if (!editSummary.trim() && !editContent.trim()) {
+      toast({
+        title: '수정 실패',
+        description: '요약 또는 본문을 입력해 주세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const updated = await DBService.updateCommunityPost(editingPost.id, {
+        summary: editSummary.trim(),
+        content: editContent.trim(),
+      });
+      setItems((prev) => prev.map((row) => (row.id === editingPost.id ? { ...row, ...(updated as CommunityItem) } : row)));
+      setSelectedPost((prev) => (prev?.id === editingPost.id ? ({ ...prev, ...(updated as CommunityItem) }) : prev));
+      setEditingPost(null);
+      toast({
+        title: '수정 완료',
+        description: '본문/요약/수정시각이 반영되었습니다.',
+      });
+    } catch (e: any) {
+      toast({
+        title: '수정 실패',
+        description: e?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const canEditComment = (comment: CommunityCommentRecord): boolean => {
+    if (!user) return false;
+    return String(comment.userId || '').trim() === String(user.id || '').trim() || isAdmin;
+  };
+
+  const handleCreateComment = async () => {
+    const postId = String(selectedPost?.id || '').trim();
+    if (!postId) return;
+    if (!commentInput.trim()) return;
+    setCommentPosting(true);
+    try {
+      const created = await DBService.createCommunityComment(postId, commentInput.trim());
+      setComments((prev) => [...prev, created]);
+      setCommentInput('');
+      toast({
+        title: '댓글 등록 완료',
+      });
+    } catch (e: any) {
+      toast({
+        title: '댓글 등록 실패',
+        description: e?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCommentPosting(false);
+    }
+  };
+
+  const startEditComment = (comment: CommunityCommentRecord) => {
+    setEditingCommentId(comment.id);
+    setEditingCommentText(comment.content);
+  };
+
+  const handleSaveCommentEdit = async (comment: CommunityCommentRecord) => {
+    const postId = String(selectedPost?.id || '').trim();
+    if (!postId) return;
+    if (!editingCommentText.trim()) return;
+    setSavingCommentEdit(true);
+    try {
+      const updated = await DBService.updateCommunityComment(postId, comment.id, editingCommentText.trim());
+      setComments((prev) => prev.map((row) => (row.id === comment.id ? updated : row)));
+      setEditingCommentId(null);
+      setEditingCommentText('');
+      toast({
+        title: '댓글 수정 완료',
+      });
+    } catch (e: any) {
+      toast({
+        title: '댓글 수정 실패',
+        description: e?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingCommentEdit(false);
+    }
+  };
+
+  const handleDeleteComment = async (comment: CommunityCommentRecord) => {
+    const postId = String(selectedPost?.id || '').trim();
+    if (!postId) return;
+    if (!confirm('이 댓글을 삭제하시겠습니까?')) return;
+    setDeletingCommentId(comment.id);
+    try {
+      await DBService.deleteCommunityComment(postId, comment.id);
+      setComments((prev) => prev.filter((row) => row.id !== comment.id));
+      if (editingCommentId === comment.id) {
+        setEditingCommentId(null);
+        setEditingCommentText('');
+      }
+    } catch (e: any) {
+      toast({
+        title: '댓글 삭제 실패',
+        description: e?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingCommentId(null);
+    }
+  };
+
+  const handleToggleCommentLike = async (comment: CommunityCommentRecord) => {
+    const postId = String(selectedPost?.id || '').trim();
+    if (!postId) return;
+    if (!user) {
+      toast({
+        title: '로그인 필요',
+        description: '공감은 로그인 후 사용할 수 있습니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setLikingCommentId(comment.id);
+    try {
+      const updated = await DBService.toggleCommunityCommentLike(postId, comment.id);
+      setComments((prev) => prev.map((row) => (row.id === comment.id ? updated : row)));
+    } catch (e: any) {
+      toast({
+        title: '공감 처리 실패',
+        description: e?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLikingCommentId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedPost?.id) return;
+    void loadComments(selectedPost.id);
+    setCommentInput('');
+    setEditingCommentId(null);
+    setEditingCommentText('');
+  }, [selectedPost?.id]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-slate-50">
@@ -369,6 +578,9 @@ export default function CommunityPage() {
                     <span className="text-xs text-gray-400">
                       {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : '-'}
                     </span>
+                    {item.updatedAt && item.updatedAt !== item.createdAt ? (
+                      <span className="text-[10px] text-gray-400">수정됨</span>
+                    ) : null}
                   </div>
 
                   {item.category && (
@@ -389,7 +601,20 @@ export default function CommunityPage() {
                   </button>
 
                   <div className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
-                    작성자: {item.author}
+                    <div className="flex items-center justify-between gap-2">
+                      <span>작성자: {item.author}</span>
+                      {canEditItem(item) ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => openEditDialog(item)}
+                        >
+                          <Pencil className="w-3 h-3 mr-1" />
+                          수정
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                 </article>
               );
@@ -404,7 +629,7 @@ export default function CommunityPage() {
         </div>
 
         <Dialog open={Boolean(selectedPost)} onOpenChange={(open) => { if (!open) setSelectedPost(null); }}>
-          <DialogContent className="max-w-3xl max-h-[82vh] overflow-hidden bg-[#fffdf7] border border-[#ece4d4]">
+          <DialogContent className="max-w-3xl max-h-[88vh] overflow-hidden bg-[#fffdf7] border border-[#ece4d4]">
             <DialogHeader>
               <DialogTitle className="text-lg font-semibold text-gray-900 break-words">
                 {selectedPost?.title || ''}
@@ -412,6 +637,12 @@ export default function CommunityPage() {
             </DialogHeader>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
               <span>{selectedPost?.createdAt ? new Date(selectedPost.createdAt).toLocaleString() : '-'}</span>
+              {selectedPost?.updatedAt && selectedPost.updatedAt !== selectedPost.createdAt ? (
+                <>
+                  <span>·</span>
+                  <span>수정: {new Date(selectedPost.updatedAt).toLocaleString()}</span>
+                </>
+              ) : null}
               <span>·</span>
               <span>{selectedPost?.author || '-'}</span>
               {selectedPost?.category ? (
@@ -421,10 +652,181 @@ export default function CommunityPage() {
                 </>
               ) : null}
             </div>
-            <div className="mt-3 max-h-[56vh] overflow-y-auto rounded-lg border border-[#ebe3d3] bg-white/90 p-4">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
-                {String(selectedPost?.content || selectedPost?.excerpt || '')}
+            <div className="mt-3 space-y-4 overflow-y-auto pr-1 max-h-[calc(88vh-11rem)]">
+              <div className="rounded-lg border border-[#ebe3d3] bg-white/90 p-4">
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
+                  {String(selectedPost?.content || selectedPost?.excerpt || '')}
+                </p>
+              </div>
+              <div className="rounded-lg border border-[#ebe3d3] bg-white/90 p-4">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-sm font-semibold text-gray-800">댓글</h3>
+                    <span className="text-xs text-gray-500">{comments.length}개</span>
+                  </div>
+                  <div className="inline-flex items-center rounded-md border border-gray-200 bg-white p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setCommentSort('latest')}
+                      className={`h-6 px-2.5 rounded text-[11px] ${commentSort === 'latest' ? 'bg-slate-100 text-slate-800' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      최신순
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCommentSort('popular')}
+                      className={`h-6 px-2.5 rounded text-[11px] ${commentSort === 'popular' ? 'bg-slate-100 text-slate-800' : 'text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      인기순
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <input
+                    value={commentInput}
+                    onChange={(e) => setCommentInput(e.target.value)}
+                    maxLength={800}
+                    placeholder={user ? '댓글을 입력하세요.' : '로그인 후 댓글 작성이 가능합니다.'}
+                    disabled={!user || commentPosting}
+                    className="h-9 flex-1 rounded-md border border-gray-300 px-3 text-sm"
+                  />
+                  <Button size="sm" onClick={() => void handleCreateComment()} disabled={!user || commentPosting || !commentInput.trim()}>
+                    {commentPosting ? <Loader2 className="w-4 h-4 animate-spin" /> : '등록'}
+                  </Button>
+                </div>
+                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+                  AI+규칙 기반 댓글 감시자가 욕설/악성비난/혐오/스팸 표현을 자동 필터링하고 있습니다.
+                </p>
+
+                <div className="mt-3 space-y-2 max-h-[260px] overflow-y-auto">
+                  {commentsLoading ? (
+                    <div className="text-xs text-gray-500 py-3">댓글을 불러오는 중...</div>
+                  ) : sortedComments.length === 0 ? (
+                    <div className="text-xs text-gray-500 py-3">첫 댓글을 남겨보세요.</div>
+                  ) : sortedComments.map((comment) => (
+                    <div key={comment.id} className="rounded-md border border-gray-200 bg-white p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] text-gray-500">
+                          {comment.username} · {new Date(comment.createdAt).toLocaleString()}
+                          {comment.updatedAt !== comment.createdAt ? ` · 수정 ${new Date(comment.updatedAt).toLocaleString()}` : ''}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            className={`h-6 inline-flex items-center justify-center rounded px-1.5 gap-1 ${
+                              comment.likedByMe ? 'text-rose-600 bg-rose-50' : 'text-gray-500 hover:bg-rose-50 hover:text-rose-500'
+                            }`}
+                            title={`공감 ${comment.likeCount}개`}
+                            aria-label="공감"
+                            onClick={() => void handleToggleCommentLike(comment)}
+                            disabled={likingCommentId === comment.id}
+                          >
+                            <Heart className={`w-3.5 h-3.5 ${comment.likedByMe ? 'fill-current' : ''}`} />
+                            <span className="text-[11px] leading-none">{Number(comment.likeCount || 0)}</span>
+                          </button>
+                          {canEditComment(comment) ? (
+                            editingCommentId === comment.id ? (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-[11px]"
+                                  onClick={() => void handleSaveCommentEdit(comment)}
+                                  disabled={savingCommentEdit || !editingCommentText.trim()}
+                                >
+                                  저장
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-[11px]"
+                                  onClick={() => {
+                                    setEditingCommentId(null);
+                                    setEditingCommentText('');
+                                  }}
+                                >
+                                  취소
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => startEditComment(comment)}>
+                                  수정
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-[11px] text-rose-700 hover:text-rose-800"
+                                  onClick={() => void handleDeleteComment(comment)}
+                                  disabled={deletingCommentId === comment.id}
+                                >
+                                  삭제
+                                </Button>
+                              </>
+                            )
+                          ) : null}
+                        </div>
+                      </div>
+                      {editingCommentId === comment.id ? (
+                        <textarea
+                          value={editingCommentText}
+                          onChange={(e) => setEditingCommentText(e.target.value)}
+                          className="mt-2 min-h-[72px] w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm"
+                          maxLength={800}
+                        />
+                      ) : (
+                        <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{comment.content}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {selectedPost && canEditItem(selectedPost) ? (
+                <div className="flex justify-end">
+                  <Button size="sm" variant="outline" onClick={() => openEditDialog(selectedPost)}>
+                    <Pencil className="w-3 h-3 mr-1" />
+                    이 글 수정
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={Boolean(editingPost)} onOpenChange={(open) => { if (!open) setEditingPost(null); }}>
+          <DialogContent className="max-w-2xl max-h-[84vh] overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>커뮤니티 글 수정</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-600">요약</label>
+                <textarea
+                  value={editSummary}
+                  onChange={(e) => setEditSummary(e.target.value)}
+                  className="mt-1 min-h-[88px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  maxLength={1000}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-600">본문</label>
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="mt-1 min-h-[220px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  maxLength={24000}
+                />
+              </div>
+              <p className="text-[11px] text-gray-500">
+                정책: 본인 글만 수정 가능하며, 관리자 역할은 override 수정이 가능합니다.
               </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setEditingPost(null)} disabled={savingEdit}>
+                  취소
+                </Button>
+                <Button onClick={() => void handleSavePostEdit()} disabled={savingEdit}>
+                  {savingEdit ? <Loader2 className="w-4 h-4 animate-spin" /> : '수정 저장'}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
