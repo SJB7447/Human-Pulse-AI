@@ -1297,7 +1297,16 @@ function buildValidationReport(errors: string[], source: "validation" | "parse")
   };
 }
 
-type ChatIntent = "anxiety_relief" | "anger_release" | "sadness_lift" | "focus_clarity" | "balance_general";
+type ChatIntent =
+  | "anxiety_relief"
+  | "anger_release"
+  | "sadness_lift"
+  | "focus_clarity"
+  | "positive_channel"
+  | "boredom_refresh"
+  | "balance_general";
+type HueBotLanguage = "ko" | "en";
+type HueBotResponseStyle = "short" | "deep";
 type ComplianceSeverity = "low" | "medium" | "high";
 type ComplianceFlag = {
   category: "privacy" | "defamation" | "medical" | "financial" | "violent" | "factual";
@@ -2913,85 +2922,377 @@ function assessCompliance(content: string): ComplianceAssessment {
   };
 }
 
-function classifyHueBotMessage(message: string): {
+function hashString(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) - hash + input.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function detectHueBotLanguage(message: string): HueBotLanguage {
+  const text = String(message || "");
+  const koMatches = text.match(/[가-힣]/g) || [];
+  const enMatches = text.match(/[a-z]/gi) || [];
+  if (koMatches.length >= 2 && koMatches.length >= enMatches.length) return "ko";
+  if (enMatches.length > koMatches.length) return "en";
+  return "ko";
+}
+
+function pickBySeed<T>(items: T[], seed: number): T {
+  return items[Math.abs(seed) % items.length];
+}
+
+function normalizeHueBotText(input: string): string {
+  return String(input || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detectHueBotTopicEmotionHint(message: string): { emotion: EmotionType; reason: string; matchedKeywords: string[] } | null {
+  const text = normalizeHueBotText(message);
+  if (!text) return null;
+
+  const topicKeywordMap: Record<EmotionType, string[]> = {
+    clarity: [
+      "정치", "정책", "정부", "국회", "선거", "외교", "행정", "법안", "개혁",
+      "분석", "데이터", "리포트", "브리핑", "이슈 정리",
+      "politics", "policy", "government", "election", "parliament", "diplomacy", "analysis", "report",
+    ],
+    gravity: [
+      "경제", "금리", "환율", "물가", "주식", "부동산", "실업", "경기침체", "위기", "안보", "전쟁", "재난",
+      "economy", "inflation", "rate", "market", "stocks", "housing", "security", "war", "crisis", "disaster",
+    ],
+    immersion: [
+      "갈등", "시위", "논란", "폭로", "부패", "범죄", "사건", "사고", "충돌", "불매",
+      "conflict", "protest", "controversy", "crime", "scandal", "accident", "clash",
+    ],
+    serenity: [
+      "치유", "회복", "휴식", "명상", "웰빙", "건강 루틴", "마음챙김", "자연", "평온",
+      "healing", "recovery", "rest", "wellbeing", "mindfulness", "nature", "calm",
+    ],
+    vibrance: [
+      "혁신", "성장", "기회", "도전", "성과", "돌파", "창업", "영감", "희망", "축제", "우승",
+      "연예", "연예계", "아이돌", "케이팝", "kpop", "k-pop", "celebrity", "entertainment", "drama", "movie", "actor", "singer",
+      "innovation", "growth", "opportunity", "breakthrough", "startup", "inspiration", "hope", "festival", "victory",
+    ],
+    spectrum: [
+      "중립", "균형", "다양성", "종합", "전체", "다각도", "비교",
+      "balanced", "neutral", "diversity", "overview", "multi-angle", "comparison",
+    ],
+  };
+
+  const scores = new Map<EmotionType, number>();
+  const matched = new Map<EmotionType, string[]>();
+  (Object.keys(topicKeywordMap) as EmotionType[]).forEach((emotion) => {
+    let score = 0;
+    const hitKeywords: string[] = [];
+    for (const keyword of topicKeywordMap[emotion]) {
+      const normalizedKeyword = normalizeHueBotText(keyword);
+      if (!normalizedKeyword) continue;
+      if (text.includes(normalizedKeyword)) {
+        score += Math.max(1, Math.min(3, normalizedKeyword.length >= 4 ? 2 : 1));
+        hitKeywords.push(keyword);
+      }
+    }
+    scores.set(emotion, score);
+    matched.set(emotion, hitKeywords);
+  });
+
+  const ranked = (Array.from(scores.entries()) as Array<[EmotionType, number]>)
+    .sort((a, b) => b[1] - a[1]);
+  const [bestEmotion, bestScore] = ranked[0] || ["spectrum", 0];
+  if (!bestEmotion || bestScore <= 0) return null;
+
+  const hits = (matched.get(bestEmotion) || []).slice(0, 4);
+  return {
+    emotion: bestEmotion,
+    reason: `keyword_match:${bestEmotion}`,
+    matchedKeywords: hits,
+  };
+}
+
+function buildEmotionRecommendationSet(intent: ChatIntent, recentRecommendations: EmotionType[]): {
+  recommendation: EmotionType;
+  quickRecommendations: EmotionType[];
+} {
+  const pools: Record<ChatIntent, EmotionType[]> = {
+    // Original planning baseline alignment:
+    // anxiety -> gravity(깨어있는 긴장) > clarity(차분한 명료함)
+    // anger -> serenity(고요한 쉼표) > clarity(차분한 명료함)
+    // sadness -> vibrance(설레는 파동) > spectrum(열린 스펙트럼)
+    anxiety_relief: ["gravity", "clarity", "serenity", "spectrum"],
+    anger_release: ["serenity", "clarity", "gravity", "spectrum"],
+    sadness_lift: ["vibrance", "spectrum", "serenity", "clarity"],
+    focus_clarity: ["clarity", "gravity", "spectrum", "serenity"],
+    positive_channel: ["immersion", "vibrance", "spectrum", "clarity"],
+    boredom_refresh: ["spectrum", "immersion", "vibrance", "clarity"],
+    balance_general: ["spectrum", "clarity", "serenity", "vibrance", "gravity"],
+  };
+  const pool = pools[intent];
+  const recent = recentRecommendations.slice(-3);
+  const diversified = [...pool].sort((a, b) => {
+    const aSeen = recent.includes(a) ? 1 : 0;
+    const bSeen = recent.includes(b) ? 1 : 0;
+    return aSeen - bSeen;
+  });
+  const recommendation = diversified[0];
+  const quickRecommendations = Array.from(new Set(diversified)).slice(0, 3);
+  return { recommendation, quickRecommendations };
+}
+
+function classifyHueBotMessage(message: string, recentRecommendations: EmotionType[] = []): {
   intent: ChatIntent;
   recommendation: EmotionType;
+  quickRecommendations: EmotionType[];
   confidence: number;
   followUp: string;
   text: string;
+  rationale: string;
+  language: HueBotLanguage;
   fallbackUsed: boolean;
 } {
-  const lower = message.toLowerCase();
-  const hasAnyText = lower.trim().length > 0;
+  const lower = String(message || "").toLowerCase();
+  const trimmed = lower.trim();
+  const normalizedMessage = normalizeHueBotText(trimmed);
+  const hasAnyText = trimmed.length > 0;
+  const language = detectHueBotLanguage(lower);
+  const seed = hashString(trimmed || "huebot");
+  const topicHint = detectHueBotTopicEmotionHint(trimmed);
+  const directSignalByIntent: Array<{ intent: ChatIntent; regex: RegExp }> = [
+    { intent: "anxiety_relief", regex: /(불안|걱정|초조|긴장|anxious|anxiety|nervous|panic|worried)/i },
+    { intent: "anger_release", regex: /(화남|화가|분노|짜증|억울|angry|anger|mad|furious|irritated)/i },
+    { intent: "sadness_lift", regex: /(슬픔|우울|무기력|지침|힘들|sad|depressed|down|lonely|exhausted)/i },
+    { intent: "focus_clarity", regex: /(집중|정리|공부|업무|분석|정치|정책|정부|선거|focus|study|work|plan|organize|politics|policy|government|election)/i },
+    { intent: "positive_channel", regex: /(기쁨|신남|신나|신나는|열정|의욕|들뜸|들뜬|행복|joy|excited|energized|motivated|happy)/i },
+    { intent: "boredom_refresh", regex: /(지루|권태|공허|무미건조|심심|bored|dull|empty|stale)/i },
+  ];
+  const directIntent = directSignalByIntent.find((entry) => entry.regex.test(trimmed))?.intent;
 
   const groups: Array<{
     intent: ChatIntent;
-    recommendation: EmotionType;
     confidence: number;
-    followUp: string;
-    text: string;
+    rationaleKo: string;
+    rationaleEn: string;
     keywords: string[];
+    empathyKo: string[];
+    empathyEn: string[];
+    followUpKo: string[];
+    followUpEn: string[];
   }> = [
     {
       intent: "anxiety_relief",
-      recommendation: "serenity",
       confidence: 0.88,
-      followUp: "불안이 강하면 어떤 상황에서 가장 커지는지 한 문장으로 알려주세요.",
-      text: "불안 신호가 보여서 차분한 흐름의 뉴스를 먼저 추천할게요.",
-      keywords: ["불안", "초조", "긴장", "걱정", "anx", "anxiety", "nervous", "panic"],
+      rationaleKo: "불안/걱정 키워드가 반복되어 안정 중심 흐름이 적합합니다.",
+      rationaleEn: "Repeated anxiety/caution cues suggest a calming-first flow.",
+      keywords: ["불안", "초조", "긴장", "걱정", "답답", "anx", "anxiety", "nervous", "panic", "worried"],
+      empathyKo: [
+        "지금 마음이 많이 긴장되어 보이네요.",
+        "불확실성이 커서 숨이 가빠질 수 있어요.",
+      ],
+      empathyEn: [
+        "It sounds like your mind is under pressure right now.",
+        "Uncertainty can feel overwhelming. Let's slow it down together.",
+      ],
+      followUpKo: [
+        "불안을 가장 키우는 장면이 무엇인지 한 문장만 적어볼까요?",
+        "지금 가장 확인하고 싶은 사실 1가지를 말해주실래요?",
+      ],
+      followUpEn: [
+        "What specific moment is making you most uneasy right now?",
+        "What's one fact you'd like to verify first to reduce uncertainty?",
+      ],
     },
     {
       intent: "anger_release",
-      recommendation: "clarity",
-      confidence: 0.84,
-      followUp: "화가 난 원인이 사람/업무/뉴스 중 어디에 가까운지 알려주세요.",
-      text: "분노 반응이 보여요. 감정 정리를 돕는 명료한 톤의 뉴스를 추천할게요.",
-      keywords: ["화", "짜증", "분노", "빡", "angry", "anger", "mad", "irritated"],
+      confidence: 0.85,
+      rationaleKo: "분노/짜증 신호가 강해 정리형·균형형 기사가 적합합니다.",
+      rationaleEn: "Anger/frustration cues are strong, so structure and balance are helpful.",
+      keywords: ["화", "짜증", "분노", "빡", "억울", "angry", "anger", "mad", "furious", "irritated"],
+      empathyKo: [
+        "지금 많이 화가 난 상태로 느껴져요.",
+        "그 감정은 중요한 신호예요. 무시하지 않아도 됩니다.",
+      ],
+      empathyEn: [
+        "I can sense strong frustration in what you said.",
+        "That anger is meaningful. We can work with it, not suppress it.",
+      ],
+      followUpKo: [
+        "무엇이 가장 부당하게 느껴졌는지 핵심만 알려주세요.",
+        "원인(사람/제도/정보 부족) 중 어디가 가장 큰가요?",
+      ],
+      followUpEn: [
+        "What felt most unfair to you in this situation?",
+        "Is your anger mostly about people, systems, or missing information?",
+      ],
     },
     {
       intent: "sadness_lift",
-      recommendation: "vibrance",
-      confidence: 0.83,
-      followUp: "오늘 특히 마음이 가라앉은 순간이 있었다면 짧게 적어주세요.",
-      text: "기분이 가라앉은 신호가 있어요. 에너지를 올리는 뉴스 흐름을 추천할게요.",
-      keywords: ["슬픔", "우울", "무기력", "힘들", "sad", "depressed", "down", "lonely"],
+      confidence: 0.84,
+      rationaleKo: "우울/무기력 표현이 감지되어 회복 탄력형 흐름이 적합합니다.",
+      rationaleEn: "Low-energy and sadness cues suggest a gentle lift-and-recover flow.",
+      keywords: ["슬픔", "우울", "무기력", "힘들", "지침", "sad", "depressed", "down", "tired", "lonely"],
+      empathyKo: [
+        "마음 에너지가 많이 떨어진 것 같아요.",
+        "지금은 무리하게 끌어올리기보다 천천히 회복하는 게 좋아요.",
+      ],
+      empathyEn: [
+        "It sounds like your emotional energy is really low.",
+        "Let's focus on a gentle recovery pace rather than forcing a quick reset.",
+      ],
+      followUpKo: [
+        "오늘 가장 무거웠던 순간을 짧게 남겨주실래요?",
+        "지금 필요한 건 위로, 정보, 행동 중 무엇에 가깝나요?",
+      ],
+      followUpEn: [
+        "Can you share one moment today that felt the heaviest?",
+        "Do you need comfort, clarity, or a practical next step right now?",
+      ],
     },
     {
       intent: "focus_clarity",
-      recommendation: "clarity",
-      confidence: 0.78,
-      followUp: "집중이 필요한 과제가 있다면 키워드 2~3개만 알려주세요.",
-      text: "집중/정리 니즈로 보여요. 정보 밀도가 균형 잡힌 카테고리를 추천할게요.",
-      keywords: ["집중", "정리", "공부", "업무", "focus", "study", "work", "plan"],
+      confidence: 0.8,
+      rationaleKo: "정리/집중 목적 표현이 있어 구조화된 정보 흐름이 적합합니다.",
+      rationaleEn: "Your wording indicates a focus/organization need, so structured input helps.",
+      keywords: ["집중", "정리", "공부", "업무", "분석", "정치", "정책", "정부", "선거", "국회", "focus", "study", "work", "plan", "organize", "politics", "policy", "government", "election"],
+      empathyKo: [
+        "머릿속을 정리하고 싶은 상태로 보여요.",
+        "정보를 깔끔하게 분류하면 훨씬 가벼워질 수 있어요.",
+      ],
+      empathyEn: [
+        "It sounds like you want to organize your thoughts clearly.",
+        "A cleaner information structure can reduce mental load quickly.",
+      ],
+      followUpKo: [
+        "지금 다루는 주제를 키워드 2개로만 알려주세요.",
+        "결정 전에 꼭 확인할 사실 1가지를 정해볼까요?",
+      ],
+      followUpEn: [
+        "Share the topic in just two keywords.",
+        "What is the single fact you must confirm before deciding?",
+      ],
+    },
+    {
+      intent: "positive_channel",
+      confidence: 0.8,
+      rationaleKo: "높은 에너지를 건강하게 확장할 수 있는 몰입형 흐름이 적합합니다.",
+      rationaleEn: "High positive energy is best channeled through constructive immersion.",
+      keywords: ["기쁨", "신남", "신나", "신나는", "열정", "의욕", "행복", "joy", "excited", "energized", "motivated", "happy"],
+      empathyKo: [
+        "좋은 에너지가 느껴져요. 이 흐름을 잘 살리면 큰 추진력이 됩니다.",
+        "지금의 활력을 건강하게 확장하면 더 오래 유지할 수 있어요.",
+      ],
+      empathyEn: [
+        "I can feel your positive momentum. That's a powerful state.",
+        "If we channel this energy well, it can stay sustainable longer.",
+      ],
+      followUpKo: [
+        "이 에너지를 어디에 쓰고 싶은지 한 가지를 골라볼까요?",
+        "지금 가장 몰입하고 싶은 주제는 무엇인가요?",
+      ],
+      followUpEn: [
+        "What is one area you'd like to channel this energy into?",
+        "What's the topic you most want to dive into right now?",
+      ],
+    },
+    {
+      intent: "boredom_refresh",
+      confidence: 0.77,
+      rationaleKo: "자극 저하 신호가 있어 다양한 관점과 새 흐름이 필요한 상태입니다.",
+      rationaleEn: "Low stimulation cues suggest you need fresh angles and variety.",
+      keywords: ["지루", "권태", "공허", "무미건조", "심심", "bored", "dull", "empty", "stale"],
+      empathyKo: [
+        "요즘 무미건조하게 느껴질 수 있어요. 그럴 때는 새로운 관점이 도움이 됩니다.",
+        "지루함이 길어지면 에너지가 더 떨어지기 쉬워요. 흐름을 바꿔보죠.",
+      ],
+      empathyEn: [
+        "It makes sense to feel flat sometimes. A fresh angle can help reset attention.",
+        "When boredom stretches, energy drops faster. Let's shift the flow.",
+      ],
+      followUpKo: [
+        "새롭게 자극받고 싶은 주제가 있나요?",
+        "완전히 다른 분위기의 뉴스도 괜찮으실까요?",
+      ],
+      followUpEn: [
+        "Is there a topic you'd like to feel newly stimulated by?",
+        "Would you be open to a totally different tone of news?",
+      ],
     },
   ];
 
+  let matchedGroup: (typeof groups)[number] | null = null;
+  let matchedScore = 0;
   for (const group of groups) {
-    if (group.keywords.some((kw) => lower.includes(kw))) {
-      return {
-        intent: group.intent,
-        recommendation: group.recommendation,
-        confidence: group.confidence,
-        followUp: group.followUp,
-        text: group.text,
-        fallbackUsed: false,
-      };
+    const score = group.keywords.reduce((acc, keyword) => {
+      const normalizedKeyword = normalizeHueBotText(keyword);
+      return acc + (normalizedKeyword && normalizedMessage.includes(normalizedKeyword) ? 1 : 0);
+    }, 0);
+    if (score > matchedScore) {
+      matchedScore = score;
+      matchedGroup = group;
     }
+  }
+  if (directIntent && !matchedGroup) {
+    matchedGroup = groups.find((group) => group.intent === directIntent) || null;
+    matchedScore = matchedGroup ? 1 : matchedScore;
+  }
+
+  const topicIntentMap: Partial<Record<EmotionType, ChatIntent>> = {
+    clarity: "focus_clarity",
+    gravity: "focus_clarity",
+  };
+  const hintedIntent = topicHint ? topicIntentMap[topicHint.emotion] : undefined;
+  const intent: ChatIntent = directIntent || matchedGroup?.intent || hintedIntent || "balance_general";
+  const recommendationSet = buildEmotionRecommendationSet(intent, recentRecommendations);
+  if (matchedGroup && matchedScore > 0) {
+    const empathy = language === "ko"
+      ? pickBySeed(matchedGroup.empathyKo, seed + recentRecommendations.length)
+      : pickBySeed(matchedGroup.empathyEn, seed + recentRecommendations.length);
+    const followUp = language === "ko"
+      ? pickBySeed(matchedGroup.followUpKo, seed + matchedScore)
+      : pickBySeed(matchedGroup.followUpEn, seed + matchedScore);
+    const recommendLine = language === "ko"
+      ? "지금 감정 흐름을 기준으로 맞는 뉴스를 함께 골라볼게요."
+      : "Based on your current emotional flow, I'll suggest fitting news lanes.";
+    return {
+      intent,
+      recommendation: recommendationSet.recommendation,
+      quickRecommendations: recommendationSet.quickRecommendations,
+      confidence: matchedGroup.confidence,
+      followUp,
+      text: `${empathy} ${recommendLine}`,
+      rationale: language === "ko" ? matchedGroup.rationaleKo : matchedGroup.rationaleEn,
+      language,
+      fallbackUsed: false,
+    };
   }
 
   return {
     intent: "balance_general",
-    recommendation: "spectrum",
-    confidence: hasAnyText ? 0.55 : 0.4,
+    recommendation: recommendationSet.recommendation,
+    quickRecommendations: recommendationSet.quickRecommendations,
+    confidence: hasAnyText ? 0.58 : 0.42,
     followUp: hasAnyText
-      ? "지금 감정을 한 단어(불안/화남/슬픔/평온)로 말해주면 더 정확히 추천할게요."
-      : "현재 기분을 한 단어로 입력해 주세요. 예: 불안, 화남, 슬픔, 평온",
-    text: "현재 메시지로는 감정 신호가 약해요. 균형형 뉴스부터 시작해볼게요.",
+      ? (language === "ko"
+        ? "감정을 한 단어로 말해주면 더 정확히 맞춰드릴게요. 예: 불안, 화남, 답답함, 평온"
+        : "Share one emotion word for better matching. Example: anxious, angry, low, calm.")
+      : (language === "ko"
+        ? "지금 기분을 짧게 적어주세요. 한 단어도 좋아요."
+        : "Tell me how you feel in one short phrase."),
+    text: language === "ko"
+      ? "지금은 감정 신호가 약해서, 균형형 추천부터 부드럽게 시작할게요."
+      : "Your signal is still broad, so I'll start with balanced recommendations.",
+    rationale: language === "ko"
+      ? "명시적 감정 키워드가 적어 기본 균형 추천 전략이 적용되었습니다."
+      : "Explicit emotion cues were limited, so a balanced baseline strategy was used.",
+    language,
     fallbackUsed: true,
   };
 }
 
-function detectBiasWarning(message: string): string | null {
+function detectBiasWarning(message: string, language: HueBotLanguage): string | null {
   const patterns = [
     /\b(항상|절대|무조건|전부|모두)\b/i,
     /\b(hate|always|never|all of them)\b/i,
@@ -2999,10 +3300,21 @@ function detectBiasWarning(message: string): string | null {
   ];
   const hit = patterns.some((re) => re.test(message));
   if (!hit) return null;
-  return "Strong one-sided wording detected. Please verify multiple sources before relying on this suggestion.";
+  return language === "ko"
+    ? "한쪽 관점이 강하게 감지되었습니다. 판단 전 반대 근거도 함께 확인해 보세요."
+    : "Strong one-sided wording detected. Please verify multiple sources before relying on this suggestion.";
 }
 
-function buildNeutralReQuestion(intent: ChatIntent): string {
+function buildNeutralReQuestion(intent: ChatIntent, language: HueBotLanguage): string {
+  if (language === "ko") {
+    if (intent === "anger_release") {
+      return "균형을 위해, 지금 입장과 반대되는 사실 1가지만 찾아볼 수 있을까요?";
+    }
+    if (intent === "anxiety_relief") {
+      return "불안을 줄이기 위해 지금 가장 먼저 확인할 객관적 사실은 무엇인가요?";
+    }
+    return "균형 잡힌 판단을 위해 사실 1개와 우려 1개를 분리해서 적어볼까요?";
+  }
   if (intent === "anger_release") {
     return "To keep balance, what is one counter-view or missing fact in this issue?";
   }
@@ -3010,6 +3322,135 @@ function buildNeutralReQuestion(intent: ChatIntent): string {
     return "What specific fact would reduce your uncertainty the most right now?";
   }
   return "For a balanced view, can you share one concrete fact and one concern separately?";
+}
+
+function coerceHueBotIntent(value: unknown, fallback: ChatIntent): ChatIntent {
+  const text = String(value || "").trim().toLowerCase();
+  const intents: ChatIntent[] = [
+    "anxiety_relief",
+    "anger_release",
+    "sadness_lift",
+    "focus_clarity",
+    "positive_channel",
+    "boredom_refresh",
+    "balance_general",
+  ];
+  return intents.includes(text as ChatIntent) ? (text as ChatIntent) : fallback;
+}
+
+function clampConfidence(value: unknown, fallback: number): number {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(0.05, Math.min(0.99, num));
+}
+
+async function generateHueBotLlmReply(input: {
+  message: string;
+  language: HueBotLanguage;
+  responseStyle: HueBotResponseStyle;
+  baseline: {
+    intent: ChatIntent;
+    recommendation: EmotionType;
+    quickRecommendations: EmotionType[];
+    confidence: number;
+    followUp: string;
+    text: string;
+    rationale: string;
+  };
+  recentRecommendations: EmotionType[];
+}): Promise<{
+  intent: ChatIntent;
+  recommendation: EmotionType;
+  quickRecommendations: EmotionType[];
+  confidence: number;
+  followUp: string;
+  text: string;
+  rationale: string;
+} | null> {
+  const langLabel = input.language === "ko" ? "Korean" : "English";
+  const styleGuide = input.responseStyle === "deep"
+    ? "text: 3-5 sentences with richer reflection and context."
+    : "text: 1-2 concise sentences.";
+  const topicHint = detectHueBotTopicEmotionHint(input.message);
+  const prompt = [
+    "You are HueBot, a warm counselor-like news companion.",
+    `Respond in ${langLabel} only. No mixed language.`,
+    "Return strict JSON only (single object, no markdown).",
+    "Role requirements:",
+    "- Acknowledge the user's feeling with empathy.",
+    "- Ask one short reflective follow-up question.",
+    "- Recommend emotion lanes for balanced news reading.",
+    "- Avoid robotic template wording.",
+    "- Follow 3-step counselor flow: (1) validate feeling, (2) infer balance need, (3) suggest why this lane helps now.",
+    "Allowed intent values:",
+    "- anxiety_relief, anger_release, sadness_lift, focus_clarity, positive_channel, boredom_refresh, balance_general",
+    "Allowed emotion values:",
+    "- vibrance, immersion, clarity, gravity, serenity, spectrum",
+    "Output schema:",
+    '{"intent":"...","text":"...","followUp":"...","recommendation":"...","quickRecommendations":["..."],"confidence":0.0,"rationale":"..."}',
+    "Quality rules:",
+    `- ${styleGuide}`,
+    "- followUp: exactly one question sentence.",
+    "- quickRecommendations: 2-3 unique items including recommendation.",
+    "- rationale: one short reason tied to emotion signal.",
+    topicHint
+      ? `- Topic hint detected: ${topicHint.reason} (matched keywords: ${topicHint.matchedKeywords.join(", ")}). recommendation must include "${topicHint.emotion}", and if user intent is informational, prefer "${topicHint.emotion}" as primary.`
+      : "- If no clear topic hint exists, follow emotional baseline.",
+    `User message: ${input.message || "(empty)"}`,
+    `Baseline intent: ${input.baseline.intent}`,
+    `Baseline recommendation: ${input.baseline.recommendation}`,
+    `Recent recommendations to avoid repeating first: ${input.recentRecommendations.join(", ") || "(none)"}`,
+  ].join("\n");
+
+  const raw = await generateGeminiText(prompt);
+  const parsed = raw
+    ? parseJsonFromModelText<{
+      intent?: unknown;
+      text?: unknown;
+      followUp?: unknown;
+      recommendation?: unknown;
+      quickRecommendations?: unknown;
+      confidence?: unknown;
+      rationale?: unknown;
+    }>(raw)
+    : null;
+  if (!parsed) return null;
+
+  const recommendation = toEmotion(parsed.recommendation, input.baseline.recommendation);
+  const parsedIntent = coerceHueBotIntent(parsed.intent, input.baseline.intent);
+  const finalIntent = (parsedIntent === "balance_general" && input.baseline.intent !== "balance_general")
+    ? input.baseline.intent
+    : parsedIntent;
+  const policyRecommendationSet = buildEmotionRecommendationSet(finalIntent, input.recentRecommendations);
+  let finalRecommendation = policyRecommendationSet.recommendation;
+  if (topicHint && (finalIntent === "balance_general" || finalIntent === "focus_clarity")) {
+    finalRecommendation = topicHint.emotion;
+  }
+  const quickRaw = Array.isArray(parsed.quickRecommendations) ? parsed.quickRecommendations : [];
+  const quickRecommendations = Array.from(
+    new Set([
+      finalRecommendation,
+      ...(topicHint ? [topicHint.emotion] : []),
+      ...policyRecommendationSet.quickRecommendations,
+      ...quickRaw.map((item) => toEmotion(item, finalRecommendation)),
+      recommendation,
+    ]),
+  ).slice(0, 3);
+  const safeText = String(parsed.text || "").trim();
+  const safeFollowUp = String(parsed.followUp || "").trim();
+  const safeRationale = String(parsed.rationale || "").trim();
+
+  if (!safeText) return null;
+
+  return {
+    intent: finalIntent,
+    recommendation: finalRecommendation,
+    quickRecommendations: quickRecommendations.length > 0 ? quickRecommendations : input.baseline.quickRecommendations,
+    confidence: clampConfidence(parsed.confidence, input.baseline.confidence),
+    followUp: safeFollowUp || input.baseline.followUp,
+    text: safeText,
+    rationale: safeRationale || input.baseline.rationale,
+  };
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
@@ -3070,6 +3511,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const hueBotSessionState = new Map<string, {
     cooldownUntil: number;
     history: Array<{ intent: ChatIntent; ts: number }>;
+    recentRecommendations: EmotionType[];
   }>();
   type ExportFormat = "excel" | "pdf";
   type ExportMode = "manual" | "scheduled";
@@ -4790,27 +5232,65 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const clientIdRaw = String(req.body?.clientId || req.ip || "anonymous");
     const clientId = clientIdRaw.slice(0, 128);
     const now = Date.now();
-    const state = hueBotSessionState.get(clientId) || { cooldownUntil: 0, history: [] };
+    const responseStyle: HueBotResponseStyle = req.body?.responseStyle === "deep" ? "deep" : "short";
+    const language = detectHueBotLanguage(message);
+    const state = hueBotSessionState.get(clientId) || { cooldownUntil: 0, history: [], recentRecommendations: [] };
     state.history = state.history.filter((row) => now - row.ts <= hueBotPolicyWindowMs);
+    state.recentRecommendations = (state.recentRecommendations || []).slice(-8);
 
     const remainingSeconds = Math.max(0, Math.ceil((state.cooldownUntil - now) / 1000));
     if (remainingSeconds > 0) {
+      const cooldownRecommendation = buildEmotionRecommendationSet("balance_general", state.recentRecommendations);
       hueBotSessionState.set(clientId, state);
       return res.json({
-        text: "Cooldown is active for emotional safety. Let's pause and continue after the timer.",
-        recommendation: "spectrum",
+        text: language === "ko"
+          ? "감정 안전을 위해 잠시 호흡을 고르는 시간을 가져볼게요. 타이머 후 다시 이어가요."
+          : "Cooldown is active for emotional safety. Let's pause and continue after the timer.",
+        recommendation: cooldownRecommendation.recommendation,
+        quickRecommendations: cooldownRecommendation.quickRecommendations,
         intent: "balance_general",
         confidence: 0.4,
-        followUp: "Take a short break and come back with one concrete fact you want to verify.",
+        followUp: language === "ko"
+          ? "짧게 쉬고 돌아와서, 지금 확인하고 싶은 사실 1가지를 적어주세요."
+          : "Take a short break and come back with one concrete fact you want to verify.",
         fallbackUsed: true,
         cooldownActive: true,
         cooldownRemainingSeconds: remainingSeconds,
-        neutralPrompt: "What evidence source can you check first?",
+        neutralPrompt: language === "ko"
+          ? "지금 가장 먼저 확인할 수 있는 근거 출처는 무엇인가요?"
+          : "What evidence source can you check first?",
+        rationale: language === "ko"
+          ? "최근 감정 반응 빈도가 높아 15분 안정 규칙이 적용되었습니다."
+          : "Frequent high-intensity emotional responses triggered the 15-minute stabilization rule.",
+        language,
+        responseStyle,
       });
     }
 
-    const result = classifyHueBotMessage(message);
-    const biasWarning = detectBiasWarning(message);
+    const baseResult = classifyHueBotMessage(message, state.recentRecommendations);
+    const llmResult = await generateHueBotLlmReply({
+      message,
+      language: baseResult.language,
+      responseStyle,
+      baseline: {
+        intent: baseResult.intent,
+        recommendation: baseResult.recommendation,
+        quickRecommendations: baseResult.quickRecommendations,
+        confidence: baseResult.confidence,
+        followUp: baseResult.followUp,
+        text: baseResult.text,
+        rationale: baseResult.rationale,
+      },
+      recentRecommendations: state.recentRecommendations,
+    });
+    const result = llmResult
+      ? {
+        ...baseResult,
+        ...llmResult,
+        fallbackUsed: false,
+      }
+      : baseResult;
+    const biasWarning = detectBiasWarning(message, result.language);
     const sensitiveIntents: ChatIntent[] = ["anger_release", "anxiety_relief", "sadness_lift"];
     if (sensitiveIntents.includes(result.intent)) {
       state.history.push({ intent: result.intent, ts: now });
@@ -4822,21 +5302,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       hueBotSessionState.set(clientId, state);
       return res.json({
         ...result,
-        text: "For emotional balance, Hue Bot is applying a 15-minute cool-down.",
+        text: result.language === "ko"
+          ? "감정 균형을 위해 HueBot이 15분 쿨다운을 적용했어요."
+          : "For emotional balance, Hue Bot is applying a 15-minute cool-down.",
         cooldownActive: true,
         cooldownRemainingSeconds: Math.ceil(hueBotPolicyWindowMs / 1000),
-        neutralPrompt: buildNeutralReQuestion(result.intent),
+        neutralPrompt: buildNeutralReQuestion(result.intent, result.language),
         biasWarning,
+        responseStyle,
       });
     }
 
+    state.recentRecommendations = [...state.recentRecommendations, result.recommendation].slice(-8);
     hueBotSessionState.set(clientId, state);
     return res.json({
       ...result,
       cooldownActive: false,
       cooldownRemainingSeconds: 0,
-      neutralPrompt: result.fallbackUsed || biasWarning ? buildNeutralReQuestion(result.intent) : undefined,
+      neutralPrompt: result.fallbackUsed || biasWarning ? buildNeutralReQuestion(result.intent, result.language) : undefined,
       biasWarning,
+      responseStyle,
     });
   });
 

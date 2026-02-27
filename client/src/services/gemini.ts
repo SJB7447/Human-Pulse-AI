@@ -267,27 +267,50 @@ export const GeminiService = {
     async generateNewsForEmotion(emotion: string): Promise<GeneratedNews[]> {
         return callApi('/api/ai/generate-news', { emotion }, { withActorHeaders: true });
     },
-    async chatWithBot(message: string, clientId?: string): Promise<{
+    async chatWithBot(message: string, clientId?: string, responseStyle: 'short' | 'deep' = 'short'): Promise<{
         text: string;
         recommendation?: string;
+        quickRecommendations?: string[];
         intent?: string;
         confidence?: number;
         followUp?: string;
+        rationale?: string;
+        language?: 'ko' | 'en';
+        responseStyle?: 'short' | 'deep';
         fallbackUsed?: boolean;
         biasWarning?: string;
         neutralPrompt?: string;
         cooldownActive?: boolean;
         cooldownRemainingSeconds?: number;
     }> {
+        const detectInputLanguage = (input: string): 'ko' | 'en' => {
+            const text = String(input || '');
+            const koMatches = text.match(/[가-힣]/g) || [];
+            const enMatches = text.match(/[a-z]/gi) || [];
+            if (koMatches.length >= 2 && koMatches.length >= enMatches.length) return 'ko';
+            if (enMatches.length > koMatches.length) return 'en';
+            return 'ko';
+        };
         try {
-            return await callApi('/api/ai/chat', { message, clientId });
+            return await callApi('/api/ai/chat', { message, clientId, responseStyle });
         } catch (e) {
+            const language = detectInputLanguage(message);
             return {
-                text: "Hue Bot is temporarily unstable. Starting with balanced news.",
-                recommendation: "spectrum",
+                text: language === 'ko'
+                    ? "지금은 연결이 불안정해요. 우선 균형형 뉴스부터 함께 볼게요."
+                    : "Hue Bot is temporarily unstable. Starting with balanced news.",
+                recommendation: language === 'ko' ? "clarity" : "spectrum",
+                quickRecommendations: language === 'ko' ? ["clarity", "serenity", "spectrum"] : ["spectrum", "clarity", "serenity"],
                 intent: "balance_general",
                 confidence: 0.3,
-                followUp: "Please share one word for your current mood.",
+                followUp: language === 'ko'
+                    ? "지금 기분을 한 단어로 말해주시면 더 정확히 도와드릴게요."
+                    : "Please share one word for your current mood.",
+                rationale: language === 'ko'
+                    ? "AI 응답 실패로 기본 균형 추천이 적용되었습니다."
+                    : "AI response failed; baseline balanced recommendation was applied.",
+                language,
+                responseStyle,
                 fallbackUsed: true,
                 cooldownActive: false,
                 cooldownRemainingSeconds: 0,

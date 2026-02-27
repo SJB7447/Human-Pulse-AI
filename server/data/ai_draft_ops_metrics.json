@@ -1,14 +1,14 @@
 {
   "promptVersion": "article_generation_contract_v1",
   "startedAt": "2026-02-23T01:37:41.379Z",
-  "updatedAt": "2026-02-24T09:30:54.442Z",
+  "updatedAt": "2026-02-27T05:57:35.405Z",
   "persistence": {
     "mode": "file",
     "hydrated": true
   },
   "totals": {
-    "requests": 17,
-    "success": 8,
+    "requests": 18,
+    "success": 9,
     "retries": 0,
     "fallbackRecoveries": 0,
     "parseFailures": 0,
@@ -30,8 +30,8 @@
       "modelEmpty": 0
     },
     "interactive-longform": {
-      "requests": 8,
-      "success": 4,
+      "requests": 9,
+      "success": 5,
       "retries": 0,
       "fallbackRecoveries": 0,
       "parseFailures": 0,

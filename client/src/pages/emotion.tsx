@@ -11,6 +11,7 @@ import { useNews, type NewsItem } from '@/hooks/useNews';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
 import { EmotionTag } from '@/components/ui/EmotionTag';
+import { getNewsTextTokenByDepth } from '@/lib/newsTextTokens';
 import {
   emitPeripheralNudgeEvent,
   getDwellThresholdSeconds,
@@ -159,6 +160,9 @@ export default function EmotionPage() {
   const [expandPeripheralNudge, setExpandPeripheralNudge] = useState(false);
   const [suppressPeripheralNudge, setSuppressPeripheralNudge] = useState(false);
   const [sameEmotionConsumeCount, setSameEmotionConsumeCount] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState<number>(
+    typeof window !== 'undefined' ? window.innerWidth : 1280,
+  );
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const dwellVisibleSecRef = useRef(0);
   const sameEmotionConsumeRef = useRef(0);
@@ -185,6 +189,14 @@ export default function EmotionPage() {
     setExpandPeripheralNudge(false);
     setSuppressPeripheralNudge(false);
   }, [type]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
+    updateViewportWidth();
+    window.addEventListener('resize', updateViewportWidth);
+    return () => window.removeEventListener('resize', updateViewportWidth);
+  }, []);
 
   useEffect(() => {
     if (!type || typeof window === 'undefined') return;
@@ -825,13 +837,11 @@ export default function EmotionPage() {
                 const cardEmotionColor = getEmotionColor(item.emotion);
                 const cardPalette = getCardDepthPalette(cardEmotionColor, depth, item.emotion);
                 const cardBgColor = cardPalette.background;
-                const isLowDepthBg = depth <= 50;
-                const isLightBg = depth <= 60;
-                const textColor = isLightBg ? '#232221' : '#ffffff';
-                const titleTextColor = '#232221';
-                const subTextColor = isLowDepthBg
-                  ? '#5f5d5c'
-                  : (isLightBg ? '#787674' : 'rgba(255,255,255,0.84)');
+                const textToken = getNewsTextTokenByDepth(depth);
+                const isLightBg = !textToken.usesLightText;
+                const textColor = textToken.usesLightText ? '#ffffff' : '#232221';
+                const titleTextColor = textToken.title;
+                const subTextColor = textToken.body;
                 const updatedAtLabel = formatTimeAgo(item.created_at);
                 const detailCategory = item.category || EMOTION_CONFIG.find((e) => e.type === item.emotion)?.labelKo || emotionConfig.labelKo;
                 const cardImage = String(item.image || '').trim();
@@ -1056,13 +1066,21 @@ export default function EmotionPage() {
                     ? 'peripheral-bubble-drift-b'
                     : 'peripheral-bubble-drift-c';
               const baseStyle: CSSProperties = {
-                bottom: `${-160 - (seed % 3) * 26}px`,
+                bottom: `${(viewportWidth <= 767 ? -136 : viewportWidth >= 1920 ? -188 : -160) - (seed % 3) * 26}px`,
                 animationDelay: `${seed * 460}ms`,
                 animationDuration: `${13600 + (seed % 3) * 1000}ms`,
               };
+              const laneOffset = index % 2 === 0 ? 0 : 1;
+              const edgeInset = viewportWidth <= 767
+                ? 8 + laneOffset * 8
+                : viewportWidth <= 1279
+                  ? 16 + laneOffset * 10
+                  : viewportWidth >= 1920
+                    ? 44 + laneOffset * 12
+                    : 24 + laneOffset * 10;
               const sideStyle: CSSProperties = side === 'right'
-                ? { right: `clamp(-18px, calc((100vw - 1200px)/2 + ${24 + (index % 2) * 10}px), 94px)` }
-                : { left: `clamp(-18px, calc((100vw - 1200px)/2 + ${24 + (index % 2) * 10}px), 94px)` };
+                ? { right: `${edgeInset}px` }
+                : { left: `${edgeInset}px` };
               const bubbleStyle: CSSProperties = { ...baseStyle, ...sideStyle };
 
               return (

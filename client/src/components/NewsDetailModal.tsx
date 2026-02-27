@@ -6,6 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { type NewsItem } from '@/hooks/useNews';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
+import { getNewsTextTokenByDepth } from '@/lib/newsTextTokens';
 import { DBService } from '@/services/DBService';
 import { AIServiceError, GeminiService, type OpinionComposeResult } from '@/services/gemini';
 import type { InteractiveArticle } from '@shared/interactiveArticle';
@@ -1398,7 +1399,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const isBackdropDark = isDarkHexColor(color);
   const readingProgress = Math.round(bgTransitionProgress * 100);
   const articleDepth = Math.max(0, Math.min(100, Number(article?.intensity ?? 50)));
-  const useLightBodyText = articleDepth > 60;
+  const articleTextToken = getNewsTextTokenByDepth(articleDepth);
 
   return (
     <AnimatePresence>
@@ -1557,7 +1558,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                     )}
                   </div>
 
-                  <div id="news-detail-content" className={`${useLightBodyText ? 'text-white font-normal' : 'text-gray-900 font-normal'} text-[17px] md:text-[18px] leading-8 md:leading-9 mb-12 min-h-[120px] whitespace-pre-wrap tracking-wide`}>
+                  <div id="news-detail-content" className="font-normal text-[17px] md:text-[18px] leading-8 md:leading-9 mb-12 min-h-[120px] whitespace-pre-wrap tracking-wide" style={{ color: articleTextToken.detailBody }}>
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
@@ -1669,8 +1670,9 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                       const itemEmotionMeta = getEmotionMeta(item.emotion);
                       const recommendationDepth = Math.max(0, Math.min(100, item.intensity ?? 50));
                       const palette = getDepthPalette(item.emotion as EmotionType, recommendationDepth);
-                      const recommendationTextColor = recommendationDepth <= 60 ? '#232221' : '#ffffff';
-                      const recommendationSubTextColor = recommendationDepth <= 60 ? '#5f5d5c' : 'rgba(255,255,255,0.82)';
+                      const recommendationTextToken = getNewsTextTokenByDepth(recommendationDepth);
+                      const recommendationTextColor = recommendationTextToken.usesLightText ? '#ffffff' : '#232221';
+                      const recommendationSubTextColor = recommendationTextToken.body;
                       const compactCategory = formatRecommendationCategory(item.category, itemEmotionMeta.label);
                       return (
                         <button
