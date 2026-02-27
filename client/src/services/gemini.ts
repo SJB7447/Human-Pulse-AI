@@ -109,6 +109,61 @@ export interface DraftGenerationResult {
     fallbackUsed?: boolean;
 }
 
+export interface DraftSectionRegenerationResult {
+    section: 'core' | 'deepDive' | 'conclusion';
+    text: string;
+    title: string;
+    sections: {
+        core: string;
+        deepDive: string;
+        conclusion: string;
+    };
+    content: string;
+    sourceCitation?: {
+        title: string;
+        url: string;
+        source: string;
+    };
+    compliance?: {
+        riskLevel: 'low' | 'medium' | 'high';
+        summary: string;
+        flags: Array<{
+            category: 'privacy' | 'defamation' | 'medical' | 'financial' | 'violent' | 'factual';
+            severity: 'low' | 'medium' | 'high';
+            reason: string;
+            suggestion: string;
+            evidenceSnippet?: string;
+        }>;
+        publishBlocked?: boolean;
+    };
+    fallbackUsed?: boolean;
+}
+
+export interface DraftParagraphRegenerationResult {
+    paragraphIndex: number;
+    text: string;
+    paragraphs: string[];
+    content: string;
+    sourceCitation?: {
+        title: string;
+        url: string;
+        source: string;
+    };
+    compliance?: {
+        riskLevel: 'low' | 'medium' | 'high';
+        summary: string;
+        flags: Array<{
+            category: 'privacy' | 'defamation' | 'medical' | 'financial' | 'violent' | 'factual';
+            severity: 'low' | 'medium' | 'high';
+            reason: string;
+            suggestion: string;
+            evidenceSnippet?: string;
+        }>;
+        publishBlocked?: boolean;
+    };
+    fallbackUsed?: boolean;
+}
+
 export interface OpinionComposeResult {
     title: string;
     summary: string;
@@ -341,6 +396,42 @@ export const GeminiService = {
         };
     }): Promise<DraftGenerationResult> {
         return callApi('/api/ai/generate-draft', input);
+    },
+
+    async regenerateDraftSection(input: {
+        keyword: string;
+        mode?: 'draft' | 'interactive-longform';
+        title: string;
+        section: 'core' | 'deepDive' | 'conclusion';
+        currentSections: {
+            core: string;
+            deepDive: string;
+            conclusion: string;
+        };
+        selectedArticle?: {
+            title: string;
+            summary: string;
+            url: string;
+            source: string;
+        };
+    }): Promise<DraftSectionRegenerationResult> {
+        return callApi('/api/ai/regenerate-draft-section', input);
+    },
+
+    async regenerateDraftParagraph(input: {
+        keyword: string;
+        mode?: 'draft' | 'interactive-longform';
+        title: string;
+        paragraphIndex: number;
+        paragraphs: string[];
+        selectedArticle?: {
+            title: string;
+            summary: string;
+            url: string;
+            source: string;
+        };
+    }): Promise<DraftParagraphRegenerationResult> {
+        return callApi('/api/ai/regenerate-draft-paragraph', input);
     },
 
     async checkGrammar(content: string): Promise<{ correctedText: string; errors: { original: string; corrected: string; reason: string }[] }> {

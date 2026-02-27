@@ -143,13 +143,23 @@ async function main() {
       const statusOk = response.status === c.expectStatus;
       const codeOk = c.expectCode ? String(response.data?.code || "") === c.expectCode : true;
       const successFieldsOk = c.expectStatus === 200
-        ? Boolean(response.data?.title && response.data?.content && response.data?.sections && response.data?.compliance)
+        ? Boolean(
+          response.data?.title &&
+          response.data?.content &&
+          response.data?.sections &&
+          response.data?.compliance &&
+          response.data?.sourceCitation?.url &&
+          response.data?.sourceCitation?.source,
+        )
+        : true;
+      const sourceSeparatedOk = c.expectStatus === 200
+        ? !/\[출처\]/.test(String(response.data?.content || ""))
         : true;
       const issuesFieldOk = c.expectCode
         ? Array.isArray(response.data?.issues) && response.data.issues.length > 0
         : true;
 
-      const pass = statusOk && codeOk && successFieldsOk && issuesFieldOk;
+      const pass = statusOk && codeOk && successFieldsOk && sourceSeparatedOk && issuesFieldOk;
       rows.push({
         id: c.id,
         result: pass ? "PASS" : "FAIL",
@@ -158,6 +168,79 @@ async function main() {
           : `status=${response.status}, code=${String(response.data?.code || "")}`,
       });
     }
+
+    const modeSwitchLongform = await requestJson("/api/ai/generate-draft", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-ai-draft-scenario": "longform-success",
+      },
+      body: JSON.stringify({
+        keyword: "regression-mode-switch-longform",
+        mode: "interactive-longform",
+        selectedArticle: {
+          title: "Reference headline",
+          summary: "Reference summary",
+          url: "https://example.com/reference",
+          source: "Regression Source",
+        },
+      }),
+    });
+    const modeSwitchDraft = await requestJson("/api/ai/generate-draft", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-ai-draft-scenario": "draft-success",
+      },
+      body: JSON.stringify({
+        keyword: "regression-mode-switch-draft",
+        mode: "draft",
+        selectedArticle: {
+          title: "Reference headline",
+          summary: "Reference summary",
+          url: "https://example.com/reference",
+          source: "Regression Source",
+        },
+      }),
+    });
+    const modeSwitchOk =
+      modeSwitchLongform.status === 200 &&
+      modeSwitchDraft.status === 200 &&
+      Array.isArray(modeSwitchLongform.data?.mediaSlots) &&
+      modeSwitchLongform.data.mediaSlots.length >= 3 &&
+      Array.isArray(modeSwitchDraft.data?.mediaSlots) &&
+      modeSwitchDraft.data.mediaSlots.length <= 1;
+    rows.push({
+      id: "DRAFT-MODE-SWITCH",
+      result: modeSwitchOk ? "PASS" : "FAIL",
+      notes: modeSwitchOk ? "longform->draft mode switch contract stable" : "media slot carryover detected",
+    });
+
+    const paragraphInvalidRes = await requestJson("/api/ai/regenerate-draft-paragraph", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        keyword: "regression-paragraph",
+        mode: "draft",
+        title: "테스트",
+        paragraphIndex: 4,
+        paragraphs: ["a", "b"],
+        selectedArticle: {
+          title: "Reference headline",
+          summary: "Reference summary",
+          url: "https://example.com/reference",
+          source: "Regression Source",
+        },
+      }),
+    });
+    const paragraphInvalidOk =
+      paragraphInvalidRes.status === 400 &&
+      String(paragraphInvalidRes.data?.code || "") === "AI_DRAFT_PARAGRAPH_INVALID";
+    rows.push({
+      id: "DRAFT-PARAGRAPH-ENDPOINT",
+      result: paragraphInvalidOk ? "PASS" : "FAIL",
+      notes: paragraphInvalidOk ? "invalid paragraph guard works" : `status=${paragraphInvalidRes.status}, code=${String(paragraphInvalidRes.data?.code || "")}`,
+    });
 
     const afterStats = await requestJson("/api/admin/stats");
     if (afterStats.status !== 200) {

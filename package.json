@@ -14,6 +14,7 @@
     "test:ai-safety": "tsx scripts/ai_safety_regression.ts",
     "test:ai-draft": "tsx scripts/ai_draft_regression.ts",
     "test:ai-news": "tsx scripts/ai_news_regression.ts",
+    "test:article-sync": "tsx scripts/article_generation_sync_check.ts",
     "test:ops-admin": "tsx scripts/admin_ops_regression.ts",
     "test:ops-alert": "tsx scripts/ops_alert_regression.ts"
   },

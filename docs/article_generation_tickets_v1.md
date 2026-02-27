@@ -24,16 +24,16 @@
   - `draft` and `interactive-longform` produce distinct distributions.
   - Schema validation failures are surfaced with actionable errors.
 
-## T3. Similarity Gate (Headline + Structure)
-- Goal: Reduce reference resemblance risk.
+## T3. Copy-Integrity Gate (Creative Reconstruction Friendly)
+- Goal: Block direct copying while allowing creative reconstruction.
 - Scope:
-  - Add headline overlap heuristic.
-  - Add paragraph-structure similarity heuristic.
-  - Add single retry with revised anti-similarity instruction.
+  - Block exact headline match.
+  - Block long-span verbatim reuse from reference title/summary.
+  - Keep single retry with anti-copy rewrite instruction.
 - Progress:
-  - Added headline exact-match/overlap checks and structure-overlap heuristic.
-  - Added one-time retry path with anti-similarity regeneration instruction.
-  - Added hard block response `AI_DRAFT_SIMILARITY_BLOCKED` with issue diagnostics.
+  - Rebalanced gate to prioritize copy detection over lexical/structure overblocking.
+  - Added one-time retry path with anti-copy regeneration instruction.
+  - Added hard block response `AI_DRAFT_COPY_BLOCKED` with issue diagnostics.
 - Acceptance Criteria:
   - Gate failure reason is logged and returned (internal diagnostics).
   - Retry path works and blocks if still failed.

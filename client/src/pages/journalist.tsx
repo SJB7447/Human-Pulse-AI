@@ -172,25 +172,6 @@ const normalizeArticleSummary = (summary: string, title: string, source: string)
   return `${source || '외부 기사'} 보도를 바탕으로 '${cleanArticleText(title)}' 핵심 내용을 요약한 문장입니다.`;
 };
 
-const extractSourceFromArticleBody = (content: string): string => {
-  const plain = String(content || '').trim();
-  if (!plain) return '';
-  const sourceSection = plain.match(/\[출처\]([\s\S]*)$/i);
-  if (!sourceSection?.[1]) return '';
-  const sourceBody = sourceSection[1].trim();
-  if (!sourceBody) return '';
-
-  const line = sourceBody
-    .split('\n')
-    .map((entry) => entry.replace(/^[\-\u2022]\s*/, '').trim())
-    .find(Boolean) || '';
-  if (!line) return '';
-
-  const urlMatch = line.match(/https?:\/\/[^\s)]+/i);
-  const withoutUrl = line.replace(/https?:\/\/[^\s)]+/ig, '').replace(/[()]/g, '').trim();
-  return (withoutUrl || urlMatch?.[0] || '').slice(0, 180);
-};
-
 const normalizeTitleForCompare = (title: string) =>
   String(title || '')
     .trim()
@@ -278,6 +259,7 @@ type AiStepKey =
   | 'image'
   | 'video';
 
+type DraftSectionKey = 'core' | 'deepDive' | 'conclusion';
 type MediaAnchor = 'core' | 'deepDive' | 'conclusion';
 type MediaPosition = 'before' | 'inline' | 'after';
 type MediaSlot = {
@@ -295,6 +277,12 @@ type MediaAsset = {
   type: 'image' | 'video';
   label: string;
   url: string;
+};
+
+type DraftSourceCitation = {
+  title: string;
+  url: string;
+  source: string;
 };
 
 const ARTICLE_META_OPEN = '<!-- HUEBRIEF_META_START -->';
@@ -315,6 +303,7 @@ export default function JournalistPage() {
   const [articleOutline, setArticleOutline] = useState('');
   const [articleContent, setArticleContent] = useState('');
   const [draftSections, setDraftSections] = useState<{ core?: string; deepDive?: string; conclusion?: string } | null>(null);
+  const [draftSourceCitation, setDraftSourceCitation] = useState<DraftSourceCitation | null>(null);
   const [wizardStep, setWizardStep] = useState<WizardStep>(1);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['interactive']);
   const [generatedHashtags, setGeneratedHashtags] = useState<string[]>([]);
@@ -339,6 +328,10 @@ export default function JournalistPage() {
   // Loading states
   const [isSearching, setIsSearching] = useState(false);
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
+  const [regeneratingDraftSection, setRegeneratingDraftSection] = useState<DraftSectionKey | null>(null);
+  const [draftSectionIssues, setDraftSectionIssues] = useState<Partial<Record<DraftSectionKey, string[]>>>({});
+  const [regeneratingParagraphIndex, setRegeneratingParagraphIndex] = useState<number | null>(null);
+  const [paragraphIssues, setParagraphIssues] = useState<Record<number, string[]>>({});
   const [isCheckingGrammar, setIsCheckingGrammar] = useState(false);
   const [isGeneratingSEO, setIsGeneratingSEO] = useState(false);
   const [isOptimizingTitles, setIsOptimizingTitles] = useState(false);
@@ -761,7 +754,11 @@ export default function JournalistPage() {
 
   const withArticleMeta = (
     bodyText: string,
-    payload: { sections?: { core?: string; deepDive?: string; conclusion?: string }; mediaSlots?: MediaSlot[] },
+    payload: {
+      sections?: { core?: string; deepDive?: string; conclusion?: string };
+      mediaSlots?: MediaSlot[];
+      sourceCitation?: DraftSourceCitation | null;
+    },
   ) => {
     const plain = String(bodyText || '')
       .replace(new RegExp(`${ARTICLE_META_OPEN}[\\s\\S]*?${ARTICLE_META_CLOSE}\\s*`, 'g'), '')
@@ -774,6 +771,7 @@ export default function JournalistPage() {
     plainText: string;
     sections?: { core?: string; deepDive?: string; conclusion?: string };
     mediaSlots?: MediaSlot[];
+    sourceCitation?: DraftSourceCitation | null;
   } => {
     const text = String(content || '');
     const regex = new RegExp(`${ARTICLE_META_OPEN}\\s*([\\s\\S]*?)\\s*${ARTICLE_META_CLOSE}`);
@@ -803,6 +801,13 @@ export default function JournalistPage() {
         plainText,
         sections: parsed?.sections,
         mediaSlots,
+        sourceCitation: parsed?.sourceCitation && typeof parsed.sourceCitation === 'object'
+          ? {
+            title: String((parsed.sourceCitation as any).title || '').trim(),
+            url: String((parsed.sourceCitation as any).url || '').trim(),
+            source: String((parsed.sourceCitation as any).source || '').trim(),
+          }
+          : null,
       };
     } catch {
       return { plainText: text.replace(regex, '').trim() };
@@ -857,9 +862,210 @@ export default function JournalistPage() {
     setSuggestedMediaSlots((prev) => prev.filter((slot) => slot.id !== id));
   };
 
+  const stripDraftContentForSections = (rawText: string) => {
+    const withoutMeta = String(rawText || '')
+      .replace(new RegExp(`${ARTICLE_META_OPEN}[\\s\\S]*?${ARTICLE_META_CLOSE}\\s*`, 'g'), '')
+      .trim();
+    const withoutTitle = withoutMeta.replace(/^\s*\[[^\]]+\]\s*\n*/m, '').trim();
+    const withoutSource = withoutTitle.replace(/\n{2,}\[출처\][\s\S]*$/m, '').trim();
+    return withoutSource;
+  };
+
+  const splitDraftParagraphs = (rawText: string) =>
+    stripDraftContentForSections(rawText)
+      .split(/\n\s*\n/g)
+      .map((row) => row.trim())
+      .filter(Boolean);
+
+  const inferSectionsFromPlainText = (text: string) => {
+    const chunks = String(text || '')
+      .split(/\n\s*\n/g)
+      .map((p) => p.trim())
+      .filter(Boolean);
+
+    if (chunks.length === 0) {
+      return { core: '', deepDive: '', conclusion: '' };
+    }
+
+    if (chunks.length < 3) {
+      const joined = chunks.join('\n\n');
+      return { core: joined, deepDive: joined, conclusion: joined };
+    }
+
+    const third = Math.max(1, Math.floor(chunks.length / 3));
+    const corePart = chunks.slice(0, third).join('\n\n').trim();
+    const deepDivePart = chunks.slice(third, Math.max(third * 2, third + 1)).join('\n\n').trim();
+    const conclusionPart = chunks.slice(Math.max(third * 2, third + 1)).join('\n\n').trim();
+
+    return {
+      core: corePart,
+      deepDive: deepDivePart || corePart,
+      conclusion: conclusionPart || deepDivePart || corePart,
+    };
+  };
+
+  const resolveCurrentSections = () => {
+    const plain = stripDraftContentForSections(articleContent);
+    const inferred = inferSectionsFromPlainText(plain);
+    return {
+      core: String(draftSections?.core || inferred.core || '').trim(),
+      deepDive: String(draftSections?.deepDive || inferred.deepDive || '').trim(),
+      conclusion: String(draftSections?.conclusion || inferred.conclusion || '').trim(),
+    };
+  };
+
+  const resolveCurrentDraftTitle = () => {
+    const match = String(articleContent || '').match(/^\s*\[([^\]]+)\]/);
+    const parsed = String(match?.[1] || '').trim();
+    if (parsed) return parsed;
+    return (searchKeyword || selectedRecommendedArticle?.title || '새 기사').trim();
+  };
+
+  const handleRegenerateDraftSection = async (section: DraftSectionKey) => {
+    if (!selectedRecommendedArticle) {
+      toast({ title: '추천 기사 선택 후 진행해 주세요', variant: 'destructive' });
+      return;
+    }
+
+    const currentSections = resolveCurrentSections();
+    if (!currentSections.core || !currentSections.deepDive || !currentSections.conclusion) {
+      toast({
+        title: '섹션 정보가 부족합니다',
+        description: '초안 생성 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const title = resolveCurrentDraftTitle();
+    setRegeneratingDraftSection(section);
+    setDraftSectionIssues((prev) => ({ ...prev, [section]: [] }));
+    try {
+      const result = await GeminiService.regenerateDraftSection({
+        keyword: searchKeyword.trim() || '최신 이슈',
+        mode: draftMode,
+        title,
+        section,
+        currentSections,
+        selectedArticle: {
+          title: selectedRecommendedArticle.title,
+          summary: selectedRecommendedArticle.summary,
+          url: selectedRecommendedArticle.url,
+          source: selectedRecommendedArticle.source,
+        },
+      });
+
+      setDraftSections(result.sections || null);
+      setComplianceResult(result.compliance || null);
+      if (result.sourceCitation) {
+        setDraftSourceCitation({
+          title: String(result.sourceCitation.title || '').trim(),
+          url: String(result.sourceCitation.url || '').trim(),
+          source: String(result.sourceCitation.source || '').trim(),
+        });
+      }
+      setArticleContent(`[${result.title || title}]\n\n${result.content}`);
+      setDraftSectionIssues((prev) => ({ ...prev, [section]: [] }));
+      setLastAiFailedStep(null);
+      setLastAiErrorMessage('');
+      toast({ title: `${section === 'core' ? '핵심' : section === 'deepDive' ? '심화 시사점' : '결론'} 섹션 재생성 완료` });
+    } catch (error: any) {
+      const defaultMessage = '섹션 재생성에 실패했습니다.';
+      const message =
+        error instanceof AIServiceError
+          ? (error.message || defaultMessage)
+          : (error?.message || defaultMessage);
+      const aiIssues = error instanceof AIServiceError
+        ? (error.issues || [])
+          .map((issue) => String(issue.message || issue.type || '').trim())
+          .filter(Boolean)
+        : [];
+      const complianceIssues = error instanceof AIServiceError
+        ? (error.compliance?.flags || [])
+          .map((flag) => `${flag.category}: ${flag.suggestion}`)
+          .filter(Boolean)
+        : [];
+      const sectionIssues = [...aiIssues, ...complianceIssues];
+      if (sectionIssues.length === 0) sectionIssues.push(message);
+      setDraftSectionIssues((prev) => ({ ...prev, [section]: sectionIssues.slice(0, 4) }));
+      setLastAiFailedStep('draft');
+      setLastAiErrorMessage(message);
+      toast({ title: '섹션 재생성 실패', description: message, variant: 'destructive' });
+    } finally {
+      setRegeneratingDraftSection(null);
+    }
+  };
+
+  const handleRegenerateParagraph = async (index: number) => {
+    if (!selectedRecommendedArticle) {
+      toast({ title: '추천 기사 선택 후 진행해 주세요', variant: 'destructive' });
+      return;
+    }
+    const paragraphs = splitDraftParagraphs(articleContent);
+    if (paragraphs.length === 0 || index < 0 || index >= paragraphs.length) {
+      toast({ title: '재생성할 문단을 찾지 못했습니다.', variant: 'destructive' });
+      return;
+    }
+
+    const title = resolveCurrentDraftTitle();
+    setRegeneratingParagraphIndex(index);
+    setParagraphIssues((prev) => ({ ...prev, [index]: [] }));
+    try {
+      const result = await GeminiService.regenerateDraftParagraph({
+        keyword: searchKeyword.trim() || '최신 이슈',
+        mode: draftMode,
+        title,
+        paragraphIndex: index,
+        paragraphs,
+        selectedArticle: {
+          title: selectedRecommendedArticle.title,
+          summary: selectedRecommendedArticle.summary,
+          url: selectedRecommendedArticle.url,
+          source: selectedRecommendedArticle.source,
+        },
+      });
+
+      if (result.sourceCitation) {
+        setDraftSourceCitation({
+          title: String(result.sourceCitation.title || '').trim(),
+          url: String(result.sourceCitation.url || '').trim(),
+          source: String(result.sourceCitation.source || '').trim(),
+        });
+      }
+      setComplianceResult(result.compliance || null);
+      setArticleContent(`[${result.content ? title : resolveCurrentDraftTitle()}]\n\n${result.content}`);
+      setDraftSections(inferSectionsFromPlainText(result.content));
+      setParagraphIssues((prev) => ({ ...prev, [index]: [] }));
+      toast({ title: `${index + 1}번 문단 재생성 완료` });
+    } catch (error: any) {
+      const message =
+        error instanceof AIServiceError
+          ? (error.message || '문단 재생성에 실패했습니다.')
+          : (error?.message || '문단 재생성에 실패했습니다.');
+      const aiIssues = error instanceof AIServiceError
+        ? (error.issues || [])
+          .map((issue) => String(issue.message || issue.type || '').trim())
+          .filter(Boolean)
+        : [];
+      const complianceIssues = error instanceof AIServiceError
+        ? (error.compliance?.flags || [])
+          .map((flag) => `${flag.category}: ${flag.suggestion}`)
+          .filter(Boolean)
+        : [];
+      const next = [...aiIssues, ...complianceIssues];
+      if (next.length === 0) next.push(message);
+      setParagraphIssues((prev) => ({ ...prev, [index]: next.slice(0, 4) }));
+      toast({ title: '문단 재생성 실패', description: message, variant: 'destructive' });
+    } finally {
+      setRegeneratingParagraphIndex(null);
+    }
+  };
+
   const buildPublishQualityGate = () => {
     const errors: string[] = [];
     const warnings: string[] = [];
+    const isLongformMode = draftMode === 'interactive-longform';
+    const modeLabel = isLongformMode ? '인터랙티브 심층 기사' : '짧은 감성 브리핑';
 
     const rawContent = String(articleContent || '');
     const plain = rawContent
@@ -868,7 +1074,7 @@ export default function JournalistPage() {
     const isAiDraft = /"aiGenerated"\s*:\s*true/i.test(rawContent);
 
     if (!plain) {
-      errors.push('기사 본문이 비어 있습니다.');
+      errors.push(`[${modeLabel}] 본문이 비어 있습니다.`);
       return { errors, warnings };
     }
 
@@ -876,8 +1082,11 @@ export default function JournalistPage() {
       .split(/\n\s*\n/g)
       .map((p) => p.trim())
       .filter(Boolean);
-    if (paragraphs.length < 8) {
-      warnings.push(`문단 수가 ${paragraphs.length}개입니다. 롱폼 기준(8문단 이상) 권장`);
+    const minParagraphs = draftMode === 'interactive-longform' ? 8 : 3;
+    if (paragraphs.length < minParagraphs) {
+      warnings.push(
+        `[${modeLabel}] 문단 수 ${paragraphs.length}개. ${isLongformMode ? '권장 8문단 이상' : '권장 3문단 이상'}으로 보완하면 완성도가 높아집니다.`,
+      );
     }
 
     const hangulCount = (plain.match(/[가-힣]/g) || []).length;
@@ -885,46 +1094,25 @@ export default function JournalistPage() {
     const alphaTotal = hangulCount + latinCount;
     const hangulRatio = alphaTotal > 0 ? hangulCount / alphaTotal : 1;
     if (hangulRatio < 0.7) {
-      errors.push(`한글 비율이 낮습니다(${Math.round(hangulRatio * 100)}%). 한국어 중심 본문으로 보완해 주세요.`);
+      errors.push(
+        `[${modeLabel}] 한글 비율이 낮습니다(${Math.round(hangulRatio * 100)}%). 한국어 중심 문장으로 정리해 주세요.`,
+      );
     }
-
-    const inferSectionsFromPlainText = (text: string) => {
-      const chunks = text
-        .split(/\n\s*\n/g)
-        .map((p) => p.trim())
-        .filter(Boolean);
-
-      if (chunks.length === 0) {
-        return { core: '', deepDive: '', conclusion: '' };
-      }
-
-      if (chunks.length < 3) {
-        const joined = chunks.join('\n\n');
-        return { core: joined, deepDive: joined, conclusion: joined };
-      }
-
-      const third = Math.max(1, Math.floor(chunks.length / 3));
-      const corePart = chunks.slice(0, third).join('\n\n').trim();
-      const deepDivePart = chunks.slice(third, Math.max(third * 2, third + 1)).join('\n\n').trim();
-      const conclusionPart = chunks.slice(Math.max(third * 2, third + 1)).join('\n\n').trim();
-
-      return {
-        core: corePart,
-        deepDive: deepDivePart || corePart,
-        conclusion: conclusionPart || deepDivePart || corePart,
-      };
-    };
 
     const inferredSections = inferSectionsFromPlainText(plain);
     const core = String(draftSections?.core || inferredSections.core || '').trim();
     const deepDive = String(draftSections?.deepDive || inferredSections.deepDive || '').trim();
     const conclusion = String(draftSections?.conclusion || inferredSections.conclusion || '').trim();
     if (!core || !deepDive || !conclusion) {
-      errors.push('섹션 구조가 부족합니다. 핵심/심화 시사점/결론을 모두 작성해 주세요.');
+      errors.push(`[${modeLabel}] 섹션 구조가 부족합니다. 핵심/심화 시사점/결론을 모두 채워 주세요.`);
     } else {
-      if (core.length < 100) warnings.push('핵심 섹션 분량이 짧습니다.');
-      if (deepDive.length < 140) warnings.push('심화 시사점 섹션 분량이 짧습니다.');
-      if (conclusion.length < 80) warnings.push('결론 섹션 분량이 짧습니다.');
+      const sectionLengthGuide =
+        draftMode === 'interactive-longform'
+          ? { core: 100, deepDive: 140, conclusion: 80 }
+          : { core: 50, deepDive: 70, conclusion: 40 };
+      if (core.length < sectionLengthGuide.core) warnings.push(`[${modeLabel}] 핵심 섹션 분량이 짧습니다.`);
+      if (deepDive.length < sectionLengthGuide.deepDive) warnings.push(`[${modeLabel}] 심화 시사점 섹션 분량이 짧습니다.`);
+      if (conclusion.length < sectionLengthGuide.conclusion) warnings.push(`[${modeLabel}] 결론 섹션 분량이 짧습니다.`);
     }
 
     const allowedAnchors: MediaAnchor[] = ['core', 'deepDive', 'conclusion'];
@@ -933,22 +1121,23 @@ export default function JournalistPage() {
         const hasValidAnchor = allowedAnchors.includes(slot.anchorLabel);
         const hasCaption = Boolean(String(slot.caption || '').trim());
         const matchedAsset = mediaAssets.find((asset) => asset.key === slot.sourceAssetKey && asset.type === slot.type);
-        return !hasValidAnchor || !hasCaption || !matchedAsset || !String(slot.sourceUrl || '').trim();
+        const hasSourceBinding = Boolean(String(slot.sourceAssetKey || '').trim() || String(slot.sourceUrl || '').trim());
+        if (!hasValidAnchor || !hasCaption) return true;
+        if (!hasSourceBinding) return false;
+        return !matchedAsset || !String(slot.sourceUrl || '').trim();
       },
     );
     if (invalidSlots.length > 0) {
-      errors.push('미디어 배치 정보가 유효하지 않습니다. 앵커와 캡션을 확인해 주세요.');
+      errors.push(`[${modeLabel}] 미디어 배치 정보가 유효하지 않습니다. 앵커/캡션/소스 연결을 확인해 주세요.`);
     }
 
-    if (suggestedMediaSlots.length === 0) {
-      warnings.push('미디어 배치가 없습니다. 이미지/영상 1개 이상 권장');
+    if (suggestedMediaSlots.length === 0 && draftMode === 'interactive-longform') {
+      warnings.push('[인터랙티브 심층 기사] 미디어 배치가 없습니다. 이미지/영상 1개 이상을 권장합니다.');
     }
 
-    if (selectedRecommendedArticle && !/\[출처\]/.test(plain)) {
-      errors.push('외부 기사 기반 작성은 출처 표기가 필수입니다. [출처] 항목을 확인해 주세요.');
-    }
-    if (isAiDraft && !/\[출처\]/.test(plain)) {
-      errors.push('AI 간편 생성 기사에는 [출처] 표기가 필수입니다.');
+    const citationMissing = !draftSourceCitation || !draftSourceCitation.source || !draftSourceCitation.url;
+    if ((selectedRecommendedArticle || isAiDraft) && citationMissing) {
+      errors.push(`[${modeLabel}] 출처 정보가 비어 있습니다. 본문 아래 '참고 출처' 카드를 확인해 주세요.`);
     }
 
     return { errors, warnings };
@@ -1242,6 +1431,13 @@ export default function JournalistPage() {
     setArticleContent(parsed.plainText || '');
     setDraftSections(parsed.sections || null);
     setSuggestedMediaSlots(parsed.mediaSlots || []);
+    setDraftSourceCitation(
+      parsed.sourceCitation || {
+        title: String(article.title || '').trim(),
+        source: String(article.source || '').trim(),
+        url: '',
+      },
+    );
     setWizardStep(3);
     // Restore tags if possible (simple split)
     if (article.category) {
@@ -1261,6 +1457,7 @@ export default function JournalistPage() {
     setArticleOutline('');
     setArticleContent('');
     setDraftSections(null);
+    setDraftSourceCitation(null);
     setSearchResults(null);
     setRecommendedArticles([]);
     setSelectedRecommendedArticleId(null);
@@ -1297,6 +1494,7 @@ export default function JournalistPage() {
     setSearchResults(null);
     setRecommendedArticles([]);
     setSelectedRecommendedArticleId(null);
+    setDraftSourceCitation(null);
 
     try {
       const result = await GeminiService.searchKeywordNews(searchKeyword);
@@ -1387,10 +1585,10 @@ export default function JournalistPage() {
           issues: issueMessages,
         };
       }
-      if (error.code === 'AI_DRAFT_SIMILARITY_BLOCKED') {
+      if (error.code === 'AI_DRAFT_COPY_BLOCKED' || error.code === 'AI_DRAFT_SIMILARITY_BLOCKED') {
         return {
           code: error.code,
-          message: '참고 기사와 유사도가 높아 초안이 차단되었습니다. 다른 관점으로 다시 생성해 주세요.',
+          message: '참고 기사 문구 복붙 가능성이 감지되어 차단되었습니다. 사실은 유지하고 문장을 새롭게 재구성해 주세요.',
           issues: issueMessages,
         };
       }
@@ -1432,11 +1630,23 @@ export default function JournalistPage() {
       const generatedContent = `[${result.title}]\n\n${result.content}`;
       setArticleContent(generatedContent);
       setDraftSections(result.sections || null);
+      setDraftSourceCitation(
+        result.sourceCitation
+          ? {
+            title: String(result.sourceCitation.title || '').trim(),
+            url: String(result.sourceCitation.url || '').trim(),
+            source: String(result.sourceCitation.source || '').trim(),
+          }
+          : {
+            title: selectedRecommendedArticle.title,
+            url: selectedRecommendedArticle.url,
+            source: selectedRecommendedArticle.source,
+          },
+      );
       setComplianceResult(result.compliance || null);
-      setSuggestedMediaSlots(
-        (result.mediaSlots || []).map((slot, idx) => ({
+      const mappedSlots = (result.mediaSlots || []).map((slot, idx) => ({
           id: String(slot.id || `m${idx + 1}`),
-          type: slot.type === 'video' ? 'video' : 'image',
+          type: (slot.type === 'video' ? 'video' : 'image') as 'image' | 'video',
           anchorLabel: slot.anchorLabel === 'core' || slot.anchorLabel === 'deepDive' || slot.anchorLabel === 'conclusion'
             ? slot.anchorLabel
             : 'deepDive',
@@ -1446,8 +1656,8 @@ export default function JournalistPage() {
           caption: String(slot.caption || '추천 미디어 배치'),
           sourceAssetKey: '',
           sourceUrl: '',
-        })),
-      );
+        }));
+      setSuggestedMediaSlots(draftMode === 'draft' ? [] : mappedSlots);
       if (!imagePromptInput.trim()) {
         setImagePromptInput(`${result.title} 기사 핵심 장면, 사실 기반 뉴스 일러스트`);
       }
@@ -1675,14 +1885,14 @@ export default function JournalistPage() {
 
   const getDraftBlockingLabel = (code: string) => {
     if (code === 'AI_DRAFT_SCHEMA_INVALID') return '형식 규칙 미충족';
-    if (code === 'AI_DRAFT_SIMILARITY_BLOCKED') return '참고 기사 유사도 높음';
+    if (code === 'AI_DRAFT_COPY_BLOCKED' || code === 'AI_DRAFT_SIMILARITY_BLOCKED') return '레퍼런스 복붙 탐지';
     if (code === 'AI_DRAFT_COMPLIANCE_BLOCKED') return '컴플라이언스 고위험';
     return '생성 규칙 차단';
   };
 
   const getDraftBlockingHint = (code: string) => {
     if (code === 'AI_DRAFT_SCHEMA_INVALID') return '모드 전환 또는 분량/섹션 조건을 확인한 뒤 다시 생성하세요.';
-    if (code === 'AI_DRAFT_SIMILARITY_BLOCKED') return '같은 키워드라도 다른 시각, 다른 문장 흐름으로 재생성하세요.';
+    if (code === 'AI_DRAFT_COPY_BLOCKED' || code === 'AI_DRAFT_SIMILARITY_BLOCKED') return '원문 표현을 피하고 화자 시점과 문장 구조를 바꿔 재생성하세요.';
     if (code === 'AI_DRAFT_COMPLIANCE_BLOCKED') return '표현 수위를 낮추고 출처 근거를 강화한 뒤 다시 생성하세요.';
     return '잠시 후 다시 시도하거나 키워드를 조정하세요.';
   };
@@ -2104,9 +2314,12 @@ export default function JournalistPage() {
           const contentWithMeta = withArticleMeta(articleContent, {
             sections: draftSections || inferredSectionsForMeta,
             mediaSlots: suggestedMediaSlots,
+            sourceCitation: draftSourceCitation,
           });
-          const sourceFromBody = extractSourceFromArticleBody(plainForMeta);
-          const ensuredSource = sourceFromBody || selectedRecommendedArticle?.source || '출처 확인 필요';
+          const ensuredSource =
+            String(draftSourceCitation?.source || '').trim() ||
+            selectedRecommendedArticle?.source ||
+            '출처 확인 필요';
 
           let data;
           if (editingArticleId) {
@@ -2421,6 +2634,11 @@ export default function JournalistPage() {
                               onClick={() => {
                                 setSelectedRecommendedArticleId(article.id);
                                 setSearchKeyword(article.title);
+                                setDraftSourceCitation({
+                                  title: article.title,
+                                  url: article.url,
+                                  source: article.source,
+                                });
                               }}
                               className={`w-full text-left rounded-lg border p-3 transition-colors ${
                                 isSelected
@@ -2469,8 +2687,8 @@ export default function JournalistPage() {
                   AI 작성 도우미                </h2>
                 <p className="mb-4 text-xs text-gray-500">
                   {draftMode === 'interactive-longform'
-                    ? '인터랙티브 요소를 추가할 수 있는 심층 기사 작성 모드입니다.'
-                    : '빠른 기사 작성은 이미지 없이 텍스트만으로 발행 가능한 500자 이내 간편 기사 작성 모드입니다.'}
+                    ? '인터랙티브 심층 기사 모드: 스크롤 몰입형 구성과 장면 전환을 포함한 장문 기사 생성.'
+                    : '짧은 감성 브리핑 모드: 핵심 팩트를 300~500자 내외로 빠르게 전달하는 간결 브리핑.'}
                 </p>
                 <div className="mb-3 flex flex-wrap gap-2">
                   <Button
@@ -2479,12 +2697,13 @@ export default function JournalistPage() {
                     size="sm"
                     onClick={() => {
                       setDraftMode('draft');
+                      setSuggestedMediaSlots([]);
                       setDraftBlockingCode('');
                       setDraftBlockingError('');
                       setDraftBlockingIssues([]);
                     }}
                   >
-                    빠른 기사 작성
+                    짧은 감성 브리핑
                   </Button>
                   <Button
                     type="button"
@@ -2497,7 +2716,7 @@ export default function JournalistPage() {
                       setDraftBlockingIssues([]);
                     }}
                   >
-                    인터랙티브 롱폼
+                    인터랙티브 심층 기사
                   </Button>
                 </div>
                 <div className="flex gap-2 mb-4">
@@ -2555,6 +2774,129 @@ export default function JournalistPage() {
                   className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none"
                   data-testid="textarea-article"
                 />
+
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[11px] font-semibold text-slate-700">참고 출처 (수정 불가)</p>
+                  {draftSourceCitation?.source || draftSourceCitation?.url ? (
+                    <div className="mt-1 space-y-1">
+                      <p className="text-xs text-slate-800">{draftSourceCitation?.title || '참고 기사'}</p>
+                      <p className="text-[11px] text-slate-600">{draftSourceCitation?.source || '출처 확인 필요'}</p>
+                      {draftSourceCitation?.url && (
+                        <a
+                          href={draftSourceCitation.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex max-w-full truncate text-[11px] text-blue-600 hover:text-blue-700"
+                        >
+                          {draftSourceCitation.url}
+                        </a>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-[11px] text-slate-500">초안 생성 후 출처 정보가 자동 표시됩니다.</p>
+                  )}
+                </div>
+
+                {articleContent.trim() && (
+                  <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-violet-900">섹션 단위 재생성</p>
+                      <p className="text-[11px] text-violet-700">필요한 문단만 다시 생성하고 전체 본문에 반영합니다.</p>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                      {([
+                        { key: 'core', label: '핵심' },
+                        { key: 'deepDive', label: '심화 시사점' },
+                        { key: 'conclusion', label: '결론' },
+                      ] as Array<{ key: DraftSectionKey; label: string }>).map((row) => {
+                        const sections = resolveCurrentSections();
+                        const preview = String(sections[row.key] || '').trim();
+                        const isLoading = regeneratingDraftSection === row.key;
+                        const sectionIssues = draftSectionIssues[row.key] || [];
+                        const hasSectionError = sectionIssues.length > 0;
+                        return (
+                          <div
+                            key={row.key}
+                            className={`rounded-md border p-2 ${hasSectionError ? 'border-red-200 bg-red-50' : 'border-violet-100 bg-white'}`}
+                          >
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <p className={`text-[11px] font-semibold ${hasSectionError ? 'text-red-800' : 'text-violet-900'}`}>{row.label}</p>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleRegenerateDraftSection(row.key)}
+                                disabled={Boolean(regeneratingDraftSection)}
+                                className="h-6 px-2 text-[10px]"
+                              >
+                                {isLoading ? '재생성 중...' : '재생성'}
+                              </Button>
+                            </div>
+                              <p className="line-clamp-4 text-[11px] leading-5 text-gray-700">
+                              {preview || '아직 추출된 섹션 텍스트가 없습니다.'}
+                              </p>
+                            {hasSectionError && (
+                              <div className="mt-2 rounded border border-red-200 bg-white p-2">
+                                <p className="text-[10px] font-semibold text-red-700">재생성 이슈</p>
+                                <ul className="mt-1 list-disc pl-4 text-[10px] leading-4 text-red-700">
+                                  {sectionIssues.map((issue, idx) => (
+                                    <li key={`${row.key}-issue-${idx}`}>{issue}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {articleContent.trim() && (
+                  <div className="mt-3 rounded-lg border border-sky-100 bg-sky-50 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-sky-900">문단 단위 부분 재생성</p>
+                      <p className="text-[11px] text-sky-700">필요한 문단만 선택해 재작성합니다.</p>
+                    </div>
+                    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                      {splitDraftParagraphs(articleContent).map((paragraph, idx) => {
+                        const isLoading = regeneratingParagraphIndex === idx;
+                        const issues = paragraphIssues[idx] || [];
+                        const hasError = issues.length > 0;
+                        return (
+                          <div
+                            key={`paragraph-regenerate-${idx}`}
+                            className={`rounded-md border p-2 ${hasError ? 'border-red-200 bg-red-50' : 'border-sky-100 bg-white'}`}
+                          >
+                            <div className="mb-1 flex items-center justify-between gap-2">
+                              <p className={`text-[11px] font-semibold ${hasError ? 'text-red-800' : 'text-sky-900'}`}>
+                                문단 {idx + 1}
+                              </p>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-[10px]"
+                                disabled={regeneratingParagraphIndex !== null}
+                                onClick={() => handleRegenerateParagraph(idx)}
+                              >
+                                {isLoading ? '재생성 중...' : '재생성'}
+                              </Button>
+                            </div>
+                            <p className="line-clamp-3 text-[11px] leading-5 text-gray-700">{paragraph}</p>
+                            {hasError && (
+                              <ul className="mt-2 list-disc pl-4 text-[10px] leading-4 text-red-700">
+                                {issues.map((issue, issueIdx) => (
+                                  <li key={`paragraph-issue-${idx}-${issueIdx}`}>{issue}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Grammar Check Results */}
                 {grammarErrors.length > 0 && (
@@ -2748,6 +3090,14 @@ export default function JournalistPage() {
                 )}
               </motion.div>
 
+              {mediaAssets.length === 0 ? (
+                <div ref={mediaPlacementRef} className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+                  <p className="text-sm font-semibold text-indigo-900">미디어 배치</p>
+                  <p className="mt-1 text-xs text-indigo-700">
+                    미디어 업로드 또는 AI 이미지/영상 생성이 완료되면 배치 툴바가 활성화됩니다.
+                  </p>
+                </div>
+              ) : (
               <div ref={mediaPlacementRef} className="p-4 bg-indigo-50 rounded-lg border border-indigo-100">
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <p className="text-sm font-semibold text-indigo-900">
@@ -2889,6 +3239,7 @@ export default function JournalistPage() {
                   </div>
                 )}
               </div>
+              )}
 
               <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
                 <p className="text-sm font-semibold text-blue-900">작성이 끝났다면 배포 준비 단계로 이동하세요</p>
@@ -2936,138 +3287,32 @@ export default function JournalistPage() {
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 max-h-[560px] overflow-y-auto">
                     <pre className="whitespace-pre-wrap text-sm text-gray-800">{articleContent || '본문이 없습니다.'}</pre>
                   </div>
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[11px] font-semibold text-slate-700">참고 출처 (수정 불가)</p>
+                    {draftSourceCitation?.source || draftSourceCitation?.url ? (
+                      <div className="mt-1 space-y-1">
+                        <p className="text-xs text-slate-800">{draftSourceCitation?.title || '참고 기사'}</p>
+                        <p className="text-[11px] text-slate-600">{draftSourceCitation?.source || '출처 확인 필요'}</p>
+                        {draftSourceCitation?.url && (
+                          <a
+                            href={draftSourceCitation.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex max-w-full truncate text-[11px] text-blue-600 hover:text-blue-700"
+                          >
+                            {draftSourceCitation.url}
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-[11px] text-slate-500">출처 정보가 없습니다.</p>
+                    )}
+                  </div>
                 </motion.div>
               )}
             </div>
 
             <div className="space-y-6">
-              {activeComposeStage === 'publish' && showDistributionSettings && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
-              >
-                <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                  <Wand2 className="w-5 h-5 text-violet-500" />
-                  AI 결과 도구
-                </h2>
-
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <Button variant="outline" size="sm" onClick={handleCheckGrammar} disabled={isCheckingGrammar || unlockedWizardStep < 3}>
-                    문법 재검사
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleGenerateSEO} disabled={isGeneratingSEO || unlockedWizardStep < 3}>
-                    해시태그 재생성
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleOptimizeTitles} disabled={isOptimizingTitles || unlockedWizardStep < 3}>
-                    제목 재생성
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleCheckCompliance} disabled={isCheckingCompliance || unlockedWizardStep < 3}>
-                    {isCheckingCompliance ? '점검 중...' : '컴플라이언스 점검'}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleClearAiResults}>
-                    전체 초기화
-                  </Button>
-                </div>
-                <div className="mb-3">
-                  <Button variant="outline" size="sm" onClick={handleUndoAiResult} disabled={aiUndoStack.length === 0}>
-                    최근 AI 적용 취소
-                  </Button>
-                </div>
-                {lastAiFailedStep && (
-                  <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
-                    <p className="font-medium">
-                      마지막 실패 단계: {getStepLabel(lastAiFailedStep)}
-                    </p>
-                    {lastAiErrorMessage && <p className="mt-1 line-clamp-2">{lastAiErrorMessage}</p>}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2"
-                      onClick={retryLastFailedAiStep}
-                    >
-                      실패 단계 다시 시도
-                    </Button>
-                  </div>
-                )}
-
-                <div className="space-y-2 text-xs text-gray-600">
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-                    문법 교정: <span className="font-semibold text-gray-800">{grammarErrors.length}</span>
-                  </div>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-                    해시태그: <span className="font-semibold text-gray-800">{generatedHashtags.length}</span>
-                  </div>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-                    최적화 제목: <span className="font-semibold text-gray-800">{optimizedTitles.length}</span>
-                  </div>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-                    점검 위험도: <span className="font-semibold text-gray-800">{complianceResult?.riskLevel ?? '없음'}</span>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex gap-2">
-                  <Button variant="outline" size="sm" onClick={handleApplySelectedTitle} disabled={selectedTitleIndex === null}>
-                    선택 제목 적용
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleApplySelectedHashtags} disabled={selectedHashtagIndices.length === 0}>
-                    선택 태그 적용
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleGenerateDraft} disabled={isGeneratingDraft || unlockedWizardStep < 3}>
-                    초안 다시 생성
-                  </Button>
-                </div>
-                {generatedHashtags.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {generatedHashtags.map((tag, idx) => {
-                      const selected = selectedHashtagIndices.includes(idx);
-                      return (
-                        <button
-                          key={`${tag}-${idx}`}
-                          type="button"
-                          onClick={() =>
-                            setSelectedHashtagIndices((prev) =>
-                              prev.includes(idx) ? prev.filter((item) => item !== idx) : [...prev, idx],
-                            )
-                          }
-                          className={`rounded-full border px-2 py-1 text-[11px] transition-colors ${
-                            selected
-                              ? 'border-violet-400 bg-violet-100 text-violet-800'
-                              : 'border-gray-200 bg-white text-gray-600'
-                          }`}
-                        >
-                          {tag}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {complianceResult && (
-                  <div className={`mt-3 rounded-lg border p-3 ${getComplianceTone(complianceResult.riskLevel).box}`}>
-                    <p className={`text-xs font-semibold ${getComplianceTone(complianceResult.riskLevel).title}`}>
-                      컴플라이언스 요약 ({complianceResult.riskLevel.toUpperCase()})
-                    </p>
-                    <p className={`mt-1 text-xs ${getComplianceTone(complianceResult.riskLevel).body}`}>{complianceResult.summary}</p>
-                    {complianceResult.flags.length > 0 && (
-                      <div className="mt-2 space-y-2">
-                        {complianceResult.flags.map((flag, idx) => (
-                          <div key={`${flag.category}-${idx}`} className="rounded border border-gray-200 bg-white p-2 text-xs text-gray-700">
-                            <p><span className="font-semibold">{flag.category}</span> ({flag.severity})</p>
-                            <p>{flag.reason}</p>
-                            <p className={getComplianceTone(complianceResult.riskLevel).body}>개선 제안: {flag.suggestion}</p>
-                            {flag.evidenceSnippet && (
-                              <p className="text-gray-500">근거: {flag.evidenceSnippet}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-              )}
-
               {activeComposeStage === 'author' && (
               <motion.div
                 ref={draftVersionRef}

@@ -39,9 +39,10 @@
 
 ## 5. Validation Gates (Target)
 - Parse Gate: valid JSON only.
-- Similarity Gate:
-  - Headline lexical overlap threshold.
-  - Structural overlap heuristic threshold.
+- Copy-Integrity Gate:
+  - Block exact headline match with reference.
+  - Block long-span verbatim reuse from reference title/summary in generated title/content.
+  - Allow creative reconstruction when factual grounding is preserved.
 - Reference Grounding Gate:
   - Citation URL must match provided crawled reference URL set.
   - Verbatim copy detection on title/content against reference title/summary.

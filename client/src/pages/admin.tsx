@@ -124,6 +124,30 @@ type AdminStatsPayload = {
         retries?: number;
       };
     };
+    trends?: {
+      last7d?: Array<{
+        date: string;
+        totals?: {
+          requests?: number;
+          success?: number;
+          parseFailures?: number;
+          schemaBlocks?: number;
+          similarityBlocks?: number;
+          complianceBlocks?: number;
+        };
+      }>;
+      last30d?: Array<{
+        date: string;
+        totals?: {
+          requests?: number;
+          success?: number;
+          parseFailures?: number;
+          schemaBlocks?: number;
+          similarityBlocks?: number;
+          complianceBlocks?: number;
+        };
+      }>;
+    };
   };
   aiNewsOps?: {
     version?: string;
@@ -144,6 +168,31 @@ type AdminStatsPayload = {
       fallbackRecoveries?: number;
       qualityBlocks?: number;
     }>;
+    reasonCodes?: Record<string, number>;
+    trends?: {
+      last7d?: Array<{
+        date: string;
+        totals?: {
+          requests?: number;
+          success?: number;
+          parseFailures?: number;
+          qualityBlocks?: number;
+          fallbackRecoveries?: number;
+          modelEmpty?: number;
+        };
+      }>;
+      last30d?: Array<{
+        date: string;
+        totals?: {
+          requests?: number;
+          success?: number;
+          parseFailures?: number;
+          qualityBlocks?: number;
+          fallbackRecoveries?: number;
+          modelEmpty?: number;
+        };
+      }>;
+    };
   };
   aiNewsSettings?: {
     source?: 'env' | 'admin';
@@ -1474,6 +1523,25 @@ export default function AdminPage() {
   const longformModeOps = stats?.aiDraftOps?.byMode?.['interactive-longform'] || {};
   const newsOpsStats = stats?.aiNewsOps?.totals || {};
   const newsOpsByEmotion = stats?.aiNewsOps?.byEmotion || {};
+  const newsReasonCodes = stats?.aiNewsOps?.reasonCodes || {};
+  const topNewsReasonCodes = Object.entries(newsReasonCodes)
+    .filter(([, count]) => Number(count || 0) > 0)
+    .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+    .slice(0, 6);
+  const aggregateTrend = <T extends Record<string, number | undefined>>(
+    rows: Array<{ totals?: T }> | undefined,
+    keys: string[],
+  ) => {
+    const out: Record<string, number> = {};
+    keys.forEach((key) => {
+      out[key] = (rows || []).reduce((acc, row) => acc + Number((row?.totals as any)?.[key] || 0), 0);
+    });
+    return out;
+  };
+  const draft7d = aggregateTrend(stats?.aiDraftOps?.trends?.last7d, ['requests', 'success', 'parseFailures', 'schemaBlocks', 'similarityBlocks', 'complianceBlocks']);
+  const draft30d = aggregateTrend(stats?.aiDraftOps?.trends?.last30d, ['requests', 'success', 'parseFailures', 'schemaBlocks', 'similarityBlocks', 'complianceBlocks']);
+  const news7d = aggregateTrend(stats?.aiNewsOps?.trends?.last7d, ['requests', 'success', 'parseFailures', 'qualityBlocks', 'fallbackRecoveries', 'modelEmpty']);
+  const news30d = aggregateTrend(stats?.aiNewsOps?.trends?.last30d, ['requests', 'success', 'parseFailures', 'qualityBlocks', 'fallbackRecoveries', 'modelEmpty']);
   const pendingReaderArticles = useMemo(
     () => readerArticles.filter((row) => row.submissionStatus === 'pending'),
     [readerArticles],
@@ -1945,6 +2013,12 @@ export default function AdminPage() {
                         <QuickInfo label="유사도 차단" value={`${draftOpsStats.similarityBlocks ?? 0}건`} tone={(draftOpsStats.similarityBlocks ?? 0) > 0 ? 'amber' : 'gray'} />
                         <QuickInfo label="컴플 차단" value={`${draftOpsStats.complianceBlocks ?? 0}건`} tone={(draftOpsStats.complianceBlocks ?? 0) > 0 ? 'amber' : 'gray'} />
                       </div>
+                      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
+                        <QuickInfo label="최근 7일 요청" value={`${draft7d.requests ?? 0}건`} tone="gray" />
+                        <QuickInfo label="최근 7일 성공률" value={`${(draft7d.requests ?? 0) > 0 ? Math.round(((draft7d.success ?? 0) / Math.max(1, draft7d.requests ?? 0)) * 100) : 0}%`} tone="gray" />
+                        <QuickInfo label="최근 30일 요청" value={`${draft30d.requests ?? 0}건`} tone="gray" />
+                        <QuickInfo label="최근 30일 성공률" value={`${(draft30d.requests ?? 0) > 0 ? Math.round(((draft30d.success ?? 0) / Math.max(1, draft30d.requests ?? 0)) * 100) : 0}%`} tone="gray" />
+                      </div>
                     </div>
                   </AccordionContent>
                 </AccordionItem>
@@ -1966,6 +2040,12 @@ export default function AdminPage() {
                         <QuickInfo label="모델 빈응답" value={`${newsOpsStats.modelEmpty ?? 0}건`} tone={(newsOpsStats.modelEmpty ?? 0) > 0 ? 'amber' : 'gray'} />
                         <QuickInfo label="성공률" value={`${(newsOpsStats.requests ?? 0) > 0 ? Math.round(((newsOpsStats.success ?? 0) / Math.max(1, (newsOpsStats.requests ?? 0))) * 100) : 0}%`} tone="gray" />
                       </div>
+                      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 text-xs">
+                        <QuickInfo label="최근 7일 요청" value={`${news7d.requests ?? 0}건`} tone="gray" />
+                        <QuickInfo label="최근 7일 성공률" value={`${(news7d.requests ?? 0) > 0 ? Math.round(((news7d.success ?? 0) / Math.max(1, news7d.requests ?? 0)) * 100) : 0}%`} tone="gray" />
+                        <QuickInfo label="최근 30일 요청" value={`${news30d.requests ?? 0}건`} tone="gray" />
+                        <QuickInfo label="최근 30일 성공률" value={`${(news30d.requests ?? 0) > 0 ? Math.round(((news30d.success ?? 0) / Math.max(1, news30d.requests ?? 0)) * 100) : 0}%`} tone="gray" />
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 text-xs">
                         {(['vibrance', 'immersion', 'clarity', 'gravity', 'serenity', 'spectrum'] as const).map((emotion) => {
                           const row = newsOpsByEmotion?.[emotion] || {};
@@ -1975,6 +2055,20 @@ export default function AdminPage() {
                             </div>
                           );
                         })}
+                      </div>
+                      <div className="rounded-lg border border-gray-200 bg-white p-3">
+                        <p className="text-xs font-semibold text-gray-700 mb-2">주요 Reason Code</p>
+                        {topNewsReasonCodes.length === 0 ? (
+                          <p className="text-[11px] text-gray-500">집계된 reasonCode가 없습니다.</p>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                            {topNewsReasonCodes.map(([code, count]) => (
+                              <div key={`reason-${code}`} className="rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-gray-700">
+                                {code}: {count}건
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">

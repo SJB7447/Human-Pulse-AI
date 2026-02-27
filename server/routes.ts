@@ -150,6 +150,11 @@ type DraftOpsSnapshot = {
   };
   totals: DraftOpsCounters;
   byMode: Record<DraftMode, DraftOpsCounters>;
+  dailyTotals: Record<string, DraftOpsCounters>;
+  trends: {
+    last7d: Array<{ date: string; totals: DraftOpsCounters }>;
+    last30d: Array<{ date: string; totals: DraftOpsCounters }>;
+  };
 };
 
 type AiNewsOpsCounters = {
@@ -172,6 +177,12 @@ type AiNewsOpsSnapshot = {
   };
   totals: AiNewsOpsCounters;
   byEmotion: Record<EmotionType, AiNewsOpsCounters>;
+  dailyTotals: Record<string, AiNewsOpsCounters>;
+  reasonCodes: Record<string, number>;
+  trends: {
+    last7d: Array<{ date: string; totals: AiNewsOpsCounters }>;
+    last30d: Array<{ date: string; totals: AiNewsOpsCounters }>;
+  };
 };
 
 const DRAFT_PROMPT_VERSION = "article_generation_contract_v1";
@@ -437,12 +448,41 @@ function createAiNewsOpsCounters(): AiNewsOpsCounters {
   };
 }
 
+function toUtcDateKey(input: Date = new Date()): string {
+  return input.toISOString().slice(0, 10);
+}
+
+function pickRecentDateKeys(days: number): string[] {
+  const out: string[] = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    out.push(toUtcDateKey(d));
+  }
+  return out;
+}
+
+function buildDraftTrend(days: number): Array<{ date: string; totals: DraftOpsCounters }> {
+  return pickRecentDateKeys(days).map((date) => ({
+    date,
+    totals: normalizeDraftOpsCounters(draftOpsMetrics.dailyTotals[date]),
+  }));
+}
+
+function buildAiNewsTrend(days: number): Array<{ date: string; totals: AiNewsOpsCounters }> {
+  return pickRecentDateKeys(days).map((date) => ({
+    date,
+    totals: normalizeAiNewsOpsCounters(aiNewsOpsMetrics.dailyTotals[date]),
+  }));
+}
+
 const draftOpsMetrics: {
   promptVersion: string;
   startedAt: string;
   updatedAt: string;
   totals: DraftOpsCounters;
   byMode: Record<DraftMode, DraftOpsCounters>;
+  dailyTotals: Record<string, DraftOpsCounters>;
 } = {
   promptVersion: DRAFT_PROMPT_VERSION,
   startedAt: new Date().toISOString(),
@@ -452,6 +492,7 @@ const draftOpsMetrics: {
     draft: createDraftOpsCounters(),
     "interactive-longform": createDraftOpsCounters(),
   },
+  dailyTotals: {},
 };
 
 const aiNewsOpsMetrics: {
@@ -460,6 +501,8 @@ const aiNewsOpsMetrics: {
   updatedAt: string;
   totals: AiNewsOpsCounters;
   byEmotion: Record<EmotionType, AiNewsOpsCounters>;
+  dailyTotals: Record<string, AiNewsOpsCounters>;
+  reasonCodes: Record<string, number>;
 } = {
   version: "emotion_mapping_v3_2026_02_23",
   startedAt: new Date().toISOString(),
@@ -473,6 +516,8 @@ const aiNewsOpsMetrics: {
     serenity: createAiNewsOpsCounters(),
     spectrum: createAiNewsOpsCounters(),
   },
+  dailyTotals: {},
+  reasonCodes: {},
 };
 
 function resetDraftOpsMetricsCounters(): void {
@@ -481,6 +526,7 @@ function resetDraftOpsMetricsCounters(): void {
     draft: createDraftOpsCounters(),
     "interactive-longform": createDraftOpsCounters(),
   };
+  draftOpsMetrics.dailyTotals = {};
 }
 
 function resetAiNewsOpsMetricsCounters(): void {
@@ -493,6 +539,8 @@ function resetAiNewsOpsMetricsCounters(): void {
     serenity: createAiNewsOpsCounters(),
     spectrum: createAiNewsOpsCounters(),
   };
+  aiNewsOpsMetrics.dailyTotals = {};
+  aiNewsOpsMetrics.reasonCodes = {};
 }
 
 function isDraftModeValue(value: unknown): value is DraftMode {
@@ -524,8 +572,13 @@ function persistDraftMetricEvent(mode: DraftMode, key: keyof DraftOpsCounters, m
 }
 
 function trackDraftMetric(mode: DraftMode, key: keyof DraftOpsCounters, meta?: Record<string, unknown>) {
+  const dayKey = toUtcDateKey();
+  if (!draftOpsMetrics.dailyTotals[dayKey]) {
+    draftOpsMetrics.dailyTotals[dayKey] = createDraftOpsCounters();
+  }
   draftOpsMetrics.totals[key] += 1;
   draftOpsMetrics.byMode[mode][key] += 1;
+  draftOpsMetrics.dailyTotals[dayKey][key] += 1;
   draftOpsMetrics.updatedAt = new Date().toISOString();
   persistDraftMetricEvent(mode, key, meta);
   scheduleDraftOpsPersistence();
@@ -545,6 +598,13 @@ function getDraftOpsSnapshot(): DraftOpsSnapshot {
     byMode: {
       draft: { ...draftOpsMetrics.byMode.draft },
       "interactive-longform": { ...draftOpsMetrics.byMode["interactive-longform"] },
+    },
+    dailyTotals: Object.fromEntries(
+      Object.entries(draftOpsMetrics.dailyTotals).map(([date, counters]) => [date, { ...counters }]),
+    ),
+    trends: {
+      last7d: buildDraftTrend(7),
+      last30d: buildDraftTrend(30),
     },
   };
 }
@@ -567,6 +627,38 @@ function normalizeAiNewsOpsCounters(raw: any): AiNewsOpsCounters {
     base[key] = Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
   }
   return base;
+}
+
+function normalizeDraftDailyTotals(raw: any): Record<string, DraftOpsCounters> {
+  const out: Record<string, DraftOpsCounters> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [dateKey, counters] of Object.entries(raw)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) continue;
+    out[String(dateKey)] = normalizeDraftOpsCounters(counters);
+  }
+  return out;
+}
+
+function normalizeAiNewsDailyTotals(raw: any): Record<string, AiNewsOpsCounters> {
+  const out: Record<string, AiNewsOpsCounters> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [dateKey, counters] of Object.entries(raw)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) continue;
+    out[String(dateKey)] = normalizeAiNewsOpsCounters(counters);
+  }
+  return out;
+}
+
+function normalizeReasonCodeMap(raw: any): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [code, count] of Object.entries(raw)) {
+    const key = String(code || "").trim();
+    const value = Number(count || 0);
+    if (!key) continue;
+    out[key] = Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  }
+  return out;
 }
 
 async function persistDraftOpsMetrics(): Promise<void> {
@@ -622,6 +714,14 @@ type AiNewsCompareLogEntry = {
 };
 
 async function appendAiNewsCompareLog(entry: AiNewsCompareLogEntry): Promise<void> {
+  if (entry.reasonCode) {
+    const key = String(entry.reasonCode).trim();
+    if (key) {
+      aiNewsOpsMetrics.reasonCodes[key] = Number(aiNewsOpsMetrics.reasonCodes[key] || 0) + 1;
+      aiNewsOpsMetrics.updatedAt = new Date().toISOString();
+      scheduleAiNewsOpsPersistence();
+    }
+  }
   try {
     await mkdir(path.dirname(AI_NEWS_COMPARE_LOG_PATH), { recursive: true });
     await appendFile(AI_NEWS_COMPARE_LOG_PATH, `${JSON.stringify(entry)}\n`, "utf8");
@@ -673,8 +773,13 @@ async function hydrateDraftOpsMetrics(): Promise<void> {
         const mode = parsed?.mode;
         const key = parsed?.key;
         if (!isDraftModeValue(mode) || !isDraftCounterKey(key)) continue;
+        const dayKey = toUtcDateKey(new Date(log.createdAt || new Date()));
+        if (!draftOpsMetrics.dailyTotals[dayKey]) {
+          draftOpsMetrics.dailyTotals[dayKey] = createDraftOpsCounters();
+        }
         draftOpsMetrics.byMode[mode][key] += 1;
         draftOpsMetrics.totals[key] += 1;
+        draftOpsMetrics.dailyTotals[dayKey][key] += 1;
       }
 
       draftOpsMetrics.startedAt = new Date(sorted[0]?.createdAt || new Date()).toISOString();
@@ -702,6 +807,7 @@ async function hydrateDraftOpsMetrics(): Promise<void> {
       draft: normalizeDraftOpsCounters(parsed?.byMode?.draft),
       "interactive-longform": normalizeDraftOpsCounters(parsed?.byMode?.["interactive-longform"]),
     };
+    draftOpsMetrics.dailyTotals = normalizeDraftDailyTotals(parsed?.dailyTotals);
     console.info("[AI_DRAFT_METRIC] hydrated from file", {
       path: AI_DRAFT_OPS_METRICS_PATH,
       updatedAt: draftOpsMetrics.updatedAt,
@@ -729,6 +835,8 @@ async function hydrateAiNewsOpsMetrics(): Promise<void> {
       serenity: normalizeAiNewsOpsCounters(parsed?.byEmotion?.serenity),
       spectrum: normalizeAiNewsOpsCounters(parsed?.byEmotion?.spectrum),
     };
+    aiNewsOpsMetrics.dailyTotals = normalizeAiNewsDailyTotals(parsed?.dailyTotals);
+    aiNewsOpsMetrics.reasonCodes = normalizeReasonCodeMap(parsed?.reasonCodes);
     console.info("[AI_NEWS_METRIC] hydrated from file", {
       path: AI_NEWS_OPS_METRICS_PATH,
       updatedAt: aiNewsOpsMetrics.updatedAt,
@@ -872,8 +980,13 @@ function trackAiNewsMetric(
   amount: number = 1,
 ): void {
   if (amount <= 0) return;
+  const dayKey = toUtcDateKey();
+  if (!aiNewsOpsMetrics.dailyTotals[dayKey]) {
+    aiNewsOpsMetrics.dailyTotals[dayKey] = createAiNewsOpsCounters();
+  }
   aiNewsOpsMetrics.totals[key] += amount;
   aiNewsOpsMetrics.byEmotion[emotion][key] += amount;
+  aiNewsOpsMetrics.dailyTotals[dayKey][key] += amount;
   aiNewsOpsMetrics.updatedAt = new Date().toISOString();
   scheduleAiNewsOpsPersistence();
 }
@@ -895,6 +1008,14 @@ function getAiNewsOpsSnapshot(): AiNewsOpsSnapshot {
       gravity: { ...aiNewsOpsMetrics.byEmotion.gravity },
       serenity: { ...aiNewsOpsMetrics.byEmotion.serenity },
       spectrum: { ...aiNewsOpsMetrics.byEmotion.spectrum },
+    },
+    dailyTotals: Object.fromEntries(
+      Object.entries(aiNewsOpsMetrics.dailyTotals).map(([date, counters]) => [date, { ...counters }]),
+    ),
+    reasonCodes: { ...aiNewsOpsMetrics.reasonCodes },
+    trends: {
+      last7d: buildAiNewsTrend(7),
+      last30d: buildAiNewsTrend(30),
     },
   };
 }
@@ -1027,7 +1148,7 @@ async function hydrateAiNewsSettings(): Promise<void> {
 }
 
 type DraftSimilarityIssue = {
-  type: "headline_overlap" | "headline_exact_match" | "structure_overlap";
+  type: "headline_overlap" | "headline_exact_match" | "structure_overlap" | "copy_detected";
   score: number;
   threshold: number;
   message: string;
@@ -1060,25 +1181,6 @@ function jaccardSimilarity(leftTokens: string[], rightTokens: string[]): number 
   return union > 0 ? intersection / union : 0;
 }
 
-function sentenceSignatures(input: string, limit: number): string[] {
-  return String(input || "")
-    .split(/[.!?。！？\n]+/)
-    .map((line) => normalizeSimilarityText(line).replace(/\s+/g, ""))
-    .filter((line) => line.length >= 8)
-    .slice(0, limit)
-    .map((line) => line.slice(0, 14));
-}
-
-function overlapRatio(left: string[], right: string[]): number {
-  if (left.length === 0 || right.length === 0) return 0;
-  const rightSet = new Set(right);
-  let matched = 0;
-  for (const value of left) {
-    if (rightSet.has(value)) matched += 1;
-  }
-  return matched / Math.min(left.length, right.length);
-}
-
 function evaluateDraftSimilarity(input: {
   selectedArticle: { title: string; summary: string } | null;
   generatedTitle: string;
@@ -1104,56 +1206,12 @@ function evaluateDraftSimilarity(input: {
     });
   }
 
-  const titleOverlap = jaccardSimilarity(
-    tokenizeSimilarity(input.generatedTitle),
-    tokenizeSimilarity(refTitle),
-  );
-  if (titleOverlap >= aiDraftGateSettings.similarityTitleOverlapThreshold) {
-    issues.push({
-      type: "headline_overlap",
-      score: Number(titleOverlap.toFixed(3)),
-      threshold: aiDraftGateSettings.similarityTitleOverlapThreshold,
-      message: "생성 제목의 어휘가 참고 기사 제목과 과도하게 겹칩니다.",
-    });
-  }
-
   if (hasLongCopiedSpan(refTitle, input.generatedTitle, 10)) {
     issues.push({
-      type: "headline_overlap",
+      type: "copy_detected",
       score: 1,
       threshold: 1,
       message: "생성 제목이 참고 기사 제목 문구를 그대로 재사용했습니다.",
-    });
-  }
-
-  const generatedLead = String(input.generatedContent || "")
-    .split(/\n{2,}/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("\n");
-  const refComposite = [refTitle, refSummary].filter(Boolean).join("\n");
-
-  const lexicalOverlap = jaccardSimilarity(
-    tokenizeSimilarity(generatedLead),
-    tokenizeSimilarity(refComposite),
-  );
-  const structureOverlap = overlapRatio(
-    sentenceSignatures(generatedLead, 6),
-    sentenceSignatures(refComposite, 4),
-  );
-
-  const score = Number(((lexicalOverlap + structureOverlap) / 2).toFixed(3));
-  if (
-    lexicalOverlap >= aiDraftGateSettings.similarityLexicalOverlapThreshold &&
-    structureOverlap >= aiDraftGateSettings.similarityStructureOverlapThreshold &&
-    score >= aiDraftGateSettings.similarityCombinedThreshold
-  ) {
-    issues.push({
-      type: "structure_overlap",
-      score,
-      threshold: aiDraftGateSettings.similarityCombinedThreshold,
-      message: "도입 문단의 어휘/문장 전개가 참고 기사와 유사합니다.",
     });
   }
 
@@ -1162,7 +1220,7 @@ function evaluateDraftSimilarity(input: {
     hasLongCopiedSpan(refSummary, input.generatedContent, 24)
   ) {
     issues.push({
-      type: "structure_overlap",
+      type: "copy_detected",
       score: 1,
       threshold: 1,
       message: "생성 본문이 참고 기사 문장을 그대로 재사용했습니다.",
@@ -5463,7 +5521,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         trackDraftMetric(mode, "success", { scenario: regressionScenario });
         return res.json({
           title: mockDraft.title,
-          content: `${mockDraft.content}\n\n[출처]\n- ${mockDraft.sourceCitation.source} (${mockDraft.sourceCitation.url})`,
+          content: mockDraft.content,
           sections: mockDraft.sections,
           mediaSlots: mockDraft.mediaSlots,
           sourceCitation: mockDraft.sourceCitation,
@@ -5561,6 +5619,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const parseDraftResponse = (text: string) => {
       const parsed = parseJsonFromModelText<{
         title?: unknown;
+        titles?: unknown;
         content?: unknown;
         sections?: { core?: unknown; deepDive?: unknown; conclusion?: unknown };
         sourceCitation?: { title?: unknown; url?: unknown; source?: unknown };
@@ -5609,7 +5668,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         };
       }
 
-      const title = String(parsed.title || "").trim();
+      const titleCandidates = Array.isArray(parsed.titles)
+        ? parsed.titles.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 3)
+        : [];
+      const title = String(parsed.title || titleCandidates[0] || "").trim();
       const content = String(parsed.content || "").trim();
       if (!title || !content) {
         return {
@@ -5676,9 +5738,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         : [
           "",
           "[재생성 지시]",
-          "직전 결과는 참고 기사와 유사도가 높아 차단되었습니다.",
-          "제목은 참고 기사와 동일/유사한 단어 조합을 피하고 새롭게 작성하세요.",
-          "문단 순서와 문장 시작 표현을 새롭게 바꾸되 사실관계는 유지하세요.",
+          "직전 결과는 참고 기사 문구 복붙 가능성이 감지되어 차단되었습니다.",
+          "문장을 새롭게 재구성하고 화자 시점을 바꾸어 창의적으로 서술하세요.",
+          "사실관계와 수치는 유지하되, 원문 표현은 그대로 사용하지 마세요.",
         ].join("\n");
       const prompt = `${basePrompt}${retryInstruction}`;
       const text = await generateGeminiText(prompt);
@@ -5747,8 +5809,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         }
         trackDraftMetric(mode, "similarityBlocks", { attempt, issues: similarityIssues.length });
         return res.status(502).json({
-          error: "생성 초안이 참고 기사와 유사해 차단되었습니다. 다시 시도해 주세요.",
-          code: "AI_DRAFT_SIMILARITY_BLOCKED",
+          error: "생성 초안에서 참고 기사 문구 복붙 가능성이 감지되어 차단되었습니다. 문장을 새롭게 재구성해 다시 시도해 주세요.",
+          code: "AI_DRAFT_COPY_BLOCKED",
           retryable: true,
           mode,
           issues: similarityIssues,
@@ -5769,8 +5831,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
     }
 
-    const draftedContentWithSource = `${finalDraft.content}\n\n[출처]\n- ${finalDraft.sourceCitation.source || "출처 확인 필요"}${finalDraft.sourceCitation.url ? ` (${finalDraft.sourceCitation.url})` : ""}`;
-    const compliance = assessCompliance(draftedContentWithSource);
+    const compliance = assessCompliance(finalDraft.content);
     if (compliance.publishBlocked) {
       trackDraftMetric(mode, "complianceBlocks", { riskLevel: compliance.riskLevel, flagCount: compliance.flags.length });
       return res.status(409).json({
@@ -5788,7 +5849,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
     return res.json({
       title: finalDraft.title,
-      content: draftedContentWithSource,
+      content: finalDraft.content,
       sections: {
         core: finalDraft.sections.core || "",
         deepDive: finalDraft.sections.deepDive || "",
@@ -5802,6 +5863,296 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       },
       compliance,
       fallbackUsed: finalDraft.fallbackUsed,
+    });
+  });
+
+  app.post("/api/ai/regenerate-draft-section", async (req, res) => {
+    const keyword = String(req.body?.keyword || "").trim() || "topic";
+    const mode = normalizeDraftMode(String(req.body?.mode || "draft").trim());
+    const section = String(req.body?.section || "").trim() as "core" | "deepDive" | "conclusion";
+    const title = String(req.body?.title || "").trim();
+    const currentSectionsRaw = req.body?.currentSections && typeof req.body.currentSections === "object"
+      ? req.body.currentSections
+      : null;
+
+    const selectedArticle = req.body?.selectedArticle && typeof req.body.selectedArticle === "object"
+      ? {
+        title: String(req.body.selectedArticle.title || "").trim(),
+        summary: String(req.body.selectedArticle.summary || "").trim(),
+        url: String(req.body.selectedArticle.url || "").trim(),
+        source: String(req.body.selectedArticle.source || "").trim(),
+      }
+      : null;
+
+    if (
+      !selectedArticle ||
+      !selectedArticle.title ||
+      !selectedArticle.summary ||
+      !selectedArticle.url ||
+      !selectedArticle.source ||
+      !/^https?:\/\//i.test(selectedArticle.url)
+    ) {
+      return res.status(400).json({
+        error: "레퍼런스 기사(제목/요약/출처/URL)가 없으면 섹션 재생성을 진행할 수 없습니다.",
+        code: "AI_DRAFT_REFERENCE_REQUIRED",
+        retryable: false,
+      });
+    }
+
+    if (!["core", "deepDive", "conclusion"].includes(section)) {
+      return res.status(400).json({
+        error: "재생성할 섹션이 올바르지 않습니다.",
+        code: "AI_DRAFT_SECTION_INVALID",
+        retryable: false,
+      });
+    }
+
+    const currentSections = {
+      core: String((currentSectionsRaw as any)?.core || "").trim(),
+      deepDive: String((currentSectionsRaw as any)?.deepDive || "").trim(),
+      conclusion: String((currentSectionsRaw as any)?.conclusion || "").trim(),
+    };
+
+    if (!currentSections.core || !currentSections.deepDive || !currentSections.conclusion) {
+      return res.status(400).json({
+        error: "현재 섹션 정보가 부족합니다. 초안을 먼저 생성해 주세요.",
+        code: "AI_DRAFT_SECTION_CONTEXT_MISSING",
+        retryable: false,
+      });
+    }
+
+    const sectionLabelMap: Record<"core" | "deepDive" | "conclusion", string> = {
+      core: "핵심",
+      deepDive: "심화 시사점",
+      conclusion: "결론",
+    };
+
+    const prompt = [
+      "너는 HueBrief 기자 페이지의 AI 작성 도우미다.",
+      "사실과 수치는 절대 왜곡하지 말고, 레퍼런스는 근거 확인 용도로만 사용한다.",
+      "레퍼런스 문구를 그대로 복사하지 말고 창의적으로 재구성하되 사실은 유지한다.",
+      "출력은 반드시 JSON 객체 1개만 반환한다.",
+      "JSON Schema:",
+      '{"section":"core|deepDive|conclusion","text":"string"}',
+      `mode: ${mode}`,
+      `keyword: ${keyword}`,
+      `title: ${title || "(없음)"}`,
+      `regenerate target section: ${section} (${sectionLabelMap[section]})`,
+      `current core: ${currentSections.core}`,
+      `current deepDive: ${currentSections.deepDive}`,
+      `current conclusion: ${currentSections.conclusion}`,
+      `reference title: ${selectedArticle.title}`,
+      `reference summary: ${selectedArticle.summary}`,
+      `reference source: ${selectedArticle.source}`,
+      `reference URL: ${selectedArticle.url}`,
+      "요구사항:",
+      "1) 지정된 target section만 새로 작성한다.",
+      "2) 다른 섹션 내용과 자연스럽게 이어지도록 톤/맥락을 맞춘다.",
+      "3) 한국어로 작성한다.",
+      "4) 원문 문구 복붙을 금지한다.",
+    ].join("\n");
+
+    const modelText = await generateGeminiText(prompt);
+    if (!modelText) {
+      return res.status(502).json({
+        error: "AI 모델 응답이 비어 있어 섹션 재생성을 중단했습니다.",
+        code: "AI_DRAFT_MODEL_EMPTY",
+        retryable: true,
+      });
+    }
+
+    const parsed = parseJsonFromModelText<{ section?: unknown; text?: unknown }>(String(modelText || ""));
+    const regeneratedText = String(parsed?.text || "").trim();
+    if (!regeneratedText) {
+      return res.status(502).json({
+        error: "섹션 재생성 결과를 해석하지 못했습니다. 다시 시도해 주세요.",
+        code: "AI_DRAFT_SECTION_PARSE_BLOCKED",
+        retryable: true,
+      });
+    }
+
+    if (
+      hasLongCopiedSpan(selectedArticle.title, regeneratedText, 16) ||
+      hasLongCopiedSpan(selectedArticle.summary, regeneratedText, 24)
+    ) {
+      return res.status(502).json({
+        error: "재생성 섹션에서 레퍼런스 문구 복붙 가능성이 감지되어 차단되었습니다.",
+        code: "AI_DRAFT_COPY_BLOCKED",
+        retryable: true,
+        issues: [
+          {
+            type: "copy_detected",
+            message: "레퍼런스 문구를 그대로 사용하지 말고 표현을 바꿔 재생성해 주세요.",
+          },
+        ],
+      });
+    }
+
+    const nextSections = {
+      ...currentSections,
+      [section]: regeneratedText,
+    };
+
+    const mergedContent = [nextSections.core, nextSections.deepDive, nextSections.conclusion]
+      .map((row) => String(row || "").trim())
+      .filter(Boolean)
+      .join("\n\n");
+    const compliance = assessCompliance(mergedContent);
+    if (compliance.publishBlocked) {
+      return res.status(409).json({
+        error: "컴플라이언스 고위험 항목이 감지되어 섹션 반영이 차단되었습니다.",
+        code: "AI_DRAFT_COMPLIANCE_BLOCKED",
+        retryable: true,
+        compliance,
+      });
+    }
+
+    return res.json({
+      section,
+      text: regeneratedText,
+      title: title || keyword,
+      sections: nextSections,
+      content: mergedContent,
+      sourceCitation: {
+        title: selectedArticle.title,
+        url: selectedArticle.url,
+        source: selectedArticle.source,
+      },
+      compliance,
+      fallbackUsed: false,
+    });
+  });
+
+  app.post("/api/ai/regenerate-draft-paragraph", async (req, res) => {
+    const keyword = String(req.body?.keyword || "").trim() || "topic";
+    const mode = normalizeDraftMode(String(req.body?.mode || "draft").trim());
+    const title = String(req.body?.title || "").trim();
+    const paragraphIndex = Number(req.body?.paragraphIndex ?? -1);
+    const paragraphs = Array.isArray(req.body?.paragraphs)
+      ? req.body.paragraphs.map((p: unknown) => String(p || "").trim()).filter(Boolean)
+      : [];
+    const selectedArticle = req.body?.selectedArticle && typeof req.body.selectedArticle === "object"
+      ? {
+        title: String(req.body.selectedArticle.title || "").trim(),
+        summary: String(req.body.selectedArticle.summary || "").trim(),
+        url: String(req.body.selectedArticle.url || "").trim(),
+        source: String(req.body.selectedArticle.source || "").trim(),
+      }
+      : null;
+
+    if (
+      !selectedArticle ||
+      !selectedArticle.title ||
+      !selectedArticle.summary ||
+      !selectedArticle.url ||
+      !selectedArticle.source ||
+      !/^https?:\/\//i.test(selectedArticle.url)
+    ) {
+      return res.status(400).json({
+        error: "레퍼런스 기사(제목/요약/출처/URL)가 없으면 문단 재생성을 진행할 수 없습니다.",
+        code: "AI_DRAFT_REFERENCE_REQUIRED",
+        retryable: false,
+      });
+    }
+
+    if (!Number.isInteger(paragraphIndex) || paragraphIndex < 0 || paragraphIndex >= paragraphs.length) {
+      return res.status(400).json({
+        error: "재생성할 문단 인덱스가 유효하지 않습니다.",
+        code: "AI_DRAFT_PARAGRAPH_INVALID",
+        retryable: false,
+      });
+    }
+
+    const targetParagraph = paragraphs[paragraphIndex];
+    const beforeParagraph = paragraphIndex > 0 ? paragraphs[paragraphIndex - 1] : "";
+    const afterParagraph = paragraphIndex < paragraphs.length - 1 ? paragraphs[paragraphIndex + 1] : "";
+
+    const prompt = [
+      "너는 HueBrief 기자 페이지의 AI 작성 도우미다.",
+      "사실과 수치는 절대 왜곡하지 말고, 레퍼런스는 근거 확인 용도로만 사용한다.",
+      "레퍼런스 문구를 그대로 복사하지 말고 창의적으로 재구성하되 사실은 유지한다.",
+      "출력은 반드시 JSON 객체 1개만 반환한다.",
+      "JSON Schema:",
+      '{"text":"string"}',
+      `mode: ${mode}`,
+      `keyword: ${keyword}`,
+      `title: ${title || "(없음)"}`,
+      `paragraph index: ${paragraphIndex + 1}/${paragraphs.length}`,
+      `target paragraph: ${targetParagraph}`,
+      `previous paragraph: ${beforeParagraph || "(없음)"}`,
+      `next paragraph: ${afterParagraph || "(없음)"}`,
+      `reference title: ${selectedArticle.title}`,
+      `reference summary: ${selectedArticle.summary}`,
+      `reference source: ${selectedArticle.source}`,
+      `reference URL: ${selectedArticle.url}`,
+      "요구사항:",
+      "1) target paragraph만 새로 작성한다.",
+      "2) 이전/다음 문단과 자연스럽게 이어지게 작성한다.",
+      "3) 한국어로 작성하고 2~4문장으로 유지한다.",
+      "4) 원문 문구 복붙을 금지한다.",
+    ].join("\n");
+
+    const modelText = await generateGeminiText(prompt);
+    if (!modelText) {
+      return res.status(502).json({
+        error: "AI 모델 응답이 비어 있어 문단 재생성을 중단했습니다.",
+        code: "AI_DRAFT_MODEL_EMPTY",
+        retryable: true,
+      });
+    }
+
+    const parsed = parseJsonFromModelText<{ text?: unknown }>(String(modelText || ""));
+    const regeneratedText = String(parsed?.text || "").trim();
+    if (!regeneratedText) {
+      return res.status(502).json({
+        error: "문단 재생성 결과를 해석하지 못했습니다. 다시 시도해 주세요.",
+        code: "AI_DRAFT_PARAGRAPH_PARSE_BLOCKED",
+        retryable: true,
+      });
+    }
+
+    if (
+      hasLongCopiedSpan(selectedArticle.title, regeneratedText, 16) ||
+      hasLongCopiedSpan(selectedArticle.summary, regeneratedText, 24)
+    ) {
+      return res.status(502).json({
+        error: "재생성 문단에서 레퍼런스 문구 복붙 가능성이 감지되어 차단되었습니다.",
+        code: "AI_DRAFT_COPY_BLOCKED",
+        retryable: true,
+        issues: [
+          {
+            type: "copy_detected",
+            message: "레퍼런스 문구를 그대로 사용하지 말고 표현을 바꿔 재생성해 주세요.",
+          },
+        ],
+      });
+    }
+
+    const nextParagraphs = [...paragraphs];
+    nextParagraphs[paragraphIndex] = regeneratedText;
+    const content = nextParagraphs.join("\n\n").trim();
+    const compliance = assessCompliance(content);
+    if (compliance.publishBlocked) {
+      return res.status(409).json({
+        error: "컴플라이언스 고위험 항목이 감지되어 문단 반영이 차단되었습니다.",
+        code: "AI_DRAFT_COMPLIANCE_BLOCKED",
+        retryable: true,
+        compliance,
+      });
+    }
+
+    return res.json({
+      paragraphIndex,
+      text: regeneratedText,
+      paragraphs: nextParagraphs,
+      content,
+      sourceCitation: {
+        title: selectedArticle.title,
+        url: selectedArticle.url,
+        source: selectedArticle.source,
+      },
+      compliance,
+      fallbackUsed: false,
     });
   });
 
