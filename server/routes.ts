@@ -1237,6 +1237,65 @@ function countKoreanSentenceUnits(content: string): number {
     .filter(Boolean).length;
 }
 
+function splitIntoSentenceLikeUnits(content: string): string[] {
+  return String(content || "")
+    .replace(/\s+/g, " ")
+    .replace(/([.!?。！？])\s+/g, "$1\n")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function normalizeLongformDraftData(input: {
+  title: string;
+  content: string;
+  fallbackUsed: boolean;
+  sections: { core: string; deepDive: string; conclusion: string };
+  sourceCitation: { title: string; url: string; source: string };
+  mediaSlots: DraftMediaSlot[];
+}, _minSentenceUnits: number) {
+  const normalizedContent = String(input.content || "").trim();
+  const paragraphs = normalizedContent
+    .split(/\n\s*\n/g)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  const sentenceUnits = splitIntoSentenceLikeUnits(normalizedContent);
+
+  const minParagraphs = 8;
+  let nextContent = normalizedContent;
+
+  if (paragraphs.length < minParagraphs && sentenceUnits.length >= minParagraphs) {
+    const targetParagraphs = Math.min(12, Math.max(minParagraphs, Math.ceil(sentenceUnits.length / 2)));
+    const chunkSize = Math.max(1, Math.ceil(sentenceUnits.length / targetParagraphs));
+    const rebuilt = [];
+    for (let i = 0; i < sentenceUnits.length; i += chunkSize) {
+      rebuilt.push(sentenceUnits.slice(i, i + chunkSize).join(" ").trim());
+    }
+    nextContent = rebuilt.filter(Boolean).join("\n\n").trim();
+  }
+
+  const finalParagraphs = nextContent
+    .split(/\n\s*\n/g)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  const splitIdx = Math.max(1, Math.floor(finalParagraphs.length / 3));
+  const nextSections = {
+    core: String(input.sections?.core || finalParagraphs.slice(0, splitIdx).join("\n\n")).trim(),
+    deepDive: String(input.sections?.deepDive || finalParagraphs.slice(splitIdx, Math.max(splitIdx * 2, splitIdx + 1)).join("\n\n")).trim(),
+    conclusion: String(input.sections?.conclusion || finalParagraphs.slice(Math.max(splitIdx * 2, splitIdx + 1)).join("\n\n")).trim(),
+  };
+
+  return {
+    ...input,
+    content: nextContent || normalizedContent,
+    sections: {
+      core: nextSections.core || nextContent,
+      deepDive: nextSections.deepDive || nextSections.core || nextContent,
+      conclusion: nextSections.conclusion || nextSections.deepDive || nextSections.core || nextContent,
+    },
+  };
+}
+
 function validateDraftByMode(input: {
   mode: DraftMode;
   title: string;
@@ -1468,44 +1527,19 @@ function buildNarrativeImagePrompts(articleContent: string, count: number, custo
 
   const styleDirective = customPrompt?.trim()
     ? customPrompt.trim()
-    : "Editorial news visual, realistic tone, fact-based scene, no fantasy exaggeration";
+    : "현실적이고 사실 기반의 뉴스 장면, 과장 없이 차분한 톤";
 
   return Array.from({ length: count }).map((_, idx) => {
     const anchor = flowAnchors[Math.min(idx, flowAnchors.length - 1)];
-    const promptPayload = {
-      version: "news-image-v1",
-      language: "en",
-      task: "Generate a photorealistic editorial news image",
-      scene: {
-        stage: anchor.label,
-        article_context: anchor.text,
-        direction: anchor.guidance,
-      },
-      style: {
-        main: styleDirective,
-        camera: "cinematic wide shot",
-        color: "natural editorial grade",
-      },
-      constraints: {
-        no_text_overlay: true,
-        no_watermark: true,
-        no_logo: true,
-        aspect_ratio: "16:9",
-        minimize_recognizable_faces: true,
-        minimize_brand_exposure: true,
-      },
-      negative_prompt: [
-        "text",
-        "caption",
-        "subtitle",
-        "watermark",
-        "logo",
-        "brand mark",
-        "close-up identifiable face",
-      ],
-      compliance_note: "Must strictly follow: no text/watermark/logo, 16:9 composition, minimal portrait/brand exposure.",
-    };
-    return JSON.stringify(promptPayload, null, 2);
+    return [
+      `뉴스 기사 ${anchor.label} 장면을 생성하세요.`,
+      `핵심 맥락: ${anchor.text}`,
+      `연출 방향: ${anchor.guidance}`,
+      `스타일 가이드: ${styleDirective}`,
+      "최우선 제약(절대 준수): 이미지 내부에 어떤 문자도 넣지 마세요. 간판/배너/자막/캡션/숫자/로고/워터마크 모두 금지.",
+      "NEGATIVE: text, letters, words, typography, caption, subtitle, logo, watermark, signage.",
+      "추가 제약: 16:9 구도, 식별 가능한 인물과 상표 노출 최소화.",
+    ].join("\n");
   });
 }
 
@@ -1978,6 +2012,76 @@ function normalizeRssLink(raw: string): string {
     .trim();
   const matched = decoded.match(/https?:\/\/[^\s<>"']+/i);
   return matched ? matched[0].trim() : "";
+}
+
+const referenceUrlResolveCache = new Map<string, { url: string; expiresAt: number }>();
+
+function extractCanonicalFromGoogleUrl(rawUrl: string): string {
+  const normalized = String(rawUrl || "").trim();
+  if (!/^https?:\/\//i.test(normalized)) return "";
+  try {
+    const parsed = new URL(normalized);
+    const directParam = parsed.searchParams.get("url") || parsed.searchParams.get("u");
+    if (directParam && /^https?:\/\//i.test(directParam)) return directParam.trim();
+    if (parsed.hostname.endsWith("google.com") && parsed.pathname === "/url") {
+      const q = parsed.searchParams.get("q");
+      if (q && /^https?:\/\//i.test(q)) return q.trim();
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+async function resolveReferenceUrl(rawUrl: string): Promise<string> {
+  const normalized = String(rawUrl || "").trim();
+  if (!/^https?:\/\//i.test(normalized)) return "";
+
+  const cached = referenceUrlResolveCache.get(normalized);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.url;
+  }
+
+  const extracted = extractCanonicalFromGoogleUrl(normalized);
+  if (extracted) {
+    referenceUrlResolveCache.set(normalized, { url: extracted, expiresAt: Date.now() + 30 * 60 * 1000 });
+    return extracted;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    const looksLikeGoogleRss = parsed.hostname === "news.google.com" && parsed.pathname.includes("/rss/articles/");
+    if (!looksLikeGoogleRss) {
+      referenceUrlResolveCache.set(normalized, { url: normalized, expiresAt: Date.now() + 30 * 60 * 1000 });
+      return normalized;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const response = await fetch(normalized, {
+        method: "GET",
+        redirect: "follow",
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+      });
+      const finalUrl = String(response.url || "").trim();
+      let resolved = /^https?:\/\//i.test(finalUrl) ? finalUrl : normalized;
+      if (/^https:\/\/news\.google\.com\/rss\/articles\//i.test(resolved)) {
+        resolved = resolved.replace("/rss/articles/", "/articles/");
+      }
+      referenceUrlResolveCache.set(normalized, { url: resolved, expiresAt: Date.now() + 30 * 60 * 1000 });
+      return resolved;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    referenceUrlResolveCache.set(normalized, { url: normalized, expiresAt: Date.now() + 10 * 60 * 1000 });
+    return normalized;
+  }
 }
 
 function normalizeNewsSummary(raw: string, title: string, source: string): string {
@@ -5429,7 +5533,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const keyword = String(req.body?.keyword || "").trim();
     if (!keyword) return res.status(400).json({ error: "keyword is required." });
     const fetched = await fetchKeywordNewsArticles(keyword, 5, 7000);
-    return res.json(fetched);
+    const resolvedArticles = await Promise.all(
+      (fetched.articles || []).map(async (article) => ({
+        ...article,
+        url: await resolveReferenceUrl(String(article.url || "")),
+      })),
+    );
+    return res.json({
+      ...fetched,
+      articles: resolvedArticles,
+    });
   });
 
   app.post("/api/ai/generate-outline", async (req, res) => {
@@ -5476,7 +5589,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const keyword = String(req.body?.keyword || "").trim() || "topic";
     const mode = normalizeDraftMode(String(req.body?.mode || "draft").trim());
     trackDraftMetric(mode, "requests", { stage: "start", keyword });
-    const selectedArticle = req.body?.selectedArticle && typeof req.body.selectedArticle === "object"
+    let selectedArticle = req.body?.selectedArticle && typeof req.body.selectedArticle === "object"
       ? {
         title: String(req.body.selectedArticle.title || "").trim(),
         summary: String(req.body.selectedArticle.summary || "").trim(),
@@ -5498,6 +5611,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         retryable: false,
       });
     }
+    selectedArticle = {
+      ...selectedArticle,
+      url: await resolveReferenceUrl(selectedArticle.url),
+    };
     const regressionEnabled =
       process.env.ENABLE_AI_DRAFT_TEST_SCENARIO === "1" &&
       process.env.NODE_ENV !== "production";
@@ -5692,9 +5809,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         conclusion: String(parsed.sections?.conclusion || "").trim(),
       };
       const sourceCitation = {
-        title: String(parsed.sourceCitation?.title || selectedArticle?.title || "").trim(),
-        url: String(parsed.sourceCitation?.url || selectedArticle?.url || "").trim(),
-        source: String(parsed.sourceCitation?.source || selectedArticle?.source || "").trim(),
+        title: String(selectedArticle?.title || parsed.sourceCitation?.title || "").trim(),
+        url: String(selectedArticle?.url || parsed.sourceCitation?.url || "").trim(),
+        source: String(selectedArticle?.source || parsed.sourceCitation?.source || "").trim(),
       };
       const normalizedSlots = Array.isArray(parsed.mediaSlots)
         ? parsed.mediaSlots.slice(0, 5).map((slot, idx) => ({
@@ -5731,6 +5848,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       mediaSlots: DraftMediaSlot[];
     } | null = null;
     let similarityIssues: DraftSimilarityIssue[] = [];
+    let retryReason: "schema" | "similarity" | null = null;
+    let retryIssueHints: string[] = [];
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const retryInstruction = attempt === 0
@@ -5738,9 +5857,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         : [
           "",
           "[재생성 지시]",
-          "직전 결과는 참고 기사 문구 복붙 가능성이 감지되어 차단되었습니다.",
-          "문장을 새롭게 재구성하고 화자 시점을 바꾸어 창의적으로 서술하세요.",
-          "사실관계와 수치는 유지하되, 원문 표현은 그대로 사용하지 마세요.",
+          retryReason === "schema"
+            ? "직전 결과는 모드별 생성 규칙(분량/문장/섹션/미디어 슬롯)을 충족하지 못했습니다."
+            : "직전 결과는 참고 기사 문구 복붙 가능성이 감지되어 차단되었습니다.",
+          retryReason === "schema"
+            ? "각 섹션(core/deepDive/conclusion)을 모두 채우고, 롱폼은 문장을 충분히 늘려 다시 작성하세요."
+            : "문장을 새롭게 재구성하고 화자 시점을 바꾸어 창의적으로 서술하세요.",
+          retryReason === "schema"
+            ? "JSON 스키마를 유지하고 누락 필드 없이 출력하세요."
+            : "사실관계와 수치는 유지하되, 원문 표현은 그대로 사용하지 마세요.",
+          ...(retryIssueHints.length > 0
+            ? [`보완 항목: ${retryIssueHints.join(" | ")}`]
+            : []),
         ].join("\n");
       const prompt = `${basePrompt}${retryInstruction}`;
       const text = await generateGeminiText(prompt);
@@ -5770,14 +5898,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         });
       }
 
+      const candidateData = mode === "interactive-longform"
+        ? normalizeLongformDraftData(parsedResult.data, aiDraftGateSettings.longformMinSentences)
+        : parsedResult.data;
+
       const draftValidationIssues = validateDraftByMode({
         mode,
-        title: parsedResult.data.title,
-        content: parsedResult.data.content,
-        sections: parsedResult.data.sections,
-        mediaSlotsCount: parsedResult.data.mediaSlots.length,
+        title: candidateData.title,
+        content: candidateData.content,
+        sections: candidateData.sections,
+        mediaSlotsCount: candidateData.mediaSlots.length,
       });
       if (draftValidationIssues.length > 0) {
+        if (attempt === 0) {
+          retryReason = "schema";
+          retryIssueHints = draftValidationIssues
+            .map((issue) => String(issue.message || "").trim())
+            .filter(Boolean)
+            .slice(0, 3);
+          trackDraftMetric(mode, "retries", { reason: "schema", attempt, issues: draftValidationIssues.length });
+          continue;
+        }
         trackDraftMetric(mode, "schemaBlocks", { attempt, issues: draftValidationIssues.length });
         return res.status(502).json({
           error: "AI 초안이 모드별 생성 규칙을 충족하지 못했습니다. 다시 생성해 주세요.",
@@ -5792,8 +5933,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         selectedArticle: selectedArticle
           ? { title: selectedArticle.title, summary: selectedArticle.summary }
           : null,
-        generatedTitle: parsedResult.data.title,
-        generatedContent: parsedResult.data.content,
+        generatedTitle: candidateData.title,
+        generatedContent: candidateData.content,
       });
 
       if (similarityIssues.length > 0) {
@@ -5804,6 +5945,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           issues: similarityIssues,
         });
         if (attempt === 0) {
+          retryReason = "similarity";
+          retryIssueHints = similarityIssues
+            .map((issue) => String(issue.message || "").trim())
+            .filter(Boolean)
+            .slice(0, 3);
           trackDraftMetric(mode, "retries", { reason: "similarity", attempt });
           continue;
         }
@@ -5818,7 +5964,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         });
       }
 
-      finalDraft = parsedResult.data;
+      finalDraft = candidateData;
       break;
     }
 
@@ -5875,7 +6021,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       ? req.body.currentSections
       : null;
 
-    const selectedArticle = req.body?.selectedArticle && typeof req.body.selectedArticle === "object"
+    let selectedArticle = req.body?.selectedArticle && typeof req.body.selectedArticle === "object"
       ? {
         title: String(req.body.selectedArticle.title || "").trim(),
         summary: String(req.body.selectedArticle.summary || "").trim(),
@@ -5898,6 +6044,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         retryable: false,
       });
     }
+    selectedArticle = {
+      ...selectedArticle,
+      url: await resolveReferenceUrl(selectedArticle.url),
+    };
 
     if (!["core", "deepDive", "conclusion"].includes(section)) {
       return res.status(400).json({
@@ -6031,7 +6181,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const paragraphs = Array.isArray(req.body?.paragraphs)
       ? req.body.paragraphs.map((p: unknown) => String(p || "").trim()).filter(Boolean)
       : [];
-    const selectedArticle = req.body?.selectedArticle && typeof req.body.selectedArticle === "object"
+    let selectedArticle = req.body?.selectedArticle && typeof req.body.selectedArticle === "object"
       ? {
         title: String(req.body.selectedArticle.title || "").trim(),
         summary: String(req.body.selectedArticle.summary || "").trim(),
@@ -6054,6 +6204,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         retryable: false,
       });
     }
+    selectedArticle = {
+      ...selectedArticle,
+      url: await resolveReferenceUrl(selectedArticle.url),
+    };
 
     if (!Number.isInteger(paragraphIndex) || paragraphIndex < 0 || paragraphIndex >= paragraphs.length) {
       return res.status(400).json({
@@ -6232,20 +6386,115 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/ai/generate-hashtags", async (req, res) => {
     const content = String(req.body?.content || "");
-    const base = content.split(" ").filter(Boolean).slice(0, 3);
-    res.json({ hashtags: ["#HueBrief", "#AI", ...base.map((w) => `#${w.replace(/[^\w가-힣]/g, "")}`)] });
+    const normalizeToken = (value: string) =>
+      String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/^#+/, "")
+        .replace(/^[^0-9a-z가-힣]+|[^0-9a-z가-힣]+$/gi, "")
+        .replace(/(?:은|는|이|가|을|를|의|에|로|으로|와|과|도|만|에서|에게|부터|까지)$/i, "");
+    const stopwords = new Set([
+      "그리고", "그러나", "하지만", "이번", "관련", "대한", "기사", "보도", "뉴스", "있다", "했다",
+      "통해", "위해", "대한민국", "한국", "국내", "해외",
+      "the", "and", "with", "from", "this", "that", "about", "http", "https", "www", "com", "kr",
+    ]);
+    const banned = new Set(["ai", "news", "article"]);
+
+    const scoreTokenMap = (raw: string): Map<string, number> => {
+      const scoreMap = new Map<string, number>();
+      const text = String(raw || "").replace(/\s+/g, " ").trim();
+      const sentences = text.split(/[\n.!?。！？]+/).map((chunk) => chunk.trim()).filter(Boolean);
+
+      sentences.forEach((sentence, idx) => {
+        const weight = idx < 3 ? 1.6 : idx < 8 ? 1.2 : 1;
+        const tokens = (sentence.match(/[0-9a-zA-Z가-힣]{2,}/g) || [])
+          .map((token) => normalizeToken(token))
+          .filter((token) => token.length >= 2 && token.length <= 18)
+          .filter((token) => !/^\d+$/.test(token))
+          .filter((token) => !stopwords.has(token))
+          .filter((token) => !banned.has(token));
+
+        tokens.forEach((token, index) => {
+          const base = /[A-Z]/.test(sentence) ? 1.05 : 1;
+          scoreMap.set(token, (scoreMap.get(token) || 0) + weight * base);
+
+          const next = tokens[index + 1];
+          if (next) {
+            const phrase = normalizeToken(`${token}${next}`);
+            if (phrase.length >= 4 && phrase.length <= 20 && !stopwords.has(phrase) && !banned.has(phrase)) {
+              scoreMap.set(phrase, (scoreMap.get(phrase) || 0) + weight * 0.45);
+            }
+          }
+        });
+      });
+
+      return scoreMap;
+    };
+
+    const selectTopKeywords = (raw: string): string[] => {
+      const scored = scoreTokenMap(raw);
+      const sorted = Array.from(scored.entries())
+        .filter(([token]) => token.length >= 2 && !stopwords.has(token) && !banned.has(token))
+        .sort((a, b) => b[1] - a[1])
+        .map(([token]) => token);
+
+      const picked: string[] = [];
+      for (const token of sorted) {
+        if (picked.length >= 3) break;
+        const isNearDuplicate = picked.some((existing) => existing === token);
+        if (isNearDuplicate) continue;
+        picked.push(token);
+      }
+      return picked;
+    };
+
+    const picked = selectTopKeywords(content);
+    const keywords = picked.length >= 3 ? picked : ["핵심이슈", "핵심변수", "영향분석"];
+    return res.json({ hashtags: ["#HueBrief", ...keywords.slice(0, 3).map((keyword) => `#${keyword}`)] });
   });
 
   app.post("/api/ai/optimize-titles", async (req, res) => {
-    const content = String(req.body?.content || "기사");
-    const seed = content.replace(/\s+/g, " ").trim().slice(0, 40) || "핵심 이슈";
-    res.json({
-      titles: [
-        { platform: "interactive", title: `${seed} 핵심 정리` },
-        { platform: "interactive", title: `${seed}: 배경과 쟁점` },
-        { platform: "interactive", title: `${seed}, 지금 확인할 3가지` },
-      ],
-    });
+    const content = String(req.body?.content || "").trim();
+    const baseSeed = content
+      .replace(/^\s*\[[^\]]+\]\s*/m, "")
+      .replace(/\s+/g, " ")
+      .slice(0, 64)
+      .trim() || "핵심 이슈";
+    const fallbackTitles = [
+      `${baseSeed}가 바꾸는 다음 분기 판도`,
+      `${baseSeed}: 이해관계자들이 갈리는 지점`,
+      `${baseSeed} 이후 지금 확인할 체크포인트`,
+    ];
+
+    try {
+      const prompt = [
+        "당신은 뉴스룸 에디터입니다.",
+        "아래 기사 본문을 기반으로 인터랙티브 기사 제목 3개를 생성하세요.",
+        "반드시 서로 다른 톤(사실형/해설형/질문형)으로 작성하세요.",
+        "반복 패턴('핵심 정리', '배경과 쟁점', '지금 확인할 3가지')을 사용하지 마세요.",
+        "출력은 JSON only:",
+        '{"titles":["...","...","..."]}',
+        "규칙:",
+        "- 각 제목은 20~56자",
+        "- 제목 3개는 서로 문장 구조가 달라야 함",
+        "- 원문 첫 문장을 그대로 복사하지 말 것",
+        `content: ${content || baseSeed}`,
+      ].join("\n");
+      const text = await generateGeminiText(prompt);
+      const parsed = parseJsonFromModelText<{ titles?: unknown }>(String(text || ""));
+      const candidates = Array.isArray(parsed?.titles)
+        ? parsed!.titles!.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+      const deduped = Array.from(new Set(candidates)).slice(0, 3);
+      const picked = deduped.length >= 3 ? deduped : fallbackTitles;
+      return res.json({
+        titles: picked.map((title) => ({ platform: "interactive", title })),
+      });
+    } catch {
+      return res.json({
+        titles: fallbackTitles.map((title) => ({ platform: "interactive", title })),
+      });
+    }
   });
 
   app.post("/api/ai/compliance-check", async (req, res) => {
@@ -6259,15 +6508,118 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/ai/analyze-sentiment", async (req, res) => {
     const content = String(req.body?.content || "");
-    const len = Math.max(content.length, 1);
-    const vibrance = Math.min(100, 20 + (len % 25));
-    const immersion = Math.min(100, 20 + (len % 17));
-    const clarity = Math.min(100, 20 + (len % 19));
-    const gravity = Math.min(100, 20 + (len % 13));
-    const serenity = Math.max(0, 100 - Math.floor((vibrance + immersion + clarity + gravity) / 4));
-    const entries: Array<[EmotionType, number]> = [["vibrance", vibrance], ["immersion", immersion], ["clarity", clarity], ["gravity", gravity], ["serenity", serenity]];
-    const dominantEmotion = entries.sort((a, b) => b[1] - a[1])[0][0];
-    res.json({ vibrance, immersion, clarity, gravity, serenity, dominantEmotion, feedback: "데모 감정 분석 결과입니다." });
+    const normalizeScore = (value: unknown, fallback: number) => {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(0, Math.min(100, Math.round(n)));
+    };
+    const pickDominant = (scores: Record<EmotionType, number>): EmotionType =>
+      (Object.entries(scores) as Array<[EmotionType, number]>)
+        .sort((a, b) => b[1] - a[1])[0][0];
+
+    const heuristicScores = (): Record<EmotionType, number> => {
+      const text = content.normalize("NFKC").toLowerCase();
+      const countMatches = (keywords: string[]) =>
+        keywords.reduce((acc, keyword) => {
+          const pattern = new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+          const matches = text.match(pattern);
+          return acc + (matches ? matches.length : 0);
+        }, 0);
+      const cueMap: Record<EmotionType, string[]> = {
+        vibrance: ["기회", "성장", "확장", "혁신", "상승", "호재", "성과", "활력", "긍정", "반등", "opportunity", "growth", "boost"],
+        immersion: ["갈등", "충돌", "논란", "긴장", "격돌", "반발", "공방", "위협", "강경", "분노", "conflict", "tension"],
+        clarity: ["분석", "지표", "데이터", "수치", "해석", "근거", "검증", "전망", "비교", "설명", "analysis", "data"],
+        gravity: ["위기", "침체", "감소", "하락", "손실", "리스크", "우려", "악화", "경고", "불확실", "risk", "decline"],
+        serenity: ["안정", "회복", "완화", "협력", "합의", "개선", "평온", "신뢰", "돌봄", "stable", "recovery"],
+        spectrum: ["다양", "균형", "복합", "혼재", "중립", "다층", "교차", "종합", "balanced", "mixed"],
+      };
+      const baseScore = 16;
+      const hash = Array.from(text).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+      const scores = (Object.keys(cueMap) as EmotionType[]).reduce((acc, emotion, idx) => {
+        const cueScore = countMatches(cueMap[emotion]) * 8;
+        const noise = (hash >> (idx + 1)) % 6;
+        acc[emotion] = Math.max(8, Math.min(95, baseScore + cueScore + noise));
+        return acc;
+      }, {} as Record<EmotionType, number>);
+      return scores;
+    };
+
+    const fallback = heuristicScores();
+
+    try {
+      const prompt = [
+        "You are an emotion classifier for Korean news copy.",
+        "Classify article emotion into five axes: vibrance, immersion, clarity, gravity, serenity.",
+        "Return JSON only:",
+        '{"vibrance":0,"immersion":0,"clarity":0,"gravity":0,"serenity":0,"dominantEmotion":"vibrance|immersion|clarity|gravity|serenity|spectrum","feedback":"..."}',
+        "Rules:",
+        "- scores are integers 0..100",
+        "- dominantEmotion must match the strongest axis; use spectrum only when mixed signals are balanced",
+        "- feedback must be one short Korean sentence",
+        `content: ${content.slice(0, 2500)}`,
+      ].join("\n");
+      const text = await generateGeminiText(prompt);
+      const parsed = parseJsonFromModelText<{
+        vibrance?: unknown;
+        immersion?: unknown;
+        clarity?: unknown;
+        gravity?: unknown;
+        serenity?: unknown;
+        dominantEmotion?: unknown;
+        feedback?: unknown;
+      }>(String(text || ""));
+      if (!parsed) throw new Error("sentiment_parse_failed");
+
+      const scores: Record<EmotionType, number> = {
+        vibrance: normalizeScore(parsed.vibrance, fallback.vibrance),
+        immersion: normalizeScore(parsed.immersion, fallback.immersion),
+        clarity: normalizeScore(parsed.clarity, fallback.clarity),
+        gravity: normalizeScore(parsed.gravity, fallback.gravity),
+        serenity: normalizeScore(parsed.serenity, fallback.serenity),
+        spectrum: 0,
+      };
+      const totalSignal = scores.vibrance + scores.immersion + scores.clarity + scores.gravity + scores.serenity;
+      if (totalSignal <= 0) {
+        throw new Error("sentiment_zero_signal");
+      }
+      const dominantRaw = String(parsed.dominantEmotion || "").trim().toLowerCase();
+      const feedbackRaw = String(parsed.feedback || "").trim();
+      const hasUniformScores =
+        scores.vibrance === scores.immersion &&
+        scores.immersion === scores.clarity &&
+        scores.clarity === scores.gravity &&
+        scores.gravity === scores.serenity;
+      const lowConfidenceFeedback = /내용이 없어|분류가 어렵|판단이 어렵|insufficient|cannot classify/i.test(feedbackRaw);
+      if (hasUniformScores || lowConfidenceFeedback) {
+        throw new Error("sentiment_low_confidence");
+      }
+      const dominantEmotion: EmotionType =
+        (["vibrance", "immersion", "clarity", "gravity", "serenity", "spectrum"] as EmotionType[]).includes(dominantRaw as EmotionType)
+          ? (dominantRaw as EmotionType)
+          : pickDominant(scores);
+      const feedback = feedbackRaw || `본문 신호 기반 감정 분석 결과입니다. 현재 우세 감정은 ${dominantEmotion.toUpperCase()} 입니다.`;
+
+      return res.json({
+        vibrance: scores.vibrance,
+        immersion: scores.immersion,
+        clarity: scores.clarity,
+        gravity: scores.gravity,
+        serenity: scores.serenity,
+        dominantEmotion,
+        feedback,
+      });
+    } catch {
+      const dominantEmotion = pickDominant(fallback);
+      return res.json({
+        vibrance: fallback.vibrance,
+        immersion: fallback.immersion,
+        clarity: fallback.clarity,
+        gravity: fallback.gravity,
+        serenity: fallback.serenity,
+        dominantEmotion,
+        feedback: `본문 신호 기반 감정 분석 결과입니다. 현재 우세 감정은 ${dominantEmotion.toUpperCase()} 입니다.`,
+      });
+    }
   });
 
   app.post("/api/ai/translate", async (req, res) => {
@@ -6362,7 +6714,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/ai/generate-video-script", async (req, res) => {
     const articleContent = String(req.body?.articleContent || "");
     const customPrompt = String(req.body?.customPrompt || "").trim();
-    const videoPrompt = customPrompt || `세로형 숏폼 뉴스 영상, 핵심 요약: ${articleContent.slice(0, 120)}`;
+    const videoPrompt = customPrompt || `가로형(16:9) 5초 숏폼 뉴스 영상, 핵심 요약: ${articleContent.slice(0, 120)}`;
     res.json({
       videoPrompt,
       script: "데모 영상 스크립트",
@@ -6370,8 +6722,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     });
   });
 
-  app.post("/api/ai/generate-video", async (_req, res) => {
-    res.json({ success: true, videoUrl: "https://samplelib.com/lib/preview/mp4/sample-5s.mp4", duration: 8, aspectRatio: "9:16" });
+  app.post("/api/ai/generate-video", async (req, res) => {
+    const prompt = String(req.body?.prompt || "").trim();
+    const count = Math.max(1, Math.min(3, Number(req.body?.count || 1)));
+    const videos = Array.from({ length: count }).map((_, idx) => ({
+      index: idx,
+      videoUrl: "https://samplelib.com/lib/preview/mp4/sample-5s.mp4",
+      duration: 5,
+      aspectRatio: "16:9",
+      prompt,
+      description: `AI 영상 ${idx + 1}`,
+    }));
+    res.json({
+      success: true,
+      videos,
+      videoUrl: videos[0]?.videoUrl,
+      duration: 5,
+      aspectRatio: "16:9",
+    });
   });
 
   app.post("/api/share/short-links", async (req, res) => {

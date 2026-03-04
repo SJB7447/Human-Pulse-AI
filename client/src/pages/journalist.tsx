@@ -98,7 +98,7 @@ const PLATFORM_SETTINGS: Record<string, {
   },
   youtube: {
     deploymentGuide: [
-      '9:16 세로 숏폼 영상(60초 이내)',
+      '16:9 가로 숏폼 영상(5초)',
       '썸네일 및 제목 자동 생성',
       'YouTube Data API 연동 필요',
       '채널 인증 및 업로드 권한 설정',
@@ -110,7 +110,7 @@ const PLATFORM_SETTINGS: Record<string, {
       '챕터 구분으로 시청 유지율 향상',
     ],
     bestTimes: '오후 2-4시, 저녁 8-10시',
-    contentFormat: 'MP4 형식, 9:16 비율, 최대 60초',
+    contentFormat: 'MP4 형식, 16:9 비율, 5초',
   },
   threads: {
     deploymentGuide: [
@@ -332,6 +332,12 @@ export default function JournalistPage() {
   const [draftSectionIssues, setDraftSectionIssues] = useState<Partial<Record<DraftSectionKey, string[]>>>({});
   const [regeneratingParagraphIndex, setRegeneratingParagraphIndex] = useState<number | null>(null);
   const [paragraphIssues, setParagraphIssues] = useState<Record<number, string[]>>({});
+  const [paragraphDiffPreview, setParagraphDiffPreview] = useState<{
+    index: number;
+    before: string;
+    after: string;
+    updatedAt: number;
+  } | null>(null);
   const [isCheckingGrammar, setIsCheckingGrammar] = useState(false);
   const [isGeneratingSEO, setIsGeneratingSEO] = useState(false);
   const [isOptimizingTitles, setIsOptimizingTitles] = useState(false);
@@ -360,11 +366,18 @@ export default function JournalistPage() {
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | null>(null);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [regeneratingVideoIndex, setRegeneratingVideoIndex] = useState<number | null>(null);
   const [generatedImages, setGeneratedImages] = useState<{ imageUrl: string; description: string; prompt?: string }[]>([]);
   const [selectedImageIndices, setSelectedImageIndices] = useState<number[]>([0]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
-  const [generatedVideoScript, setGeneratedVideoScript] = useState<string | null>(null);
-  const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
+  const [generatedVideos, setGeneratedVideos] = useState<Array<{
+    videoUrl: string;
+    script?: string;
+    prompt?: string;
+    duration?: number;
+    aspectRatio?: string;
+    description?: string;
+  }>>([]);
   const [imagePromptInput, setImagePromptInput] = useState('');
   const [videoPromptInput, setVideoPromptInput] = useState('');
   const [suggestedMediaSlots, setSuggestedMediaSlots] = useState<MediaSlot[]>([]);
@@ -444,8 +457,8 @@ export default function JournalistPage() {
     step2: recommendedArticles.length >= 5,
     step3: Boolean(selectedRecommendedArticle),
     step4: Boolean(articleContent.trim()),
-    step5: uploadedImages.length + uploadedVideos.length + generatedImages.length + (generatedVideoUrl ? 1 : 0) > 0,
-    step51: Boolean(generatedImages.length > 0 || generatedVideoUrl || generatedVideoScript),
+    step5: uploadedImages.length + uploadedVideos.length + generatedImages.length + generatedVideos.length > 0,
+    step51: Boolean(generatedImages.length > 0 || generatedVideos.length > 0),
     step52: Boolean(imagePromptInput.trim() || videoPromptInput.trim()),
     step6: suggestedMediaSlots.length > 0,
     step7: draftVersions.length > 0,
@@ -482,14 +495,12 @@ export default function JournalistPage() {
       label: `업로드 이미지 ${idx + 1}: ${img.name}`,
       url: img.url,
     }));
-    const generatedVideoAssets = generatedVideoUrl
-      ? [{
-        key: 'gen-video-0',
-        type: 'video' as const,
-        label: 'AI 숏폼 영상',
-        url: generatedVideoUrl,
-      }]
-      : [];
+    const generatedVideoAssets = generatedVideos.map((video, idx) => ({
+      key: `gen-video-${idx}`,
+      type: 'video' as const,
+      label: `AI 영상 ${idx + 1}`,
+      url: video.videoUrl,
+    }));
     const uploadedVideoAssets = uploadedVideos.map((vid, idx) => ({
       key: `upload-video-${idx}`,
       type: 'video' as const,
@@ -1008,6 +1019,7 @@ export default function JournalistPage() {
     }
 
     const title = resolveCurrentDraftTitle();
+    const beforeParagraph = String(paragraphs[index] || '').trim();
     setRegeneratingParagraphIndex(index);
     setParagraphIssues((prev) => ({ ...prev, [index]: [] }));
     try {
@@ -1036,6 +1048,12 @@ export default function JournalistPage() {
       setArticleContent(`[${result.content ? title : resolveCurrentDraftTitle()}]\n\n${result.content}`);
       setDraftSections(inferSectionsFromPlainText(result.content));
       setParagraphIssues((prev) => ({ ...prev, [index]: [] }));
+      setParagraphDiffPreview({
+        index,
+        before: beforeParagraph,
+        after: String(result.text || result.paragraphs?.[index] || '').trim(),
+        updatedAt: Date.now(),
+      });
       toast({ title: `${index + 1}번 문단 재생성 완료` });
     } catch (error: any) {
       const message =
@@ -1161,7 +1179,7 @@ export default function JournalistPage() {
       // Fallback to neutral if analysis fails
       setSentimentData({
         vibrance: 20, immersion: 20, clarity: 20, gravity: 20, serenity: 20,
-        dominantEmotion: 'serenity',
+        dominantEmotion: 'spectrum',
         feedback: '감정 분석 서비스가 일시적으로 지연되고 있습니다. (기본값 적용)'
       });
       toast({
@@ -2040,6 +2058,25 @@ export default function JournalistPage() {
     }
   };
 
+  const summarizeImagePromptForCard = (enginePrompt: string | undefined, fallback: string, index: number) => {
+    const lines = String(enginePrompt || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const scene = lines.find((line) => line.startsWith('뉴스 기사'));
+    const context = lines.find((line) => line.startsWith('핵심 맥락:'));
+    const direction = lines.find((line) => line.startsWith('연출 방향:'));
+
+    const contextText = String(context || '').replace(/^핵심 맥락:\s*/, '').slice(0, 80).trim();
+    const directionText = String(direction || '').replace(/^연출 방향:\s*/, '').trim();
+    const sceneText = String(scene || '').replace(/^뉴스 기사\s*/, '').replace(/장면을 생성하세요\.?$/, '').trim() || `장면 ${index + 1}`;
+
+    if (contextText || directionText) {
+      return `${sceneText} | ${contextText}${directionText ? ` | ${directionText}` : ''}`.trim();
+    }
+    return fallback;
+  };
+
   const handleGenerateAIImage = async () => {
     if (!articleContent.trim()) {
       toast({ title: '기사 내용을 먼저 작성해 주세요', variant: 'destructive' });
@@ -2051,43 +2088,28 @@ export default function JournalistPage() {
       ? String(generatedImages[selectedImageIndices[0]]?.prompt || '')
       : '';
     const rawDirective = (promptFromSelection || imagePromptInput).trim();
-    const promptSpec = JSON.stringify({
-      language: 'en',
-      task: 'news_editorial_image',
-      directive: rawDirective || 'Use article context for a factual editorial scene.',
-      hard_constraints: [
-        'No text overlay',
-        'No watermark',
-        'No logo',
-        '16:9 composition',
-        'Minimize recognizable portrait exposure',
-        'Minimize trademark/brand exposure',
-      ],
-      output: {
-        aspect_ratio: '16:9',
-        style: 'photorealistic editorial',
-      },
-    }, null, 2);
+    const effectiveDirective = rawDirective || '기사 핵심 장면을 사실 기반의 뉴스 이미지로 만들어 주세요.';
 
     try {
-      const result = await GeminiService.generateImage(articleContent, 4, promptSpec);
+      const result = await GeminiService.generateImage(articleContent, 4, effectiveDirective);
 
-      const newImages = await Promise.all((result.images || []).map(async (img) => {
+      const newImages = await Promise.all((result.images || []).map(async (img, idx) => {
         const cropped = await centerCropToAspectRatioDataUrl(String(img.url || ''), 16, 9);
+        const mainPrompt = summarizeImagePromptForCard(
+          String(img.prompt || ''),
+          effectiveDirective,
+          idx,
+        );
         return {
           imageUrl: cropped || img.url,
           description: img.description,
-          prompt: img.prompt,
+          prompt: mainPrompt,
         };
       }));
 
       setGeneratedImages(newImages);
       setSelectedImageIndices(newImages.length > 0 ? [0] : []);
-      if (newImages[0]?.prompt) {
-        setImagePromptInput(newImages[0].prompt);
-      } else if (rawDirective) {
-        setImagePromptInput(rawDirective);
-      }
+      setImagePromptInput(effectiveDirective);
       if (result.partial) {
         setLastAiFailedStep('image');
         setLastAiErrorMessage(result.failures?.[0]?.detail || '일부 이미지 생성에 실패했습니다.');
@@ -2120,31 +2142,52 @@ export default function JournalistPage() {
     }
 
     setIsGeneratingVideo(true);
-    setGeneratedVideoScript(null);
-    setGeneratedVideoUrl(null);
+    setGeneratedVideos([]);
 
     try {
-      // Pass selected image URL if available (use the first selected image)
-      // Get selected image data (first selection)
-      const selectedImage = generatedImages.length > 0 && selectedImageIndices.length > 0
-        ? generatedImages[selectedImageIndices[0]]
-        : undefined;
+      const basePrompt = videoPromptInput.trim() || `${searchKeyword || '핵심 뉴스'} 5초 16:9 영상`;
+      const anchors = ['도입 컷', '배경 컷', '결론 컷'];
+      const created: Array<{
+        videoUrl: string;
+        script?: string;
+        prompt?: string;
+        duration?: number;
+        aspectRatio?: string;
+        description?: string;
+      }> = [];
 
-      const result = await GeminiService.generateShortVideo(
-        articleContent,
-        selectedImage?.imageUrl,
-        selectedImage?.description,
-        videoPromptInput.trim() || undefined,
-      );
-      setGeneratedVideoScript(result.script);
-      if (result.videoPrompt) {
-        setVideoPromptInput(result.videoPrompt);
+      for (let i = 0; i < 3; i += 1) {
+        const selectedImage = generatedImages.length > 0
+          ? generatedImages[Math.min(i, Math.max(0, generatedImages.length - 1))]
+          : undefined;
+        const perPrompt = `${basePrompt} | ${anchors[i]}`;
+        const result = await GeminiService.generateShortVideo(
+          articleContent,
+          selectedImage?.imageUrl,
+          selectedImage?.description,
+          perPrompt,
+          1,
+        );
+        if (result.videoPrompt && i === 0) {
+          setVideoPromptInput(result.videoPrompt);
+        }
+        if (result.videoUrl) {
+          created.push({
+            videoUrl: result.videoUrl,
+            script: result.script,
+            prompt: result.videoPrompt || perPrompt,
+            duration: result.duration ?? 5,
+            aspectRatio: result.aspectRatio || '16:9',
+            description: `AI 영상 ${i + 1} (${anchors[i]})`,
+          });
+        }
       }
-      if (result.videoUrl) {
-        setGeneratedVideoUrl(result.videoUrl);
+
+      if (created.length > 0) {
+        setGeneratedVideos(created);
         setLastAiFailedStep(null);
         setLastAiErrorMessage('');
-        toast({ title: '숏폼 영상 생성 완료' });
+        toast({ title: `영상 ${created.length}개 생성 완료` });
       }
     } catch (error: any) {
       setLastAiFailedStep('video');
@@ -2152,6 +2195,53 @@ export default function JournalistPage() {
       toast({ title: '영상 생성 실패', description: error.message, variant: 'destructive' });
     } finally {
       setIsGeneratingVideo(false);
+    }
+  };
+
+  const handleUpdateGeneratedVideoPrompt = (index: number, prompt: string) => {
+    setGeneratedVideos((prev) =>
+      prev.map((item, itemIndex) => (itemIndex === index ? { ...item, prompt } : item)),
+    );
+  };
+
+  const handleRegenerateSingleVideo = async (index: number) => {
+    if (!articleContent.trim()) {
+      toast({ title: '기사 내용을 먼저 작성해 주세요', variant: 'destructive' });
+      return;
+    }
+    const target = generatedVideos[index];
+    if (!target) return;
+    setRegeneratingVideoIndex(index);
+    const prompt = String(target.prompt || videoPromptInput || '').trim() || `영상 ${index + 1} 변형`;
+    try {
+      const selectedImage = generatedImages.length > 0
+        ? generatedImages[Math.min(index, Math.max(0, generatedImages.length - 1))]
+        : undefined;
+      const result = await GeminiService.generateShortVideo(
+        articleContent,
+        selectedImage?.imageUrl,
+        selectedImage?.description,
+        prompt,
+        1,
+      );
+      if (!result.videoUrl) throw new Error('재생성 영상이 비어 있습니다.');
+      setGeneratedVideos((prev) =>
+        prev.map((item, itemIndex) => itemIndex === index
+          ? {
+            ...item,
+            videoUrl: result.videoUrl,
+            script: result.script,
+            prompt: result.videoPrompt || prompt,
+            duration: result.duration ?? 5,
+            aspectRatio: result.aspectRatio || '16:9',
+          }
+          : item),
+      );
+      toast({ title: `영상 ${index + 1} 재생성 완료` });
+    } catch (error: any) {
+      toast({ title: '개별 영상 재생성 실패', description: error?.message || '재시도해 주세요.', variant: 'destructive' });
+    } finally {
+      setRegeneratingVideoIndex(null);
     }
   };
 
@@ -2174,35 +2264,24 @@ export default function JournalistPage() {
 
     setRegeneratingImageIndex(index);
     const rawDirective = (target.prompt || imagePromptInput || '').trim();
-    const promptSpec = JSON.stringify({
-      language: 'en',
-      task: 'news_editorial_image',
-      directive: rawDirective || `Regenerate variation for image #${index + 1}`,
-      hard_constraints: [
-        'No text overlay',
-        'No watermark',
-        'No logo',
-        '16:9 composition',
-        'Minimize recognizable portrait exposure',
-        'Minimize trademark/brand exposure',
-      ],
-      output: {
-        aspect_ratio: '16:9',
-        style: 'photorealistic editorial',
-      },
-    }, null, 2);
+    const effectiveDirective = rawDirective || `기사 흐름에 맞는 이미지 ${index + 1} 변형안을 생성해 주세요.`;
 
     try {
-      const result = await GeminiService.generateImage(articleContent, 1, promptSpec);
+      const result = await GeminiService.generateImage(articleContent, 1, effectiveDirective);
       const nextImage = result.images?.[0];
       if (!nextImage) {
         throw new Error('재생성 결과가 비어 있습니다.');
       }
       const cropped = await centerCropToAspectRatioDataUrl(String(nextImage.url || ''), 16, 9);
+      const mainPrompt = summarizeImagePromptForCard(
+        String(nextImage.prompt || ''),
+        effectiveDirective,
+        index,
+      );
       setGeneratedImages((prev) =>
         prev.map((item, itemIndex) => (
           itemIndex === index
-            ? { imageUrl: cropped || nextImage.url, description: nextImage.description, prompt: nextImage.prompt || rawDirective }
+            ? { imageUrl: cropped || nextImage.url, description: nextImage.description, prompt: mainPrompt }
             : item
         )),
       );
@@ -2863,10 +2942,11 @@ export default function JournalistPage() {
                         const isLoading = regeneratingParagraphIndex === idx;
                         const issues = paragraphIssues[idx] || [];
                         const hasError = issues.length > 0;
+                        const hasDiffPreview = paragraphDiffPreview?.index === idx;
                         return (
                           <div
                             key={`paragraph-regenerate-${idx}`}
-                            className={`rounded-md border p-2 ${hasError ? 'border-red-200 bg-red-50' : 'border-sky-100 bg-white'}`}
+                            className={`rounded-md border p-2 ${hasError ? 'border-red-200 bg-red-50' : hasDiffPreview ? 'border-emerald-200 bg-emerald-50/60' : 'border-sky-100 bg-white'}`}
                           >
                             <div className="mb-1 flex items-center justify-between gap-2">
                               <p className={`text-[11px] font-semibold ${hasError ? 'text-red-800' : 'text-sky-900'}`}>
@@ -2895,6 +2975,32 @@ export default function JournalistPage() {
                         );
                       })}
                     </div>
+                    {paragraphDiffPreview && (
+                      <div className="mt-3 rounded-md border border-emerald-200 bg-white p-2.5">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-semibold text-emerald-900">
+                            변경 diff preview (문단 {paragraphDiffPreview.index + 1})
+                          </p>
+                          <p className="text-[10px] text-emerald-700">
+                            {new Date(paragraphDiffPreview.updatedAt).toLocaleTimeString()}
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                          <div className="rounded border border-red-100 bg-red-50 p-2">
+                            <p className="text-[10px] font-semibold text-red-700 mb-1">Before</p>
+                            <p className="text-[11px] leading-5 text-red-900 whitespace-pre-wrap">
+                              {paragraphDiffPreview.before || '(빈 문단)'}
+                            </p>
+                          </div>
+                          <div className="rounded border border-emerald-100 bg-emerald-50 p-2">
+                            <p className="text-[10px] font-semibold text-emerald-700 mb-1">After</p>
+                            <p className="text-[11px] leading-5 text-emerald-900 whitespace-pre-wrap">
+                              {paragraphDiffPreview.after || '(빈 문단)'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -3014,12 +3120,12 @@ export default function JournalistPage() {
                               className="p-2 bg-white border-t border-green-100"
                               onClick={(event) => event.stopPropagation()}
                             >
-                              <p className="mb-1 text-[11px] font-medium text-gray-600">이미지 프롬프트</p>
+                              <p className="mb-1 text-[11px] font-medium text-gray-600">이미지 디렉션</p>
                               <Textarea
                                 value={img.prompt || ''}
                                 onChange={(event) => handleUpdateGeneratedImagePrompt(idx, event.target.value)}
                                 rows={2}
-                                placeholder="생성 후 프롬프트를 수정할 수 있습니다."
+                                placeholder="자연어로 장면 지시를 입력하세요. (예: 데이터 회의 장면, 차분한 톤)"
                                 className="bg-white text-xs"
                               />
                               <div className="mt-2 flex gap-2">
@@ -3053,38 +3159,49 @@ export default function JournalistPage() {
                 )}
 
                 {/* Generated Video Display */}
-                {(generatedVideoUrl || generatedVideoScript) && (
+                {generatedVideos.length > 0 && (
                   <div className="mt-4 p-4 bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg border border-purple-200">
-                    <p className="text-sm font-medium text-indigo-800 mb-3">숏폼 영상 (9:16, 최대 60초)</p>
-
-                    {generatedVideoUrl && (
-                      <video
-                        src={generatedVideoUrl}
-                        controls
-                        autoPlay
-                        loop
-                        className="w-full max-w-xs mx-auto rounded-lg shadow-md mb-3"
-                        style={{ aspectRatio: '9/16' }}
-                      />
-                    )}
-
-                    {generatedVideoScript && (
-                      <details className="mt-3">
-                        <summary className="text-xs text-purple-600 cursor-pointer hover:text-purple-800">스크립트 보기</summary>
-                        <pre className="text-xs bg-white p-3 rounded-lg border border-purple-100 overflow-x-auto whitespace-pre-wrap max-h-40 overflow-y-auto mt-2">
-                          {generatedVideoScript}
-                        </pre>
-                      </details>
-                    )}
-                    <div className="mt-3">
-                      <p className="mb-1 text-[11px] font-medium text-indigo-700">영상 프롬프트</p>
-                      <Textarea
-                        value={videoPromptInput}
-                        onChange={(e) => setVideoPromptInput(e.target.value)}
-                        rows={2}
-                        placeholder="생성 후 프롬프트를 수정할 수 있습니다."
-                        className="bg-white text-xs"
-                      />
+                    <p className="text-sm font-medium text-indigo-800 mb-3">AI 영상 3개 (16:9, 5초)</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {generatedVideos.map((video, idx) => (
+                        <div key={`video-${idx}`} className="rounded-lg border border-purple-100 bg-white p-2">
+                          <video
+                            src={video.videoUrl}
+                            controls
+                            className="w-full rounded-md shadow-sm mb-2"
+                            style={{ aspectRatio: '16/9' }}
+                          />
+                          <p className="text-[11px] text-indigo-700 mb-1">
+                            {video.description || `AI 영상 ${idx + 1}`} · {video.aspectRatio || '16:9'} · {video.duration ?? 5}초
+                          </p>
+                          <Textarea
+                            value={video.prompt || ''}
+                            onChange={(e) => handleUpdateGeneratedVideoPrompt(idx, e.target.value)}
+                            rows={2}
+                            placeholder="영상 프롬프트를 수정하세요."
+                            className="bg-white text-xs"
+                          />
+                          <div className="mt-2 flex justify-end">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRegenerateSingleVideo(idx)}
+                              disabled={regeneratingVideoIndex === idx}
+                            >
+                              {regeneratingVideoIndex === idx ? '재생성 중...' : '재생성'}
+                            </Button>
+                          </div>
+                          {video.script && (
+                            <details className="mt-2">
+                              <summary className="text-xs text-purple-600 cursor-pointer hover:text-purple-800">스크립트 보기</summary>
+                              <pre className="text-xs bg-white p-2 rounded border border-purple-100 overflow-x-auto whitespace-pre-wrap max-h-32 overflow-y-auto mt-1">
+                                {video.script}
+                              </pre>
+                            </details>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

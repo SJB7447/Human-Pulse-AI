@@ -3,6 +3,13 @@ import { useEmotionStore } from '@/lib/store';
 import type { EmotionType } from '@/lib/store';
 
 type ApiError = Error & { status?: number };
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function sanitizeUuidOrNull(value: unknown): string | null {
+    const normalized = String(value || '').trim();
+    if (!normalized) return null;
+    return UUID_REGEX.test(normalized) ? normalized : null;
+}
 
 type AdminReviewPayload = {
     articleId: string;
@@ -297,7 +304,7 @@ export const DBService = {
                 image: image || null,
                 category: category || 'General',
                 emotion,
-                authorId: user.id || 'anonymous',
+                authorId: sanitizeUuidOrNull(user.id),
                 authorName: user.user_metadata?.name || user.email || 'Anonymous',
             }),
         });

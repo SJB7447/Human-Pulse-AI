@@ -170,6 +170,7 @@ export default function EmotionPage() {
   const triggeredPeripheralNudgeRef = useRef(false);
   const detailConsumeTimerRef = useRef<number | null>(null);
   const detailQuickConsumeTimerRef = useRef<number | null>(null);
+  const crossCategorySelectionRef = useRef<NewsItem | null>(null);
   const shouldReduceMotion = useReducedMotion();
 
   const openArticleDetail = (item: NewsItem, cardBgColor: string) => {
@@ -179,7 +180,13 @@ export default function EmotionPage() {
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' });
-    setSelectedArticle(null);
+    const carriedSelection = crossCategorySelectionRef.current;
+    if (carriedSelection && carriedSelection.emotion === type) {
+      setSelectedArticle(carriedSelection);
+    } else {
+      setSelectedArticle(null);
+    }
+    crossCategorySelectionRef.current = null;
     dwellVisibleSecRef.current = 0;
     sameEmotionConsumeRef.current = 0;
     consumedArticleIdsRef.current = new Set();
@@ -1039,12 +1046,16 @@ export default function EmotionPage() {
           setSelectedCardBg(cardPalette.background);
 
           if (nextArticle.emotion !== type) {
+            crossCategorySelectionRef.current = nextArticle;
             setLocation(`/emotion/${nextArticle.emotion}`);
           }
 
           setSelectedArticle(nextArticle);
         }}
-        onClose={() => setSelectedArticle(null)}
+        onClose={() => {
+          crossCategorySelectionRef.current = null;
+          setSelectedArticle(null);
+        }}
         onConsumeEvidence={handleArticleConsumeEvidence}
       />
       {mounted && typeof document !== 'undefined' && type && showPeripheralNudge && !suppressPeripheralNudge ? (

@@ -479,7 +479,20 @@ export const GeminiService = {
         return callApi('/api/ai/generate-image', { articleContent, count, customPrompt });
     },
 
-    async generateShortVideo(articleContent: string, imageUrl?: string, imageDescription?: string, customPrompt?: string): Promise<{ videoUrl: string; script: string; videoPrompt?: string }> {
+    async generateShortVideo(
+        articleContent: string,
+        imageUrl?: string,
+        imageDescription?: string,
+        customPrompt?: string,
+        count: number = 1,
+    ): Promise<{
+        videoUrl: string;
+        script: string;
+        videoPrompt?: string;
+        duration?: number;
+        aspectRatio?: string;
+        videos?: Array<{ videoUrl: string; duration?: number; aspectRatio?: string; prompt?: string; description?: string }>;
+    }> {
         // 1. Get Script via AI endpoint
         const scriptJson = await callApi('/api/ai/generate-video-script', { articleContent, imageDescription, customPrompt });
 
@@ -489,7 +502,8 @@ export const GeminiService = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 prompt: scriptJson.videoPrompt,
-                image: imageUrl
+                image: imageUrl,
+                count: Math.max(1, Math.min(3, Number(count || 1))),
             })
         });
 
@@ -499,7 +513,10 @@ export const GeminiService = {
         return {
             videoUrl: videoResult.videoUrl,
             script: JSON.stringify(scriptJson, null, 2),
-            videoPrompt: scriptJson.videoPrompt
+            videoPrompt: scriptJson.videoPrompt,
+            duration: videoResult.duration,
+            aspectRatio: videoResult.aspectRatio,
+            videos: Array.isArray(videoResult.videos) ? videoResult.videos : undefined,
         };
     },
 

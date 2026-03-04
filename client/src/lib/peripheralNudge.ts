@@ -10,8 +10,10 @@ export type PeripheralNudgeEventName =
 export const PERIPHERAL_NUDGE_Z_INDEX = 1050;
 
 export function getDwellThresholdSeconds(emotion: EmotionType): number {
-  void emotion;
-  return 60;
+  if (emotion === 'immersion' || emotion === 'gravity') {
+    return 10 * 60;
+  }
+  return 15 * 60;
 }
 
 export function getPeripheralRecommendations(current: EmotionType): EmotionType[] {

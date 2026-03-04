@@ -2,6 +2,14 @@
 import { type User, type InsertUser, type NewsItem, type InsertNewsItem, type EmotionType, type Report, type ArticleReview, type InsertUserConsent, type UserConsent, type AdminActionLog, type InsertUserInsight, type UserInsight, type InsertUserComposedArticle, type UserComposedArticle } from "../shared/schema.js";
 import { randomUUID } from "crypto";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const sanitizeUuidOrNull = (value: unknown): string | null => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  return UUID_REGEX.test(normalized) ? normalized : null;
+};
+
 const isPublishedVisible = (row: any): boolean => {
   if (typeof row?.isPublished === "boolean") return row.isPublished;
   if (typeof row?.is_published === "boolean") return row.is_published;
@@ -877,7 +885,7 @@ export class SupabaseStorage implements IStorage {
   }
 
   async createNewsItem(item: InsertNewsItem): Promise<NewsItem> {
-    const safeAuthorId = String(item.authorId || "").trim().slice(0, 128);
+    const safeAuthorId = sanitizeUuidOrNull(item.authorId);
 
     const payload = {
       title: item.title,
@@ -929,7 +937,7 @@ export class SupabaseStorage implements IStorage {
       ...(updates.category !== undefined ? { category: updates.category } : {}),
       ...(updates.emotion !== undefined ? { emotion: updates.emotion } : {}),
       ...(updates.intensity !== undefined ? { intensity: updates.intensity } : {}),
-      ...(updates.authorId !== undefined ? { author_id: updates.authorId } : {}),
+      ...(updates.authorId !== undefined ? { author_id: sanitizeUuidOrNull(updates.authorId) } : {}),
       ...(updates.authorName !== undefined ? { author_name: updates.authorName } : {}),
       ...(updates.platforms !== undefined ? { platforms: updates.platforms } : {}),
       ...(updates.isPublished !== undefined ? { is_published: updates.isPublished } : {}),

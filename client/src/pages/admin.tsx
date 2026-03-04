@@ -288,6 +288,14 @@ type ArticleIssueAnalysis = {
   suggestions: string[];
 };
 
+type MiniTrendPoint = {
+  date: string;
+  label: string;
+  requests: number;
+  successRate: number;
+  blockCount: number;
+};
+
 const ARTICLE_META_OPEN = '<!-- HUEBRIEF_META_START -->';
 const ARTICLE_META_CLOSE = '<!-- HUEBRIEF_META_END -->';
 
@@ -1542,6 +1550,30 @@ export default function AdminPage() {
   const draft30d = aggregateTrend(stats?.aiDraftOps?.trends?.last30d, ['requests', 'success', 'parseFailures', 'schemaBlocks', 'similarityBlocks', 'complianceBlocks']);
   const news7d = aggregateTrend(stats?.aiNewsOps?.trends?.last7d, ['requests', 'success', 'parseFailures', 'qualityBlocks', 'fallbackRecoveries', 'modelEmpty']);
   const news30d = aggregateTrend(stats?.aiNewsOps?.trends?.last30d, ['requests', 'success', 'parseFailures', 'qualityBlocks', 'fallbackRecoveries', 'modelEmpty']);
+  const buildMiniTrendSeries = (
+    rows: Array<{ date: string; totals?: Record<string, number | undefined> }> | undefined,
+    blockKeys: string[],
+  ): MiniTrendPoint[] => (rows || []).map((row) => {
+    const date = String(row.date || '');
+    const requests = Number(row?.totals?.requests || 0);
+    const success = Number(row?.totals?.success || 0);
+    const blockCount = blockKeys.reduce((acc, key) => acc + Number(row?.totals?.[key] || 0), 0);
+    const parsedDate = new Date(`${date}T00:00:00Z`);
+    const label = Number.isNaN(parsedDate.getTime())
+      ? date.slice(5)
+      : `${String(parsedDate.getUTCMonth() + 1).padStart(2, '0')}/${String(parsedDate.getUTCDate()).padStart(2, '0')}`;
+    return {
+      date,
+      label,
+      requests,
+      successRate: requests > 0 ? Math.round((success / requests) * 100) : 0,
+      blockCount,
+    };
+  });
+  const draftTrend7dSeries = buildMiniTrendSeries(stats?.aiDraftOps?.trends?.last7d, ['parseFailures', 'schemaBlocks', 'similarityBlocks', 'complianceBlocks']);
+  const draftTrend30dSeries = buildMiniTrendSeries(stats?.aiDraftOps?.trends?.last30d, ['parseFailures', 'schemaBlocks', 'similarityBlocks', 'complianceBlocks']);
+  const newsTrend7dSeries = buildMiniTrendSeries(stats?.aiNewsOps?.trends?.last7d, ['parseFailures', 'qualityBlocks', 'fallbackRecoveries', 'modelEmpty']);
+  const newsTrend30dSeries = buildMiniTrendSeries(stats?.aiNewsOps?.trends?.last30d, ['parseFailures', 'qualityBlocks', 'fallbackRecoveries', 'modelEmpty']);
   const pendingReaderArticles = useMemo(
     () => readerArticles.filter((row) => row.submissionStatus === 'pending'),
     [readerArticles],
@@ -2019,6 +2051,10 @@ export default function AdminPage() {
                         <QuickInfo label="최근 30일 요청" value={`${draft30d.requests ?? 0}건`} tone="gray" />
                         <QuickInfo label="최근 30일 성공률" value={`${(draft30d.requests ?? 0) > 0 ? Math.round(((draft30d.success ?? 0) / Math.max(1, draft30d.requests ?? 0)) * 100) : 0}%`} tone="gray" />
                       </div>
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                        <MiniTrendBars title="최근 7일 추세" points={draftTrend7dSeries} />
+                        <MiniTrendBars title="최근 30일 추세" points={draftTrend30dSeries} />
+                      </div>
                     </div>
                   </AccordionContent>
                 </AccordionItem>
@@ -2045,6 +2081,10 @@ export default function AdminPage() {
                         <QuickInfo label="최근 7일 성공률" value={`${(news7d.requests ?? 0) > 0 ? Math.round(((news7d.success ?? 0) / Math.max(1, news7d.requests ?? 0)) * 100) : 0}%`} tone="gray" />
                         <QuickInfo label="최근 30일 요청" value={`${news30d.requests ?? 0}건`} tone="gray" />
                         <QuickInfo label="최근 30일 성공률" value={`${(news30d.requests ?? 0) > 0 ? Math.round(((news30d.success ?? 0) / Math.max(1, news30d.requests ?? 0)) * 100) : 0}%`} tone="gray" />
+                      </div>
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                        <MiniTrendBars title="최근 7일 추세" points={newsTrend7dSeries} />
+                        <MiniTrendBars title="최근 30일 추세" points={newsTrend30dSeries} />
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 text-xs">
                         {(['vibrance', 'immersion', 'clarity', 'gravity', 'serenity', 'spectrum'] as const).map((emotion) => {
@@ -3431,6 +3471,40 @@ function QuickInfo({ label, value, tone }: { label: string; value: string; tone:
     <div className={`rounded-xl border px-4 py-3 ${toneClass}`}>
       <p className="text-xs font-medium">{label}</p>
       <p className="text-lg font-bold">{value}</p>
+    </div>
+  );
+}
+
+function MiniTrendBars({ title, points }: { title: string; points: MiniTrendPoint[] }) {
+  const maxRequests = Math.max(1, ...points.map((point) => point.requests));
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-semibold text-gray-700">{title}</p>
+        <p className="text-[11px] text-gray-500">요청/성공률/차단</p>
+      </div>
+      {points.length === 0 ? (
+        <p className="text-[11px] text-gray-500">추세 데이터가 없습니다.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {points.map((point) => {
+            const width = `${Math.max(4, Math.round((point.requests / maxRequests) * 100))}%`;
+            const successTone = point.successRate >= 80 ? 'text-emerald-700' : point.successRate >= 60 ? 'text-amber-700' : 'text-red-700';
+            return (
+              <div key={`${title}-${point.date}`} className="grid grid-cols-[42px_minmax(0,1fr)_90px] items-center gap-2 text-[11px]">
+                <span className="text-gray-500">{point.label}</span>
+                <div className="h-2.5 rounded bg-gray-100 overflow-hidden">
+                  <div className="h-full rounded bg-indigo-400" style={{ width }} />
+                </div>
+                <span className={`text-right font-medium ${successTone}`}>
+                  {point.requests} / {point.successRate}% / {point.blockCount}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

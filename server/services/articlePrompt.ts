@@ -66,6 +66,9 @@ export function buildDraftGenerationPrompt(input: {
     "- sourceCitation is mandatory",
     "- sourceCitation.url must match provided reference URL",
     "- direct phrase reuse from reference title/summary is prohibited",
+    "- forbid generic filler sentences used only to increase length",
+    "- every paragraph must remain tightly tied to keyword and reference context",
+    "- if evidence is insufficient, state limitation briefly instead of adding unrelated claims",
   ];
 
   return [

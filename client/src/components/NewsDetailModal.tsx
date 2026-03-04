@@ -18,11 +18,71 @@ const LazyStoryRenderer = lazy(() =>
 const ARTICLE_META_OPEN = '<!-- HUEBRIEF_META_START -->';
 const ARTICLE_META_CLOSE = '<!-- HUEBRIEF_META_END -->';
 
+type ArticleMediaSlot = {
+  id?: string;
+  type?: 'image' | 'video';
+  anchorLabel?: 'core' | 'deepDive' | 'conclusion';
+  position?: 'before' | 'inline' | 'after';
+  caption?: string;
+  sourceUrl?: string;
+};
+
+type ArticleSourceCitation = {
+  title?: string;
+  url?: string;
+  source?: string;
+};
+
 function stripArticleMeta(content: string | null | undefined): string {
   const text = String(content || '');
   return text
     .replace(new RegExp(`${ARTICLE_META_OPEN}[\\s\\S]*?${ARTICLE_META_CLOSE}\\s*`, 'g'), '')
     .trim();
+}
+
+function parseArticleMeta(content: string | null | undefined): {
+  plainText: string;
+  mediaSlots: ArticleMediaSlot[];
+  sourceCitation?: ArticleSourceCitation | null;
+} {
+  const text = String(content || '');
+  const regex = new RegExp(`${ARTICLE_META_OPEN}\\s*([\\s\\S]*?)\\s*${ARTICLE_META_CLOSE}`);
+  const match = text.match(regex);
+  if (!match) {
+    return { plainText: stripArticleMeta(text), mediaSlots: [], sourceCitation: null };
+  }
+
+  try {
+    const parsed = JSON.parse(match[1]);
+    const mediaSlots = Array.isArray(parsed?.mediaSlots)
+      ? parsed.mediaSlots
+        .map((slot: any, idx: number) => ({
+          id: String(slot?.id || `m${idx + 1}`),
+          type: slot?.type === 'video' ? 'video' : 'image',
+          anchorLabel: ['core', 'deepDive', 'conclusion'].includes(String(slot?.anchorLabel))
+            ? String(slot.anchorLabel)
+            : 'deepDive',
+          position: ['before', 'inline', 'after'].includes(String(slot?.position))
+            ? String(slot.position)
+            : 'inline',
+          caption: String(slot?.caption || ''),
+          sourceUrl: String(slot?.sourceUrl || ''),
+        }))
+        : [];
+    return {
+      plainText: text.replace(regex, '').trim(),
+      mediaSlots,
+      sourceCitation: parsed?.sourceCitation && typeof parsed.sourceCitation === 'object'
+        ? {
+          title: String((parsed.sourceCitation as any).title || '').trim(),
+          url: String((parsed.sourceCitation as any).url || '').trim(),
+          source: String((parsed.sourceCitation as any).source || '').trim(),
+        }
+        : null,
+    };
+  } catch {
+    return { plainText: stripArticleMeta(text), mediaSlots: [], sourceCitation: null };
+  }
 }
 
 function isDarkHexColor(hex: string): boolean {
@@ -792,19 +852,42 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
     const candidates = relatedArticles.filter((item) => item.id !== article.id);
     const normalizedCurrentCategory = article.category?.trim().toLowerCase();
+    const currentEmotion = String(article.emotion || '').trim().toLowerCase();
 
-    const sameCategory = candidates
-      .filter((item) => {
-        if (!normalizedCurrentCategory || !item.category) return false;
-        return item.category.trim().toLowerCase() === normalizedCurrentCategory;
-      })
-      .slice(0, 2);
+    const sameCategoryStrict = candidates.filter((item) => {
+      if (!normalizedCurrentCategory || !item.category) return false;
+      return item.category.trim().toLowerCase() === normalizedCurrentCategory;
+    });
+    const sameEmotionFallback = candidates.filter((item) => {
+      if (!currentEmotion || !item.emotion) return false;
+      return String(item.emotion).trim().toLowerCase() === currentEmotion;
+    });
+    const sameCategory = [...sameCategoryStrict];
+    if (sameCategory.length < 2) {
+      for (const item of sameEmotionFallback) {
+        if (sameCategory.some((picked) => picked.id === item.id)) continue;
+        sameCategory.push(item);
+        if (sameCategory.length >= 2) break;
+      }
+    }
+    const sameCategoryPicked = sameCategory.slice(0, 2);
 
-    const selectedIds = new Set(sameCategory.map((item) => item.id));
+    const selectedIds = new Set(sameCategoryPicked.map((item) => item.id));
 
-    let balanceCandidate = candidates.find(
-      (item) => !selectedIds.has(item.id) && item.emotion !== article.emotion
-    ) || null;
+    let balanceCandidate = candidates.find((item) => {
+      if (selectedIds.has(item.id)) return false;
+      const sameCategoryLabel = normalizedCurrentCategory && item.category
+        ? item.category.trim().toLowerCase() === normalizedCurrentCategory
+        : false;
+      const sameEmotion = item.emotion === article.emotion;
+      return !sameCategoryLabel && !sameEmotion;
+    }) || null;
+
+    if (!balanceCandidate) {
+      balanceCandidate = candidates.find(
+        (item) => !selectedIds.has(item.id) && item.emotion !== article.emotion
+      ) || null;
+    }
 
     // gravity 카테고리에서는 vibrance 또는 serenity 기사를 최소 1개 노출 보장
     if (normalizedCurrentCategory === 'gravity' || article.emotion === 'gravity') {
@@ -826,7 +909,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     }
 
     return {
-      sameCategory,
+      sameCategory: sameCategoryPicked,
       balance: balanceCandidate ? [balanceCandidate] : [],
     };
   }, [article, relatedArticles]);
@@ -835,7 +918,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const flattenedRecommendations = [...recommendationGroups.sameCategory, ...recommendationGroups.balance].slice(0, 3);
   const displayedRecommendations = flattenedRecommendations.slice(0, 3);
   const isBrightEmotion = article?.emotion === 'vibrance' || article?.emotion === 'serenity';
-  const showNextHandoffCue = hasRecommendations && !interactiveArticle && bgTransitionProgress >= 0.72;
+  const showNextHandoffCue = hasRecommendations && !interactiveArticle;
   const recommendedInsightTags = RECOMMENDED_INSIGHT_TAGS[emotionType] || RECOMMENDED_INSIGHT_TAGS.spectrum;
   const visibleInsightTags = (showAllInsightTags
     ? INSIGHT_TAGS
@@ -869,6 +952,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     const maxScroll = Math.max(node.scrollHeight - node.clientHeight, 1);
     const progress = Math.max(0, Math.min(1, node.scrollTop / maxScroll));
     setBgTransitionProgress(progress);
+
     if (!consumeEvidenceSentRef.current && progress >= 0.2 && article?.id) {
       consumeEvidenceSentRef.current = true;
       onConsumeEvidence?.(String(article.id), 'scroll20');
@@ -887,11 +971,18 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       return;
     }
 
-    if (node.scrollTop > 12) {
+    // Start reveal quickly to avoid "stuck first paragraph" feeling.
+    if (node.scrollTop > 2) {
       setHasStartedScrollReveal(true);
     }
 
-    const targetReveal = 1 + Math.ceil(progress * (totalParagraphs - 1));
+    // Keep reveal speed stable regardless of dynamic content height changes.
+    const pxPerParagraph = Math.max(90, Math.min(170, node.clientHeight * 0.18));
+    const baseReveal = 1 + Math.floor((node.scrollTop + node.clientHeight * 0.28) / pxPerParagraph);
+    const nearBottom = progress >= 0.96;
+    const targetReveal = nearBottom
+      ? totalParagraphs
+      : Math.min(totalParagraphs, baseReveal);
     setRevealedParagraphCount((prev) => Math.max(prev, Math.min(totalParagraphs, targetReveal)));
   };
 
@@ -1146,8 +1237,22 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   };
 
 
+  const articleMeta = useMemo(() => parseArticleMeta(article?.content), [article?.content]);
+  const sourceLink = useMemo(() => {
+    const byMeta = normalizeUrl(articleMeta.sourceCitation?.url || '');
+    if (byMeta) return byMeta;
+    return article ? detectSourceUrl(article) : null;
+  }, [articleMeta.sourceCitation?.url, article?.source, article?.content, article?.summary]);
+  const sourceLabel = useMemo(() => {
+    const sourceName = String(articleMeta.sourceCitation?.source || article?.source || '').trim();
+    if (sourceName) return sourceName;
+    const sourceTitle = String(articleMeta.sourceCitation?.title || '').trim();
+    if (sourceTitle) return sourceTitle;
+    return '출처 확인 필요';
+  }, [articleMeta.sourceCitation?.source, articleMeta.sourceCitation?.title, article?.source]);
+
   const proseBlocks = useMemo(() => {
-    const plainContent = stripArticleMeta(article?.content);
+    const plainContent = articleMeta.plainText;
     const raw = (plainContent || article?.summary || '').trim();
     if (!raw) return [] as string[];
 
@@ -1185,7 +1290,27 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
       return chunks.length > 0 ? chunks : [paragraph];
     });
-  }, [article?.content, article?.summary]);
+  }, [articleMeta.plainText, article?.summary]);
+
+  const resolvedMediaSlots = useMemo(() => {
+    if (proseBlocks.length === 0) return [] as Array<ArticleMediaSlot & { targetIndex: number; source: string }>;
+    const anchorIndex = (anchor: string): number => {
+      if (anchor === 'core') return 0;
+      if (anchor === 'conclusion') return Math.max(0, proseBlocks.length - 1);
+      return Math.max(0, Math.floor(proseBlocks.length / 2));
+    };
+    return articleMeta.mediaSlots
+      .map((slot) => {
+        const source = String(slot.sourceUrl || '').trim() || String(article?.image || '').trim();
+        if (!source) return null;
+        return {
+          ...slot,
+          source,
+          targetIndex: anchorIndex(String(slot.anchorLabel || 'deepDive')),
+        };
+      })
+      .filter((slot): slot is ArticleMediaSlot & { targetIndex: number; source: string } => Boolean(slot));
+  }, [articleMeta.mediaSlots, proseBlocks.length, article?.image]);
 
   useEffect(() => {
     if (!article) return;
@@ -1452,6 +1577,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
               border: '1px solid rgba(255,255,255,0.36)',
+              transition: 'background 300ms ease, border-color 220ms ease',
             }}
           >
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-white/30 z-30">
@@ -1600,25 +1726,65 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                     {proseBlocks.slice(0, Math.max(1, Math.min(revealedParagraphCount, proseBlocks.length))).map((paragraph, idx) => {
                       const sourceLike = isSourceLikeParagraph(paragraph);
                       const previewOnly = idx === 0 && !hasStartedScrollReveal && proseBlocks.length > 1;
+                      const beforeSlots = resolvedMediaSlots.filter((slot) => slot.targetIndex === idx && slot.position === 'before');
+                      const inlineSlots = resolvedMediaSlots.filter((slot) => slot.targetIndex === idx && slot.position === 'inline');
+                      const afterSlots = resolvedMediaSlots.filter((slot) => slot.targetIndex === idx && slot.position === 'after');
                       return (
-                      <motion.p
-                        key={`${article.id}-${idx}`}
-                        initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
-                        animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-                        transition={{ duration: shouldReduceMotion ? 0.1 : 0.28, ease: 'easeOut', delay: shouldReduceMotion ? 0 : Math.min(idx * 0.04, 0.18) }}
-                        className={[
-                          sourceLike
-                            ? 'text-left text-[10px] md:text-xs leading-5 md:leading-6 opacity-50 break-all'
-                            : 'text-left opacity-95 leading-8 md:leading-9',
-                          previewOnly ? 'line-clamp-2' : '',
-                        ].join(' ').trim()}
-                      >
-                        {paragraph}
-                      </motion.p>
-                    )})}
+                        <div key={`${article.id}-block-${idx}`} className="space-y-3">
+                          {beforeSlots.map((slot, slotIdx) => (
+                            <div key={`${slot.id || idx}-before-${slotIdx}`} className="rounded-xl overflow-hidden border border-white/20 bg-white/10">
+                              {slot.type === 'video' ? (
+                                <video src={slot.source} controls className="w-full max-h-80 object-cover" />
+                              ) : (
+                                <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full max-h-80 object-cover" />
+                              )}
+                              {slot.caption ? <p className="px-3 py-2 text-xs opacity-80">{slot.caption}</p> : null}
+                            </div>
+                          ))}
+                          <motion.p
+                            initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
+                            animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                            transition={{ duration: shouldReduceMotion ? 0.1 : 0.28, ease: 'easeOut', delay: shouldReduceMotion ? 0 : Math.min(idx * 0.04, 0.18) }}
+                            className={[
+                              sourceLike
+                                ? 'text-left text-[10px] md:text-xs leading-5 md:leading-6 opacity-50 break-all'
+                                : 'text-left opacity-95 leading-8 md:leading-9',
+                              previewOnly ? 'line-clamp-2' : '',
+                            ].join(' ').trim()}
+                          >
+                            {paragraph}
+                          </motion.p>
+                          {inlineSlots.map((slot, slotIdx) => (
+                            <div key={`${slot.id || idx}-inline-${slotIdx}`} className="rounded-xl overflow-hidden border border-white/20 bg-white/10">
+                              {slot.type === 'video' ? (
+                                <video src={slot.source} controls className="w-full max-h-80 object-cover" />
+                              ) : (
+                                <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full max-h-80 object-cover" />
+                              )}
+                              {slot.caption ? <p className="px-3 py-2 text-xs opacity-80">{slot.caption}</p> : null}
+                            </div>
+                          ))}
+                          {afterSlots.map((slot, slotIdx) => (
+                            <div key={`${slot.id || idx}-after-${slotIdx}`} className="rounded-xl overflow-hidden border border-white/20 bg-white/10">
+                              {slot.type === 'video' ? (
+                                <video src={slot.source} controls className="w-full max-h-80 object-cover" />
+                              ) : (
+                                <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full max-h-80 object-cover" />
+                              )}
+                              {slot.caption ? <p className="px-3 py-2 text-xs opacity-80">{slot.caption}</p> : null}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
                     {!hasStartedScrollReveal && proseBlocks.length > 1 && (
                       <p className="text-xs text-gray-500/90">스크롤하면 본문이 이어서 표시됩니다.</p>
                     )}
+                    <div className="pt-2">
+                      <p className="text-[11px] leading-5 opacity-70 break-all" style={{ color: articleTextToken.detailBody }}>
+                        출처: {sourceLabel} · 이 기사는 AI로 재구성된 기사입니다.
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>

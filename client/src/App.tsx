@@ -58,13 +58,15 @@ function Router() {
 function App() {
   const [location] = useLocation();
   const isAdminRoute = location.startsWith("/admin");
+  const isJournalistRoute = location.startsWith("/journalist") || location.startsWith("/reporter");
+  const hideHueBot = isAdminRoute || isJournalistRoute;
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
         <Router />
         {isAdminRoute ? <GlobalScrollTop adminDock /> : <GlobalScrollTop />}
-        {!isAdminRoute && <HueBot />}
+        {!hideHueBot && <HueBot />}
       </TooltipProvider>
     </QueryClientProvider>
   );

@@ -1,14 +1,14 @@
 {
   "version": "emotion_mapping_v3_2026_02_23",
   "startedAt": "2026-02-23T04:09:38.858Z",
-  "updatedAt": "2026-02-24T10:53:54.141Z",
+  "updatedAt": "2026-03-04T01:10:43.227Z",
   "persistence": {
     "mode": "file",
     "hydrated": true
   },
   "totals": {
-    "requests": 45,
-    "success": 16,
+    "requests": 46,
+    "success": 17,
     "fallbackRecoveries": 19,
     "parseFailures": 4,
     "qualityBlocks": 4,
@@ -35,8 +35,8 @@
       "rssFallbacks": 0
     },
     "clarity": {
-      "requests": 19,
-      "success": 7,
+      "requests": 20,
+      "success": 8,
       "fallbackRecoveries": 6,
       "parseFailures": 3,
       "qualityBlocks": 1,
@@ -70,5 +70,467 @@
       "modelEmpty": 0,
       "rssFallbacks": 0
     }
+  },
+  "dailyTotals": {
+    "2026-03-04": {
+      "requests": 1,
+      "success": 1,
+      "fallbackRecoveries": 0,
+      "parseFailures": 0,
+      "qualityBlocks": 0,
+      "modelEmpty": 0,
+      "rssFallbacks": 0
+    }
+  },
+  "reasonCodes": {},
+  "trends": {
+    "last7d": [
+      {
+        "date": "2026-02-26",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-27",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-28",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-03-01",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-03-02",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-03-03",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-03-04",
+        "totals": {
+          "requests": 1,
+          "success": 1,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      }
+    ],
+    "last30d": [
+      {
+        "date": "2026-02-03",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-04",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-05",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-06",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-07",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-08",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-09",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-10",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-11",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-12",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-13",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-14",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-15",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-16",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-17",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-18",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-19",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-20",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-21",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-22",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-23",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-24",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-25",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-26",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-27",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-02-28",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-03-01",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-03-02",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-03-03",
+        "totals": {
+          "requests": 0,
+          "success": 0,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      },
+      {
+        "date": "2026-03-04",
+        "totals": {
+          "requests": 1,
+          "success": 1,
+          "fallbackRecoveries": 0,
+          "parseFailures": 0,
+          "qualityBlocks": 0,
+          "modelEmpty": 0,
+          "rssFallbacks": 0
+        }
+      }
+    ]
   }
 }
