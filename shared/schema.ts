@@ -114,6 +114,43 @@ export const userComposedArticles = pgTable("user_composed_articles", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const guestSessions = pgTable("guest_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  guestId: varchar("guest_id", { length: 128 }).notNull().unique(),
+  lastMood: text("last_mood").notNull().default("spectrum").$type<EmotionType>(),
+  lastMoodScore: integer("last_mood_score").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const emotionLogs = pgTable("emotion_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: text("user_id").notNull(),
+  emotion: text("emotion").notNull().$type<EmotionType>(),
+  moodScore: integer("mood_score").notNull().default(0),
+  context: text("context").notNull().default("manual"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const guestEmotionLogs = pgTable("guest_emotion_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  guestId: varchar("guest_id", { length: 128 }).notNull(),
+  emotion: text("emotion").notNull().$type<EmotionType>(),
+  moodScore: integer("mood_score").notNull().default(0),
+  context: text("context").notNull().default("manual"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const analyticsEvents = pgTable("analytics_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  guestId: varchar("guest_id", { length: 128 }),
+  userId: text("user_id"),
+  event: varchar("event", { length: 128 }).notNull(),
+  page: text("page"),
+  payload: text("payload"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -163,6 +200,27 @@ export const insertUserComposedArticleSchema = createInsertSchema(userComposedAr
   updatedAt: true,
 });
 
+export const insertGuestSessionSchema = createInsertSchema(guestSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertEmotionLogSchema = createInsertSchema(emotionLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertGuestEmotionLogSchema = createInsertSchema(guestEmotionLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAnalyticsEventSchema = createInsertSchema(analyticsEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -186,3 +244,15 @@ export type UserInsight = typeof userInsights.$inferSelect;
 
 export type InsertUserComposedArticle = z.infer<typeof insertUserComposedArticleSchema>;
 export type UserComposedArticle = typeof userComposedArticles.$inferSelect;
+
+export type InsertGuestSession = z.infer<typeof insertGuestSessionSchema>;
+export type GuestSession = typeof guestSessions.$inferSelect;
+
+export type InsertEmotionLog = z.infer<typeof insertEmotionLogSchema>;
+export type EmotionLog = typeof emotionLogs.$inferSelect;
+
+export type InsertGuestEmotionLog = z.infer<typeof insertGuestEmotionLogSchema>;
+export type GuestEmotionLog = typeof guestEmotionLogs.$inferSelect;
+
+export type InsertAnalyticsEvent = z.infer<typeof insertAnalyticsEventSchema>;
+export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;

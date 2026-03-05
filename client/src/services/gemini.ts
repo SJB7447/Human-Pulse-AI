@@ -497,14 +497,25 @@ export const GeminiService = {
         const scriptJson = await callApi('/api/ai/generate-video-script', { articleContent, imageDescription, customPrompt });
 
         // 2. Generate Video via AI boundary endpoint
+        const controller = new AbortController();
+        const timeoutMs = 120000;
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
         const videoRes = await fetch('/api/ai/generate-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
             body: JSON.stringify({
                 prompt: scriptJson.videoPrompt,
                 image: imageUrl,
                 count: Math.max(1, Math.min(3, Number(count || 1))),
             })
+        }).catch((error) => {
+            if (String((error as any)?.name || '') === 'AbortError') {
+                throw new Error('영상 생성 시간이 초과되었습니다. 프롬프트를 짧게 수정해 다시 시도해 주세요.');
+            }
+            throw error;
+        }).finally(() => {
+            clearTimeout(timer);
         });
 
         const videoResult = await videoRes.json();

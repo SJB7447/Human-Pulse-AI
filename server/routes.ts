@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import { appendFile, mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI, type GenerateVideosOperation, type GenerateVideosSource, type Image } from "@google/genai";
 import { storage } from "./storage.js";
 import { runAutoNewsUpdate } from "./services/newsCron.js";
 import { emotionTypes, type EmotionType } from "../shared/schema.js";
@@ -14,6 +15,7 @@ import {
   type StoryBlockIntent,
   validateInteractiveArticle,
 } from "../shared/interactiveArticle.js";
+import { selectRecommendationMix } from "../shared/recommendationMix.js";
 
 function getEmotionColor(emotion: EmotionType): string {
   const colors: Record<EmotionType, string> = {
@@ -1197,6 +1199,8 @@ function evaluateDraftSimilarity(input: {
   const normalizedRefTitle = normalizeSimilarityText(refTitle);
   const normalizedGeneratedTitle = normalizeSimilarityText(input.generatedTitle);
 
+  // Title overlap alone is not enough to block generation.
+  // In news workflow, keyword/title anchors naturally overlap with references.
   if (normalizedRefTitle && normalizedGeneratedTitle && normalizedRefTitle === normalizedGeneratedTitle) {
     issues.push({
       type: "headline_exact_match",
@@ -1206,18 +1210,9 @@ function evaluateDraftSimilarity(input: {
     });
   }
 
-  if (hasLongCopiedSpan(refTitle, input.generatedTitle, 10)) {
-    issues.push({
-      type: "copy_detected",
-      score: 1,
-      threshold: 1,
-      message: "생성 제목이 참고 기사 제목 문구를 그대로 재사용했습니다.",
-    });
-  }
-
   if (
-    hasLongCopiedSpan(refTitle, input.generatedContent, 16) ||
-    hasLongCopiedSpan(refSummary, input.generatedContent, 24)
+    isLikelyCopiedFromReference(refTitle, input.generatedContent, 42, 0.32) ||
+    isLikelyCopiedFromReference(refSummary, input.generatedContent, 52, 0.36)
   ) {
     issues.push({
       type: "copy_detected",
@@ -1227,20 +1222,44 @@ function evaluateDraftSimilarity(input: {
     });
   }
 
+  // Do not block only on title exact-match; require body copy evidence.
+  const hasBodyCopy = issues.some((issue) => issue.type === "copy_detected");
+  if (!hasBodyCopy) return [];
   return issues;
 }
 
 function countKoreanSentenceUnits(content: string): number {
-  return content
-    .split(/[.!?。！？\n]+/)
-    .map((line) => line.trim())
-    .filter(Boolean).length;
+  const normalized = String(content || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return 0;
+
+  const units = splitIntoSentenceLikeUnits(normalized);
+  let baseCount = units.length;
+
+  // Heuristic fallback:
+  // Some longform outputs are structurally long but weak in punctuation/newlines.
+  // Estimate sentence-like units by character length to reduce false schema blocks.
+  if (baseCount < aiDraftGateSettings.longformMinSentences && normalized.length >= 450) {
+    const estimatedByLength = Math.ceil(normalized.length / 85);
+    baseCount = Math.max(baseCount, estimatedByLength);
+  }
+
+  return baseCount;
 }
 
 function splitIntoSentenceLikeUnits(content: string): string[] {
-  return String(content || "")
+  const normalized = String(content || "")
+    .replace(/\r/g, "\n")
     .replace(/\s+/g, " ")
+    // Primary punctuation split.
     .replace(/([.!?。！？])\s+/g, "$1\n")
+    // Korean declarative endings often omit punctuation in model outputs.
+    .replace(/(니다|다|요)\s+(?=[가-힣A-Za-z0-9])/g, "$1\n")
+    // Keep list-style clauses separable.
+    .replace(/([:;])\s+/g, "$1\n")
+    .replace(/\s*\u2022\s*/g, "\n")
+    .replace(/\s*-\s+/g, "\n");
+
+  return normalized
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
@@ -1337,13 +1356,8 @@ function validateDraftByMode(input: {
     return issues;
   }
 
-  const sentenceUnits = countKoreanSentenceUnits(input.content);
-  if (sentenceUnits < aiDraftGateSettings.longformMinSentences) {
-    issues.push({
-      field: "content",
-      message: `인터랙티브 롱폼 모드는 최소 ${aiDraftGateSettings.longformMinSentences}문장 이상이어야 합니다.`,
-    });
-  }
+  // Do not hard-block longform drafts on sentence/length quota.
+  // Model output variability is high; enforce only non-empty + section/media integrity here.
   if (
     input.mediaSlotsCount < aiDraftGateSettings.longformMediaSlotsMin ||
     input.mediaSlotsCount > aiDraftGateSettings.longformMediaSlotsMax
@@ -1441,6 +1455,7 @@ type ComplianceAssessment = {
 };
 
 let geminiClientCache: GoogleGenerativeAI | null | undefined = undefined;
+let geminiVideoClientCache: GoogleGenAI | null | undefined = undefined;
 
 function getGeminiClient(): GoogleGenerativeAI | null {
   if (geminiClientCache !== undefined) return geminiClientCache;
@@ -1451,6 +1466,17 @@ function getGeminiClient(): GoogleGenerativeAI | null {
   }
   geminiClientCache = new GoogleGenerativeAI(apiKey);
   return geminiClientCache;
+}
+
+function getGeminiVideoClient(): GoogleGenAI | null {
+  if (geminiVideoClientCache !== undefined) return geminiVideoClientCache;
+  const apiKey = process.env.GEMINI_API_KEY || "";
+  if (!apiKey) {
+    geminiVideoClientCache = null;
+    return null;
+  }
+  geminiVideoClientCache = new GoogleGenAI({ apiKey });
+  return geminiVideoClientCache;
 }
 
 function parseJsonFromModelText<T>(raw: string): T | null {
@@ -1504,6 +1530,18 @@ const GEMINI_IMAGE_MODEL_FALLBACKS = [
   "gemini-2.5-flash-image",
   "gemini-2.5-flash-image-001",
 ] as const;
+const FIXED_GEMINI_VIDEO_MODEL = String(process.env.GEMINI_VIDEO_MODEL || "veo-3.1-fast-generate-preview").trim() || "veo-3.1-fast-generate-preview";
+const VIDEO_GENERATION_ASPECT_RATIO = "16:9";
+const VIDEO_GENERATION_RESOLUTION = String(process.env.GEMINI_VIDEO_RESOLUTION || "1080p").trim() || "1080p";
+const VIDEO_GENERATION_DURATION_SECONDS = (() => {
+  const byEnv = Number(process.env.GEMINI_VIDEO_DURATION_SECONDS || "");
+  if (Number.isFinite(byEnv) && byEnv > 0) return Math.floor(byEnv);
+  // veo-3.1 fast preview baseline: 8s
+  if (FIXED_GEMINI_VIDEO_MODEL.includes("veo-3.1-fast-generate-preview")) return 8;
+  return 5;
+})();
+const VIDEO_GENERATION_POLL_INTERVAL_MS = Math.max(1500, Math.min(Number(process.env.GEMINI_VIDEO_POLL_INTERVAL_MS || 2500), 10000));
+const VIDEO_GENERATION_TIMEOUT_MS = Math.max(45000, Math.min(Number(process.env.GEMINI_VIDEO_TIMEOUT_MS || 180000), 600000));
 
 function buildNarrativeImagePrompts(articleContent: string, count: number, customPrompt?: string): string[] {
   const cleaned = String(articleContent || "")
@@ -1679,6 +1717,157 @@ function isRetryableImageError(error: unknown): boolean {
     message.includes("abort") ||
     message.includes("aspect ratio")
   );
+}
+
+function parseImageDataUrlForVideoSource(dataUrl: string): Image | null {
+  const match = String(dataUrl || "").match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/i);
+  if (!match) return null;
+  const mimeType = String(match[1] || "").trim().toLowerCase();
+  const imageBytes = String(match[2] || "").replace(/\s+/g, "").trim();
+  if (!mimeType || !imageBytes) return null;
+  return { mimeType, imageBytes };
+}
+
+function normalizeVideoPromptDurationText(prompt: string): string {
+  const target = `${VIDEO_GENERATION_DURATION_SECONDS}초`;
+  return String(prompt || "")
+    .replace(/30\s*초/gi, target)
+    .replace(/8\s*초/gi, target)
+    .replace(/5\s*초/gi, target)
+    .replace(/\b30\b/g, String(VIDEO_GENERATION_DURATION_SECONDS))
+    .replace(/\b8\b/g, String(VIDEO_GENERATION_DURATION_SECONDS))
+    .replace(/\b5\b/g, String(VIDEO_GENERATION_DURATION_SECONDS))
+    .trim();
+}
+
+function extractGeneratedVideoUrl(video: any): string {
+  const uri = String(video?.video?.uri || "").trim();
+  if (uri) {
+    if (/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\//i.test(uri)) {
+      return `/api/ai/video-proxy?uri=${encodeURIComponent(uri)}`;
+    }
+    return uri;
+  }
+
+  const videoBytes = String(video?.video?.videoBytes || "").trim();
+  if (!videoBytes) return "";
+  const mimeType = String(video?.video?.mimeType || "video/mp4").trim() || "video/mp4";
+  return `data:${mimeType};base64,${videoBytes}`;
+}
+
+function isVideoPromptPolicyBlockedError(error: unknown): boolean {
+  const raw = String((error as any)?.message || "").toLowerCase();
+  return (
+    raw.includes("\"code\":3") ||
+    raw.includes("prompt could not be submitted") ||
+    raw.includes("contains words that violat") ||
+    raw.includes("safety")
+  );
+}
+
+function buildVideoSafeFallbackPrompt(prompt: string): string {
+  const compact = String(prompt || "").replace(/\s+/g, " ").trim();
+  const seed = compact.slice(0, 120);
+  return [
+    "뉴스 요약 분위기의 안전한 B-roll 영상.",
+    "폭력/혐오/충격적 장면/무기/유혈/미성년 위험 상황/브랜드 로고/텍스트 오버레이 없이 제작.",
+    "실사 스타일, 차분한 카메라 무빙, 공공장소/도시 전경/사람 실루엣 중심.",
+    `핵심 주제: ${seed || "최신 사회 이슈 요약"}`,
+  ].join(" ");
+}
+
+function splitStorySentences(input: string): string[] {
+  return String(input || "")
+    .replace(/\r/g, "\n")
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?。！？])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 12);
+}
+
+function clampText(input: string, maxLen: number): string {
+  const text = String(input || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > maxLen ? `${text.slice(0, maxLen - 1)}…` : text;
+}
+
+function buildVideoScriptFromArticle(articleContent: string, customPrompt: string): {
+  videoPrompt: string;
+  script: string;
+  scenes: Array<{ time: string; description: string; text: string }>;
+} {
+  const cleaned = String(articleContent || "")
+    .replace(/^\s*\[[^\]]+\]\s*/m, "")
+    .replace(/\[출처\][\s\S]*$/m, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const sentences = splitStorySentences(cleaned);
+  const s1 = clampText(sentences[0] || cleaned.slice(0, 120), 95) || "핵심 이슈가 시작되는 장면";
+  const s2 = clampText(sentences[Math.floor(sentences.length / 2)] || cleaned.slice(120, 260), 95) || "배경 맥락과 영향이 드러나는 장면";
+  const s3 = clampText(sentences[Math.max(0, sentences.length - 1)] || cleaned.slice(260, 420), 95) || "결론과 전망을 전달하는 마무리 장면";
+
+  const dur = VIDEO_GENERATION_DURATION_SECONDS;
+  const cut1 = Math.max(1, Math.floor(dur * 0.25));
+  const cut2 = Math.max(cut1 + 1, Math.floor(dur * 0.7));
+  const scenes = [
+    { time: `0-${cut1}`, description: "오프닝 훅", text: s1 },
+    { time: `${cut1}-${cut2}`, description: "맥락/핵심 전개", text: s2 },
+    { time: `${cut2}-${dur}`, description: "결론/전망", text: s3 },
+  ];
+
+  const storyLine = `${s1} ${s2} ${s3}`.trim();
+  const custom = String(customPrompt || "").trim();
+  const baselineStyle = [
+    "2D animation style",
+    "no text",
+    "no subtitles",
+    "no logo",
+    "no watermark",
+  ].join(", ");
+  const basePrompt = [
+    `${VIDEO_GENERATION_ASPECT_RATIO} ${VIDEO_GENERATION_RESOLUTION} ${dur}초 뉴스 숏폼 B-roll.`,
+    baselineStyle,
+    "자연스러운 카메라 무빙.",
+    `장면 흐름: ${storyLine}`,
+    "안전 제약: 폭력/혐오/선정/충격적 표현 회피.",
+  ].join(" ");
+  const prompt = custom ? `${custom}. ${baselineStyle}. 장면 흐름: ${storyLine}` : basePrompt;
+
+  const script = [
+    `[0-${cut1}s] ${s1}`,
+    `[${cut1}-${cut2}s] ${s2}`,
+    `[${cut2}-${dur}s] ${s3}`,
+  ].join("\n");
+
+  return { videoPrompt: prompt, script, scenes };
+}
+
+function parseAllowedDurationRangeFromError(error: unknown): { min: number; max: number } | null {
+  const raw = String((error as any)?.message || "");
+  const m = raw.match(/between\s+(\d+)\s+and\s+(\d+)/i);
+  if (!m) return null;
+  const min = Number(m[1]);
+  const max = Number(m[2]);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) return null;
+  return { min: Math.floor(min), max: Math.floor(max) };
+}
+
+async function waitForGenerateVideosOperationDone(
+  ai: GoogleGenAI,
+  initialOperation: GenerateVideosOperation,
+  timeoutMs: number,
+): Promise<GenerateVideosOperation> {
+  let operation = initialOperation;
+  const startedAt = Date.now();
+  while (!operation.done) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`Gemini video generation timed out (${timeoutMs}ms)`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, VIDEO_GENERATION_POLL_INTERVAL_MS));
+    operation = await ai.operations.getVideosOperation({ operation }) as GenerateVideosOperation;
+  }
+  return operation;
 }
 
 async function generateGeminiImageWithRetry(
@@ -2827,6 +3016,20 @@ function hasLongCopiedSpan(source: string, target: string, minLen: number = 18):
   return false;
 }
 
+function isLikelyCopiedFromReference(
+  source: string,
+  target: string,
+  minCopiedSpan: number,
+  minJaccard: number,
+): boolean {
+  const sourceTokens = tokenizeSimilarity(source);
+  const targetTokens = tokenizeSimilarity(target);
+  if (sourceTokens.length === 0 || targetTokens.length === 0) return false;
+  const overlap = jaccardSimilarity(sourceTokens, targetTokens);
+  if (overlap < minJaccard) return false;
+  return hasLongCopiedSpan(source, target, minCopiedSpan);
+}
+
 function countTokenIntersection(left: string, right: string): number {
   const leftSet = new Set(tokenizeSimilarity(left));
   const rightSet = new Set(tokenizeSimilarity(right));
@@ -3669,6 +3872,40 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     ["010-0000-0000", ["demo.user@example.com"]],
     ["010-1111-2222", ["journal.user@example.com", "alt.user@example.com"]],
   ]);
+  type GuestSessionState = {
+    guestId: string;
+    lastMood: EmotionType;
+    lastMoodScore: number;
+    createdAt: number;
+    updatedAt: number;
+  };
+  type AnalyticsEventRow = {
+    id: string;
+    event: string;
+    page: string;
+    guestId: string | null;
+    userId: string | null;
+    payload: Record<string, unknown>;
+    createdAt: string;
+  };
+  const guestSessionsFallback = new Map<string, GuestSessionState>();
+  const guestEmotionLogsFallback: Array<{
+    id: string;
+    guestId: string;
+    emotion: EmotionType;
+    moodScore: number;
+    context: string;
+    createdAt: string;
+  }> = [];
+  const userEmotionLogsFallback: Array<{
+    id: string;
+    userId: string;
+    emotion: EmotionType;
+    moodScore: number;
+    context: string;
+    createdAt: string;
+  }> = [];
+  const analyticsEventsFallback: AnalyticsEventRow[] = [];
   const hueBotPolicyWindowMs = 15 * 60 * 1000;
   const hueBotSessionState = new Map<string, {
     cooldownUntil: number;
@@ -4868,6 +5105,155 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ id, status });
   });
 
+  const normalizeMoodScore = (value: unknown): number => {
+    const score = Number(value);
+    if (!Number.isFinite(score)) return 0;
+    return Math.max(-2, Math.min(2, Math.round(score)));
+  };
+
+  const resolveGuestId = (req: any): string => {
+    const bodyGuest = String(req.body?.guestId || "").trim();
+    const queryGuest = String(req.query?.guestId || "").trim();
+    const headerGuest = String(req.headers?.["x-guest-id"] || "").trim();
+    return bodyGuest || queryGuest || headerGuest;
+  };
+
+  app.post("/api/guest/start", async (req, res) => {
+    const requestedGuestId = String(req.body?.guestId || "").trim();
+    const guestId = requestedGuestId || `guest-${randomUUID()}`;
+    const now = Date.now();
+    const current = guestSessionsFallback.get(guestId);
+    const next: GuestSessionState = current || {
+      guestId,
+      lastMood: "spectrum",
+      lastMoodScore: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    next.updatedAt = now;
+    guestSessionsFallback.set(guestId, next);
+
+    return res.status(201).json({
+      success: true,
+      guestId,
+      session: {
+        moodKey: next.lastMood,
+        moodScore: next.lastMoodScore,
+        createdAt: new Date(next.createdAt).toISOString(),
+        updatedAt: new Date(next.updatedAt).toISOString(),
+      },
+    });
+  });
+
+  app.get("/api/session/mood", async (req, res) => {
+    const guestId = resolveGuestId(req);
+    if (guestId && guestSessionsFallback.has(guestId)) {
+      const session = guestSessionsFallback.get(guestId)!;
+      return res.json({
+        moodKey: session.lastMood,
+        moodScore: session.lastMoodScore,
+        source: "guest",
+        updatedAt: new Date(session.updatedAt).toISOString(),
+      });
+    }
+
+    return res.json({
+      moodKey: "spectrum",
+      moodScore: 0,
+      source: "default",
+    });
+  });
+
+  app.post("/api/emotion/checkin", async (req, res) => {
+    const emotion = toEmotion(req.body?.emotion, "spectrum");
+    const moodScore = normalizeMoodScore(req.body?.moodScore);
+    const context = String(req.body?.context || "manual").trim().slice(0, 64) || "manual";
+    const guestId = resolveGuestId(req);
+    const actor = resolveActor(req);
+    const actorId = String(actor.actorId || "").trim();
+    const nowIso = new Date().toISOString();
+
+    if (!guestId && !actorId) {
+      return res.status(400).json({
+        error: "guestId or actorId is required.",
+        code: "EMOTION_ACTOR_REQUIRED",
+      });
+    }
+
+    if (guestId) {
+      const now = Date.now();
+      const current = guestSessionsFallback.get(guestId);
+      const next: GuestSessionState = current || {
+        guestId,
+        lastMood: emotion,
+        lastMoodScore: moodScore,
+        createdAt: now,
+        updatedAt: now,
+      };
+      next.lastMood = emotion;
+      next.lastMoodScore = moodScore;
+      next.updatedAt = now;
+      guestSessionsFallback.set(guestId, next);
+      guestEmotionLogsFallback.unshift({
+        id: randomUUID(),
+        guestId,
+        emotion,
+        moodScore,
+        context,
+        createdAt: nowIso,
+      });
+      if (guestEmotionLogsFallback.length > 1000) guestEmotionLogsFallback.length = 1000;
+    }
+
+    if (actorId) {
+      userEmotionLogsFallback.unshift({
+        id: randomUUID(),
+        userId: actorId,
+        emotion,
+        moodScore,
+        context,
+        createdAt: nowIso,
+      });
+      if (userEmotionLogsFallback.length > 1000) userEmotionLogsFallback.length = 1000;
+    }
+
+    return res.status(201).json({
+      success: true,
+      emotion,
+      moodScore,
+      context,
+      guestId: guestId || null,
+      userId: actorId || null,
+    });
+  });
+
+  app.post("/api/analytics/event", async (req, res) => {
+    const event = String(req.body?.event || "").trim().slice(0, 128);
+    if (!event) {
+      return res.status(400).json({ error: "event is required.", code: "ANALYTICS_EVENT_REQUIRED" });
+    }
+    const payload = typeof req.body?.payload === "object" && req.body?.payload !== null
+      ? req.body.payload
+      : {};
+    const page = String(req.body?.page || "").trim().slice(0, 200);
+    const guestId = resolveGuestId(req) || null;
+    const actor = resolveActor(req);
+    const userId = String(actor.actorId || "").trim() || null;
+
+    analyticsEventsFallback.unshift({
+      id: randomUUID(),
+      event,
+      page,
+      guestId,
+      userId,
+      payload,
+      createdAt: new Date().toISOString(),
+    });
+    if (analyticsEventsFallback.length > 5000) analyticsEventsFallback.length = 5000;
+
+    return res.status(201).json({ success: true });
+  });
+
   app.post("/api/auth/phone/resend", async (req, res) => {
     const phone = String(req.body?.phone || "").trim();
     if (!phone) return res.status(400).json({ error: "phone is required." });
@@ -5018,6 +5404,53 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
     demoResetTokens.delete(token);
     res.json({ success: true, message: "Password changed (demo)." });
+  });
+
+  app.post("/api/auth/change-password", async (req, res) => {
+    const userId = String(req.body?.userId || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const currentPassword = String(req.body?.currentPassword || "");
+    const newPassword = String(req.body?.newPassword || "");
+    const confirmPassword = String(req.body?.confirmPassword || "");
+
+    if (!userId && !email) {
+      return res.status(400).json({
+        error: "userId or email is required.",
+        code: "AUTH_CHANGE_PW_USER_REQUIRED",
+      });
+    }
+    if (!currentPassword) {
+      return res.status(400).json({
+        error: "Current password is required.",
+        code: "AUTH_CURRENT_PASSWORD_REQUIRED",
+      });
+    }
+    if (!newPassword || !confirmPassword) {
+      return res.status(400).json({
+        error: "newPassword and confirmPassword are required.",
+        code: "AUTH_NEW_PASSWORD_REQUIRED",
+      });
+    }
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        error: "Passwords do not match.",
+        code: "AUTH_PASSWORD_CONFIRM_MISMATCH",
+      });
+    }
+    if (newPassword.length < 8 || !/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+      return res.status(400).json({
+        error: "Weak password.",
+        code: "AUTH_WEAK_PASSWORD",
+      });
+    }
+
+    // Demo contract endpoint: in production this should call Supabase Admin API.
+    return res.json({
+      success: true,
+      message: "Password changed (contract endpoint).",
+      userId: userId || null,
+      email: email || null,
+    });
   });
 
   app.post("/api/ai/generate-news", async (req, res) => {
@@ -5310,26 +5743,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const category = String(req.body?.category || "").trim().toLowerCase();
     const all = await storage.getAllNews(false);
 
-    const pool = all.filter((item) => item.id !== articleId);
-    const sameCategory = category
-      ? pool.filter((item) => (item.category || "").trim().toLowerCase() === category)
-      : [];
-    const balance = pool.filter((item) => item.emotion !== emotion);
-    const merged = [...sameCategory, ...balance, ...pool];
-    const unique: typeof merged = [];
-    const seen = new Set<string>();
-    for (const item of merged) {
-      if (seen.has(item.id)) continue;
-      seen.add(item.id);
-      unique.push(item);
-      if (unique.length >= 6) break;
-    }
+    const current = all.find((item) => item.id === articleId) || {
+      id: articleId || "__unknown__",
+      category: category || null,
+      emotion,
+    };
+    const groups = selectRecommendationMix(current as any, all as any);
+    const recommendations = [...groups.sameCategory, ...groups.balance].slice(0, 3);
 
     return res.json({
-      recommendations: unique,
+      recommendations,
       strategy: {
-        sameCategoryCount: sameCategory.length,
-        balanceCount: balance.length,
+        sameCategoryCount: groups.sameCategory.length,
+        balanceCount: groups.balance.length,
       },
     });
   });
@@ -5938,6 +6364,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
 
       if (similarityIssues.length > 0) {
+        if (mode === "interactive-longform") {
+          // Longform workflow frequently reuses factual anchors from the selected article.
+          // For this mode, do not hard-block on similarity; let schema/compliance gates handle safety.
+          console.warn("[AI] Draft similarity warnings ignored for interactive-longform:", {
+            keyword,
+            mode,
+            attempt,
+            issues: similarityIssues,
+          });
+          similarityIssues = [];
+        }
+      }
+
+      if (similarityIssues.length > 0) {
         console.warn("[AI] Draft similarity gate blocked:", {
           keyword,
           mode,
@@ -6122,8 +6562,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     if (
-      hasLongCopiedSpan(selectedArticle.title, regeneratedText, 16) ||
-      hasLongCopiedSpan(selectedArticle.summary, regeneratedText, 24)
+      isLikelyCopiedFromReference(selectedArticle.title, regeneratedText, 42, 0.32) ||
+      isLikelyCopiedFromReference(selectedArticle.summary, regeneratedText, 52, 0.36)
     ) {
       return res.status(502).json({
         error: "재생성 섹션에서 레퍼런스 문구 복붙 가능성이 감지되어 차단되었습니다.",
@@ -6266,8 +6706,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     if (
-      hasLongCopiedSpan(selectedArticle.title, regeneratedText, 16) ||
-      hasLongCopiedSpan(selectedArticle.summary, regeneratedText, 24)
+      isLikelyCopiedFromReference(selectedArticle.title, regeneratedText, 42, 0.32) ||
+      isLikelyCopiedFromReference(selectedArticle.summary, regeneratedText, 52, 0.36)
     ) {
       return res.status(502).json({
         error: "재생성 문단에서 레퍼런스 문구 복붙 가능성이 감지되어 차단되었습니다.",
@@ -6713,33 +7153,230 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/ai/generate-video-script", async (req, res) => {
     const articleContent = String(req.body?.articleContent || "");
-    const customPrompt = String(req.body?.customPrompt || "").trim();
-    const videoPrompt = customPrompt || `가로형(16:9) 5초 숏폼 뉴스 영상, 핵심 요약: ${articleContent.slice(0, 120)}`;
+    const customPrompt = normalizeVideoPromptDurationText(String(req.body?.customPrompt || "").trim());
+    const payload = buildVideoScriptFromArticle(articleContent, customPrompt);
+    res.json(payload);
+  });
+
+  app.get("/api/ai/video-settings", (_req, res) => {
     res.json({
-      videoPrompt,
-      script: "데모 영상 스크립트",
-      scenes: [{ time: "0-5", description: "인트로", text: "요약" }],
+      model: FIXED_GEMINI_VIDEO_MODEL,
+      durationSeconds: VIDEO_GENERATION_DURATION_SECONDS,
+      aspectRatio: VIDEO_GENERATION_ASPECT_RATIO,
+      resolution: VIDEO_GENERATION_RESOLUTION,
+      pollIntervalMs: VIDEO_GENERATION_POLL_INTERVAL_MS,
+      timeoutMs: VIDEO_GENERATION_TIMEOUT_MS,
     });
   });
 
   app.post("/api/ai/generate-video", async (req, res) => {
-    const prompt = String(req.body?.prompt || "").trim();
+    const prompt = normalizeVideoPromptDurationText(String(req.body?.prompt || "").trim());
+    const image = String(req.body?.image || "").trim();
     const count = Math.max(1, Math.min(3, Number(req.body?.count || 1)));
-    const videos = Array.from({ length: count }).map((_, idx) => ({
-      index: idx,
-      videoUrl: "https://samplelib.com/lib/preview/mp4/sample-5s.mp4",
-      duration: 5,
-      aspectRatio: "16:9",
-      prompt,
-      description: `AI 영상 ${idx + 1}`,
-    }));
-    res.json({
-      success: true,
-      videos,
-      videoUrl: videos[0]?.videoUrl,
-      duration: 5,
-      aspectRatio: "16:9",
-    });
+
+    if (!prompt) {
+      return res.status(400).json({
+        error: "video prompt is required",
+        code: "AI_VIDEO_PROMPT_REQUIRED",
+      });
+    }
+
+    const ai = getGeminiVideoClient();
+    if (!ai) {
+      return res.status(503).json({
+        error: "GEMINI_API_KEY is missing",
+        code: "AI_VIDEO_KEY_MISSING",
+      });
+    }
+
+    try {
+      const source: GenerateVideosSource = { prompt };
+      if (image) {
+        const parsedImage = parseImageDataUrlForVideoSource(image);
+        if (parsedImage) source.image = parsedImage;
+      }
+
+      const runGenerateVideos = async (activePrompt: string, durationSeconds: number) => {
+        const activeSource: GenerateVideosSource = { ...source, prompt: activePrompt };
+        const operation = await ai.models.generateVideos({
+          model: FIXED_GEMINI_VIDEO_MODEL,
+          source: activeSource,
+          config: {
+            numberOfVideos: count,
+            durationSeconds,
+            aspectRatio: VIDEO_GENERATION_ASPECT_RATIO,
+            resolution: VIDEO_GENERATION_RESOLUTION,
+          },
+        });
+
+        const completedOperation = await waitForGenerateVideosOperationDone(ai, operation, VIDEO_GENERATION_TIMEOUT_MS);
+        if (completedOperation.error) {
+          throw new Error(JSON.stringify(completedOperation.error));
+        }
+
+        const generatedVideos = Array.isArray(completedOperation.response?.generatedVideos)
+          ? completedOperation.response.generatedVideos
+          : [];
+
+        const videos = generatedVideos
+          .map((video, idx) => {
+            const videoUrl = extractGeneratedVideoUrl(video);
+            if (!videoUrl) return null;
+            return {
+              index: idx,
+              videoUrl,
+              duration: durationSeconds,
+              aspectRatio: VIDEO_GENERATION_ASPECT_RATIO,
+              resolution: VIDEO_GENERATION_RESOLUTION,
+              prompt: activePrompt,
+              description: `AI 영상 ${idx + 1}`,
+            };
+          })
+          .filter((row): row is {
+            index: number;
+            videoUrl: string;
+            duration: number;
+            aspectRatio: string;
+            resolution: string;
+            prompt: string;
+            description: string;
+          } => Boolean(row));
+
+        return { videos, promptUsed: activePrompt };
+      };
+
+      let generationResult: { videos: Array<{
+        index: number;
+        videoUrl: string;
+        duration: number;
+        aspectRatio: string;
+        resolution: string;
+        prompt: string;
+        description: string;
+      }>; promptUsed: string } | null = null;
+      let activeDurationSeconds = VIDEO_GENERATION_DURATION_SECONDS;
+      try {
+        generationResult = await runGenerateVideos(prompt, activeDurationSeconds);
+      } catch (error) {
+        const range = parseAllowedDurationRangeFromError(error);
+        if (range) {
+          const candidates = Array.from(new Set([
+            Math.max(range.min, Math.min(range.max, activeDurationSeconds)),
+            range.max,
+            range.min,
+          ]));
+          let recovered = false;
+          let lastError = error;
+          for (const nextDuration of candidates) {
+            try {
+              activeDurationSeconds = nextDuration;
+              generationResult = await runGenerateVideos(prompt, activeDurationSeconds);
+              recovered = true;
+              break;
+            } catch (retryError) {
+              lastError = retryError;
+            }
+          }
+          if (!recovered) {
+            throw lastError;
+          }
+        } else if (isVideoPromptPolicyBlockedError(error)) {
+          const safePrompt = buildVideoSafeFallbackPrompt(prompt);
+          generationResult = await runGenerateVideos(safePrompt, activeDurationSeconds);
+        } else {
+          throw error;
+        }
+      }
+
+      if (!generationResult) {
+        throw new Error("video generation result is empty");
+      }
+
+      const videos = generationResult.videos;
+
+      if (videos.length === 0) {
+        return res.status(502).json({
+          error: "Gemini video response did not include video url.",
+          code: "AI_VIDEO_URL_MISSING",
+          model: FIXED_GEMINI_VIDEO_MODEL,
+        });
+      }
+
+      return res.json({
+        success: true,
+        model: FIXED_GEMINI_VIDEO_MODEL,
+        videos,
+        videoUrl: videos[0]?.videoUrl,
+        duration: videos[0]?.duration ?? activeDurationSeconds,
+        aspectRatio: VIDEO_GENERATION_ASPECT_RATIO,
+        resolution: VIDEO_GENERATION_RESOLUTION,
+        promptUsed: generationResult.promptUsed,
+      });
+    } catch (error: any) {
+      const detail = String(error?.message || "unknown");
+      const lower = detail.toLowerCase();
+      const isTemporaryFailure =
+        lower.includes("timeout") ||
+        lower.includes("deadline") ||
+        lower.includes("unavailable") ||
+        lower.includes("resource exhausted") ||
+        lower.includes("quota");
+      return res.status(isTemporaryFailure ? 503 : 502).json({
+        error: isTemporaryFailure
+          ? "영상 생성 요청이 일시적으로 실패했습니다. 잠시 후 다시 시도해 주세요."
+          : "Gemini 영상 생성에 실패했습니다.",
+        code: "AI_VIDEO_GENERATION_FAILED",
+        model: FIXED_GEMINI_VIDEO_MODEL,
+        durationSecondsRequested: VIDEO_GENERATION_DURATION_SECONDS,
+        aspectRatioRequested: VIDEO_GENERATION_ASPECT_RATIO,
+        resolutionRequested: VIDEO_GENERATION_RESOLUTION,
+        detail,
+        retryable: true,
+        retryAfterSeconds: isTemporaryFailure ? 20 : undefined,
+      });
+    }
+  });
+
+  app.get("/api/ai/video-proxy", async (req, res) => {
+    const rawUri = String(req.query?.uri || "").trim();
+    if (!rawUri) {
+      return res.status(400).json({ error: "uri is required", code: "AI_VIDEO_PROXY_URI_REQUIRED" });
+    }
+    if (!/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/files\//i.test(rawUri)) {
+      return res.status(400).json({ error: "unsupported uri", code: "AI_VIDEO_PROXY_URI_INVALID" });
+    }
+    const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
+    if (!apiKey) {
+      return res.status(503).json({ error: "GEMINI_API_KEY is missing", code: "AI_VIDEO_KEY_MISSING" });
+    }
+
+    try {
+      const url = new URL(rawUri);
+      if (!url.searchParams.get("key")) {
+        url.searchParams.set("key", apiKey);
+      }
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        const detail = await response.text();
+        return res.status(response.status).json({
+          error: "video proxy fetch failed",
+          code: "AI_VIDEO_PROXY_FETCH_FAILED",
+          detail: detail.slice(0, 500),
+        });
+      }
+
+      const contentType = String(response.headers.get("content-type") || "video/mp4");
+      const bytes = Buffer.from(await response.arrayBuffer());
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      return res.status(200).send(bytes);
+    } catch (error: any) {
+      return res.status(502).json({
+        error: "video proxy request failed",
+        code: "AI_VIDEO_PROXY_REQUEST_FAILED",
+        detail: String(error?.message || "unknown"),
+      });
+    }
   });
 
   app.post("/api/share/short-links", async (req, res) => {

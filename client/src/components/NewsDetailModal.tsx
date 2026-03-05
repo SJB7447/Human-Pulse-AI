@@ -10,6 +10,7 @@ import { getNewsTextTokenByDepth } from '@/lib/newsTextTokens';
 import { DBService } from '@/services/DBService';
 import { AIServiceError, GeminiService, type OpinionComposeResult } from '@/services/gemini';
 import type { InteractiveArticle } from '@shared/interactiveArticle';
+import { selectRecommendationMix } from '@shared/recommendationMix';
 
 const LazyStoryRenderer = lazy(() =>
   import('@/components/StoryRenderer').then((module) => ({ default: module.StoryRenderer }))
@@ -42,6 +43,7 @@ function stripArticleMeta(content: string | null | undefined): string {
 
 function parseArticleMeta(content: string | null | undefined): {
   plainText: string;
+  sectionBlocks: string[];
   mediaSlots: ArticleMediaSlot[];
   sourceCitation?: ArticleSourceCitation | null;
 } {
@@ -49,11 +51,14 @@ function parseArticleMeta(content: string | null | undefined): {
   const regex = new RegExp(`${ARTICLE_META_OPEN}\\s*([\\s\\S]*?)\\s*${ARTICLE_META_CLOSE}`);
   const match = text.match(regex);
   if (!match) {
-    return { plainText: stripArticleMeta(text), mediaSlots: [], sourceCitation: null };
+    return { plainText: stripArticleMeta(text), sectionBlocks: [], mediaSlots: [], sourceCitation: null };
   }
 
   try {
     const parsed = JSON.parse(match[1]);
+    const sectionBlocks = ['core', 'deepDive', 'conclusion']
+      .map((key) => String(parsed?.sections?.[key] || '').trim())
+      .filter(Boolean);
     const mediaSlots = Array.isArray(parsed?.mediaSlots)
       ? parsed.mediaSlots
         .map((slot: any, idx: number) => ({
@@ -71,6 +76,7 @@ function parseArticleMeta(content: string | null | undefined): {
         : [];
     return {
       plainText: text.replace(regex, '').trim(),
+      sectionBlocks,
       mediaSlots,
       sourceCitation: parsed?.sourceCitation && typeof parsed.sourceCitation === 'object'
         ? {
@@ -81,7 +87,7 @@ function parseArticleMeta(content: string | null | undefined): {
         : null,
     };
   } catch {
-    return { plainText: stripArticleMeta(text), mediaSlots: [], sourceCitation: null };
+    return { plainText: stripArticleMeta(text), sectionBlocks: [], mediaSlots: [], sourceCitation: null };
   }
 }
 
@@ -666,6 +672,19 @@ function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
     .filter((el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true');
 }
 
+function resolveRecommendationObserverThreshold(): number {
+  const min = 0.15;
+  const max = 0.35;
+  const fallback = 0.25;
+  if (typeof window === 'undefined') return fallback;
+
+  const query = Number(new URLSearchParams(window.location.search).get('ioThreshold') || '');
+  const storageValue = Number(window.localStorage.getItem('huebrief:io-threshold') || '');
+  const resolved = Number.isFinite(query) ? query : storageValue;
+  if (!Number.isFinite(resolved)) return fallback;
+  return Math.max(min, Math.min(max, resolved));
+}
+
 export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration, cardBackground, layoutId, relatedArticles = [], onSelectArticle, onConsumeEvidence }: NewsDetailModalProps) {
   const { toast } = useToast();
   const { user } = useEmotionStore();
@@ -722,6 +741,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const shouldReduceMotion = useReducedMotion();
   const isAiBusy = isTransforming || isSummarizing;
   const consumeEvidenceSentRef = useRef(false);
+  const modalOpenedAtRef = useRef<number>(0);
+  const recommendationObserverThreshold = useMemo(() => resolveRecommendationObserverThreshold(), []);
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
   const articleEmotionConfig = EMOTION_CONFIG.find((entry) => entry.type === article?.emotion) || emotionConfig;
@@ -760,6 +781,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     setBgTransitionProgress(0);
     setRevealedParagraphCount(1);
     setHasStartedScrollReveal(false);
+    modalOpenedAtRef.current = article ? Date.now() : 0;
   }, [article?.id]);
 
   useEffect(() => {
@@ -845,74 +867,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [article, onClose, showInsightEditor, showOpinionComposer, showShareSheet, showInsightReward]);
 
-  const recommendationGroups = useMemo(() => {
-    if (!article) {
-      return { sameCategory: [] as NewsItem[], balance: [] as NewsItem[] };
-    }
-
-    const candidates = relatedArticles.filter((item) => item.id !== article.id);
-    const normalizedCurrentCategory = article.category?.trim().toLowerCase();
-    const currentEmotion = String(article.emotion || '').trim().toLowerCase();
-
-    const sameCategoryStrict = candidates.filter((item) => {
-      if (!normalizedCurrentCategory || !item.category) return false;
-      return item.category.trim().toLowerCase() === normalizedCurrentCategory;
-    });
-    const sameEmotionFallback = candidates.filter((item) => {
-      if (!currentEmotion || !item.emotion) return false;
-      return String(item.emotion).trim().toLowerCase() === currentEmotion;
-    });
-    const sameCategory = [...sameCategoryStrict];
-    if (sameCategory.length < 2) {
-      for (const item of sameEmotionFallback) {
-        if (sameCategory.some((picked) => picked.id === item.id)) continue;
-        sameCategory.push(item);
-        if (sameCategory.length >= 2) break;
-      }
-    }
-    const sameCategoryPicked = sameCategory.slice(0, 2);
-
-    const selectedIds = new Set(sameCategoryPicked.map((item) => item.id));
-
-    let balanceCandidate = candidates.find((item) => {
-      if (selectedIds.has(item.id)) return false;
-      const sameCategoryLabel = normalizedCurrentCategory && item.category
-        ? item.category.trim().toLowerCase() === normalizedCurrentCategory
-        : false;
-      const sameEmotion = item.emotion === article.emotion;
-      return !sameCategoryLabel && !sameEmotion;
-    }) || null;
-
-    if (!balanceCandidate) {
-      balanceCandidate = candidates.find(
-        (item) => !selectedIds.has(item.id) && item.emotion !== article.emotion
-      ) || null;
-    }
-
-    // gravity 카테고리에서는 vibrance 또는 serenity 기사를 최소 1개 노출 보장
-    if (normalizedCurrentCategory === 'gravity' || article.emotion === 'gravity') {
-      const needsGravityBalance = !balanceCandidate || (balanceCandidate.emotion !== 'vibrance' && balanceCandidate.emotion !== 'serenity');
-      if (needsGravityBalance) {
-        const gravityFallback = candidates.find(
-          (item) => !selectedIds.has(item.id) && (item.emotion === 'vibrance' || item.emotion === 'serenity')
-        );
-        if (gravityFallback) {
-          balanceCandidate = gravityFallback;
-        }
-      }
-    }
-
-    if (!balanceCandidate) {
-      balanceCandidate = candidates.find(
-        (item) => !selectedIds.has(item.id) && item.category?.trim().toLowerCase() !== normalizedCurrentCategory
-      ) || null;
-    }
-
-    return {
-      sameCategory: sameCategoryPicked,
-      balance: balanceCandidate ? [balanceCandidate] : [],
-    };
-  }, [article, relatedArticles]);
+  const recommendationGroups = useMemo(
+    () => selectRecommendationMix<NewsItem>(article, relatedArticles),
+    [article, relatedArticles],
+  );
 
   const hasRecommendations = recommendationGroups.sameCategory.length > 0 || recommendationGroups.balance.length > 0;
   const flattenedRecommendations = [...recommendationGroups.sameCategory, ...recommendationGroups.balance].slice(0, 3);
@@ -974,21 +932,67 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
     // Start reveal quickly to avoid "stuck first paragraph" feeling.
     if (node.scrollTop > 2) {
       setHasStartedScrollReveal(true);
+      if (totalParagraphs > 1) {
+        setRevealedParagraphCount((prev) => Math.max(prev, 2));
+      }
     }
 
-    // Keep reveal speed stable regardless of dynamic content height changes.
-    const pxPerParagraph = Math.max(90, Math.min(170, node.clientHeight * 0.18));
-    const baseReveal = 1 + Math.floor((node.scrollTop + node.clientHeight * 0.28) / pxPerParagraph);
-    const nearBottom = progress >= 0.96;
+    // Piecewise reveal:
+    // - early section: hold back (avoid too-early reveal)
+    // - mid/late section: accelerate (avoid late tail reveal)
+    // - near end: flush all
+    const revealSpan = Math.max(1, totalParagraphs - 1);
+    const earlyThreshold = 0.2;
+    const lateThreshold = 0.82;
+    let normalized = 0;
+    if (progress <= earlyThreshold) {
+      normalized = (progress / earlyThreshold) * 0.08;
+    } else if (progress <= lateThreshold) {
+      normalized = 0.08 + ((progress - earlyThreshold) / (lateThreshold - earlyThreshold)) * 0.74;
+    } else {
+      normalized = 0.82 + ((progress - lateThreshold) / (1 - lateThreshold)) * 0.18;
+    }
+    const steppedReveal = 1 + Math.floor(Math.max(0, Math.min(1, normalized)) * revealSpan);
+    const nearBottom = progress >= (totalParagraphs >= 10 ? 0.88 : 0.92);
     const targetReveal = nearBottom
       ? totalParagraphs
-      : Math.min(totalParagraphs, baseReveal);
+      : Math.max(1, Math.min(totalParagraphs, steppedReveal));
     setRevealedParagraphCount((prev) => Math.max(prev, Math.min(totalParagraphs, targetReveal)));
   };
 
   useEffect(() => {
     consumeEvidenceSentRef.current = false;
   }, [article?.id]);
+
+  useEffect(() => {
+    if (!article) return;
+    const rootNode = scrollContainerRef.current;
+    const targetNode = recommendationSectionRef.current;
+    if (!rootNode || !targetNode) return;
+
+    let hasLoggedFirstIntersect = false;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (!entry || !entry.isIntersecting || hasLoggedFirstIntersect) return;
+      hasLoggedFirstIntersect = true;
+      const elapsedMs = modalOpenedAtRef.current > 0 ? (Date.now() - modalOpenedAtRef.current) : 0;
+      if (import.meta.env.DEV) {
+        console.info('[NewsDetailModal][IO-AB]', {
+          articleId: article.id,
+          threshold: recommendationObserverThreshold,
+          ratio: Number(entry.intersectionRatio.toFixed(3)),
+          elapsedMs,
+        });
+      }
+    }, {
+      root: rootNode,
+      threshold: [0, recommendationObserverThreshold],
+      rootMargin: '0px 0px 24px 0px',
+    });
+
+    observer.observe(targetNode);
+    return () => observer.disconnect();
+  }, [article?.id, recommendationObserverThreshold]);
 
   const handleSave = () => {
     toast({
@@ -1253,13 +1257,15 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
   const proseBlocks = useMemo(() => {
     const plainContent = articleMeta.plainText;
-    const raw = (plainContent || article?.summary || '').trim();
-    if (!raw) return [] as string[];
-
-    const paragraphs = raw
-      .split('\n\n')
-      .map((paragraph) => paragraph.trim())
-      .filter(Boolean);
+    const sectionBlocks = Array.isArray(articleMeta.sectionBlocks) ? articleMeta.sectionBlocks : [];
+    const summaryFallback = String(article?.summary || '').trim();
+    const paragraphs = plainContent
+      ? plainContent
+        .split('\n\n')
+        .map((paragraph) => paragraph.trim())
+        .filter(Boolean)
+      : (sectionBlocks.length > 0 ? sectionBlocks : (summaryFallback ? [summaryFallback] : []));
+    if (paragraphs.length === 0) return [] as string[];
 
     return paragraphs.flatMap((paragraph) => {
       if (paragraph.length <= 220) {
@@ -1290,7 +1296,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
       return chunks.length > 0 ? chunks : [paragraph];
     });
-  }, [articleMeta.plainText, article?.summary]);
+  }, [articleMeta.plainText, articleMeta.sectionBlocks, article?.summary]);
 
   const resolvedMediaSlots = useMemo(() => {
     if (proseBlocks.length === 0) return [] as Array<ArticleMediaSlot & { targetIndex: number; source: string }>;
@@ -1322,13 +1328,14 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
         setHasStartedScrollReveal(true);
         return;
       }
-      if (node.scrollHeight <= node.clientHeight + 8) {
+      // Keep scroll-reveal available for stories with inline media that can expand later.
+      if (node.scrollHeight <= node.clientHeight + 8 && resolvedMediaSlots.length === 0) {
         setRevealedParagraphCount(proseBlocks.length);
         setHasStartedScrollReveal(true);
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [article, proseBlocks.length]);
+  }, [article, proseBlocks.length, resolvedMediaSlots.length]);
 
   useEffect(() => {
     if (!article) return;
@@ -1732,14 +1739,21 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                       return (
                         <div key={`${article.id}-block-${idx}`} className="space-y-3">
                           {beforeSlots.map((slot, slotIdx) => (
-                            <div key={`${slot.id || idx}-before-${slotIdx}`} className="rounded-xl overflow-hidden border border-white/20 bg-white/10">
+                            <motion.div
+                              key={`${slot.id || idx}-before-${slotIdx}`}
+                              initial={shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.985 }}
+                              animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                              transition={{ duration: shouldReduceMotion ? 0.1 : 0.28, ease: 'easeOut', delay: shouldReduceMotion ? 0 : 0.06 }}
+                              className="rounded-xl overflow-hidden border border-white/20 bg-white/10"
+                            >
                               {slot.type === 'video' ? (
                                 <video src={slot.source} controls className="w-full max-h-80 object-cover" />
                               ) : (
                                 <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full max-h-80 object-cover" />
                               )}
                               {slot.caption ? <p className="px-3 py-2 text-xs opacity-80">{slot.caption}</p> : null}
-                            </div>
+                              {slot.type === 'video' ? <p className="px-3 pb-2 text-[11px] opacity-75">이 영상은 ai로 생성된 영상입니다.</p> : null}
+                            </motion.div>
                           ))}
                           <motion.p
                             initial={shouldReduceMotion ? false : { opacity: 0, y: 10 }}
@@ -1755,24 +1769,38 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                             {paragraph}
                           </motion.p>
                           {inlineSlots.map((slot, slotIdx) => (
-                            <div key={`${slot.id || idx}-inline-${slotIdx}`} className="rounded-xl overflow-hidden border border-white/20 bg-white/10">
+                            <motion.div
+                              key={`${slot.id || idx}-inline-${slotIdx}`}
+                              initial={shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.985 }}
+                              animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                              transition={{ duration: shouldReduceMotion ? 0.1 : 0.28, ease: 'easeOut', delay: shouldReduceMotion ? 0 : 0.08 }}
+                              className="rounded-xl overflow-hidden border border-white/20 bg-white/10"
+                            >
                               {slot.type === 'video' ? (
                                 <video src={slot.source} controls className="w-full max-h-80 object-cover" />
                               ) : (
                                 <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full max-h-80 object-cover" />
                               )}
                               {slot.caption ? <p className="px-3 py-2 text-xs opacity-80">{slot.caption}</p> : null}
-                            </div>
+                              {slot.type === 'video' ? <p className="px-3 pb-2 text-[11px] opacity-75">이 영상은 ai로 생성된 영상입니다.</p> : null}
+                            </motion.div>
                           ))}
                           {afterSlots.map((slot, slotIdx) => (
-                            <div key={`${slot.id || idx}-after-${slotIdx}`} className="rounded-xl overflow-hidden border border-white/20 bg-white/10">
+                            <motion.div
+                              key={`${slot.id || idx}-after-${slotIdx}`}
+                              initial={shouldReduceMotion ? false : { opacity: 0, y: 20, scale: 0.985 }}
+                              animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                              transition={{ duration: shouldReduceMotion ? 0.1 : 0.28, ease: 'easeOut', delay: shouldReduceMotion ? 0 : 0.1 }}
+                              className="rounded-xl overflow-hidden border border-white/20 bg-white/10"
+                            >
                               {slot.type === 'video' ? (
                                 <video src={slot.source} controls className="w-full max-h-80 object-cover" />
                               ) : (
                                 <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full max-h-80 object-cover" />
                               )}
                               {slot.caption ? <p className="px-3 py-2 text-xs opacity-80">{slot.caption}</p> : null}
-                            </div>
+                              {slot.type === 'video' ? <p className="px-3 pb-2 text-[11px] opacity-75">이 영상은 ai로 생성된 영상입니다.</p> : null}
+                            </motion.div>
                           ))}
                         </div>
                       );

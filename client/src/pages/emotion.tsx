@@ -2,7 +2,7 @@
 import { useParams, Link, useLocation } from 'wouter';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, Search } from 'lucide-react';
+import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, Search, Video } from 'lucide-react';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -140,6 +140,28 @@ import { useQueryClient } from '@tanstack/react-query';
 
 const ARTICLE_META_OPEN = '<!-- HUEBRIEF_META_START -->';
 const ARTICLE_META_CLOSE = '<!-- HUEBRIEF_META_END -->';
+const GUEST_SESSION_STORAGE_KEY = 'huebrief_guest_id_v1';
+
+function extractVideoPreviewFromMeta(content: string | null | undefined): { hasVideo: boolean; previewUrl: string | null } {
+  const text = String(content || '');
+  if (!text.includes(ARTICLE_META_OPEN) || !text.includes(ARTICLE_META_CLOSE)) {
+    return { hasVideo: false, previewUrl: null };
+  }
+
+  const regex = new RegExp(`${ARTICLE_META_OPEN}\\s*([\\s\\S]*?)\\s*${ARTICLE_META_CLOSE}`);
+  const match = text.match(regex);
+  if (!match?.[1]) return { hasVideo: false, previewUrl: null };
+
+  try {
+    const parsed = JSON.parse(match[1]);
+    const mediaSlots = Array.isArray(parsed?.mediaSlots) ? parsed.mediaSlots : [];
+    const videoSlot = mediaSlots.find((slot: any) => String(slot?.type || '').toLowerCase() === 'video' && String(slot?.sourceUrl || '').trim());
+    if (!videoSlot) return { hasVideo: false, previewUrl: null };
+    return { hasVideo: true, previewUrl: String(videoSlot.sourceUrl || '').trim() || null };
+  } catch {
+    return { hasVideo: false, previewUrl: null };
+  }
+}
 
 export default function EmotionPage() {
   const { type } = useParams<{ type: EmotionType }>();
@@ -173,9 +195,45 @@ export default function EmotionPage() {
   const crossCategorySelectionRef = useRef<NewsItem | null>(null);
   const shouldReduceMotion = useReducedMotion();
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const existingGuestId = String(window.localStorage.getItem(GUEST_SESSION_STORAGE_KEY) || '').trim();
+    fetch('/api/guest/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guestId: existingGuestId || undefined }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        const guestId = String(payload?.guestId || '').trim();
+        if (guestId) window.localStorage.setItem(GUEST_SESSION_STORAGE_KEY, guestId);
+      })
+      .catch(() => {
+        // keep page flow even if guest bootstrap fails
+      });
+  }, []);
+
   const openArticleDetail = (item: NewsItem, cardBgColor: string) => {
     setSelectedCardBg(cardBgColor);
     setSelectedArticle(item);
+    if (typeof window !== 'undefined') {
+      const guestId = String(window.localStorage.getItem(GUEST_SESSION_STORAGE_KEY) || '').trim();
+      fetch('/api/analytics/event', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(user?.id ? { 'x-actor-id': String(user.id), 'x-actor-role': String(user.role || 'general') } : {}),
+          ...(guestId ? { 'x-guest-id': guestId } : {}),
+        },
+        body: JSON.stringify({
+          event: 'news_card_open',
+          page: '/emotion',
+          payload: { articleId: item.id, emotion: item.emotion },
+        }),
+      }).catch(() => {
+        // non-blocking analytics
+      });
+    }
   };
 
   useEffect(() => {
@@ -853,6 +911,10 @@ export default function EmotionPage() {
                 const detailCategory = item.category || EMOTION_CONFIG.find((e) => e.type === item.emotion)?.labelKo || emotionConfig.labelKo;
                 const cardImage = String(item.image || '').trim();
                 const hasCardImage = cardImage.length > 0;
+                const videoPreview = extractVideoPreviewFromMeta(item.content);
+                const hasCardVideo = videoPreview.hasVideo;
+                const cardVideoUrl = String(videoPreview.previewUrl || '').trim();
+                const hasCardVisual = hasCardImage || (hasCardVideo && cardVideoUrl.length > 0);
                 const plainContent = String(item.content || '')
                   .replace(/<!-- HUEBRIEF_META_START -->[\s\S]*?<!-- HUEBRIEF_META_END -->\s*/g, '')
                   .replace(/\s+/g, ' ')
@@ -872,7 +934,7 @@ export default function EmotionPage() {
                   }
                 }
                 const cardBodyText = [summaryPlain, continuationFlow].filter(Boolean).join(' ');
-                const cardBodyPreview = buildCardExcerpt(cardBodyText, hasCardImage ? 118 : 208);
+                const cardBodyPreview = buildCardExcerpt(cardBodyText, hasCardVisual ? 118 : 208);
 
                 return (
                   <motion.article
@@ -911,6 +973,20 @@ export default function EmotionPage() {
                           <div className="absolute inset-0 bg-gradient-to-t from-black/25 via-black/10 to-transparent" />
                         </div>
                       )}
+                      {!hasCardImage && hasCardVideo && cardVideoUrl && (
+                        <div className="absolute inset-x-0 top-[340px] bottom-0 z-0">
+                          <video
+                            src={cardVideoUrl}
+                            muted
+                            playsInline
+                            autoPlay
+                            loop
+                            preload="metadata"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-black/20 to-black/5" />
+                        </div>
+                      )}
 
                       <div className="absolute left-5 right-5 top-5 z-10 flex items-start justify-between gap-2">
                         <Tooltip>
@@ -935,15 +1011,29 @@ export default function EmotionPage() {
                       </div>
 
                       <div className="absolute left-5 right-5 top-[66px] z-10">
-                        <span
-                          className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                          style={{
-                            backgroundColor: hexToRgba(cardEmotionColor, 0.22),
-                            color: textColor,
-                          }}
-                        >
-                          감정 깊이 {depth}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                            style={{
+                              backgroundColor: hexToRgba(cardEmotionColor, 0.22),
+                              color: textColor,
+                            }}
+                          >
+                            감정 깊이 {depth}
+                          </span>
+                          {hasCardVideo && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full"
+                              style={{
+                                backgroundColor: isLightBg ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.2)',
+                                color: textColor,
+                              }}
+                            >
+                              <Video className="w-3.5 h-3.5" />
+                              영상 포함
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <h3
@@ -955,7 +1045,7 @@ export default function EmotionPage() {
                       </h3>
 
                       <p
-                        className={`absolute left-5 right-5 top-[184px] z-10 overflow-hidden break-words text-sm ${hasCardImage ? 'h-[116px] leading-6' : 'h-[270px] leading-7'}`}
+                        className={`absolute left-5 right-5 top-[184px] z-10 overflow-hidden break-words text-sm ${hasCardVisual ? 'h-[116px] leading-6' : 'h-[270px] leading-7'}`}
                         style={{
                           color: subTextColor,
                         }}
@@ -966,12 +1056,12 @@ export default function EmotionPage() {
                       <div
                         className="absolute right-5 top-[476px] z-20 h-10 w-10 rounded-full flex items-center justify-center"
                         style={{
-                          backgroundColor: hasCardImage
+                          backgroundColor: hasCardVisual
                             ? 'rgba(255,255,255,0.88)'
                             : (isLightBg ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.2)'),
                         }}
                       >
-                        <ArrowRight className="w-5 h-5" style={{ color: hasCardImage ? '#1f2937' : textColor }} />
+                        <ArrowRight className="w-5 h-5" style={{ color: hasCardVisual ? '#1f2937' : textColor }} />
                       </div>
                     </div>
                   </motion.article>

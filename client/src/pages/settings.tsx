@@ -24,6 +24,10 @@ export default function SettingsPage() {
   const [targetRole, setTargetRole] = useState<'journalist' | 'admin'>('journalist');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [nextPassword, setNextPassword] = useState('');
+  const [confirmNextPassword, setConfirmNextPassword] = useState('');
   const [requests, setRequests] = useState<RoleRequest[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -98,6 +102,52 @@ export default function SettingsPage() {
     }
   };
 
+  const handleChangePassword = async () => {
+    if (!auth?.userId && !auth?.email) {
+      toast({ title: '로그인 필요', description: '비밀번호 변경은 로그인 후 가능합니다.', variant: 'destructive' });
+      return;
+    }
+    if (!currentPassword || !nextPassword || !confirmNextPassword) {
+      toast({ title: '입력 필요', description: '현재 비밀번호와 새 비밀번호를 모두 입력해 주세요.', variant: 'destructive' });
+      return;
+    }
+    if (nextPassword !== confirmNextPassword) {
+      toast({ title: '확인 불일치', description: '새 비밀번호와 확인 값이 다릅니다.', variant: 'destructive' });
+      return;
+    }
+    if (nextPassword.length < 8 || !/[A-Za-z]/.test(nextPassword) || !/\d/.test(nextPassword)) {
+      toast({ title: '약한 비밀번호', description: '영문+숫자 포함 8자 이상으로 입력해 주세요.', variant: 'destructive' });
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: auth?.userId || '',
+          email: auth?.email || '',
+          currentPassword,
+          newPassword: nextPassword,
+          confirmPassword: confirmNextPassword,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || '비밀번호 변경에 실패했습니다.');
+      }
+      toast({ title: '비밀번호 변경 완료', description: '새 비밀번호가 적용되었습니다.' });
+      setCurrentPassword('');
+      setNextPassword('');
+      setConfirmNextPassword('');
+    } catch (error: any) {
+      toast({ title: '비밀번호 변경 실패', description: error?.message || '잠시 후 다시 시도해 주세요.', variant: 'destructive' });
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50">
@@ -149,6 +199,37 @@ export default function SettingsPage() {
           </div>
           <Button onClick={handleSubmitRequest} disabled={submitting} className="mt-3">
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : '역할 요청 제출'}
+          </Button>
+        </section>
+
+        <section className="rounded-2xl border border-gray-200 bg-white p-5">
+          <h2 className="text-lg font-semibold text-gray-900">비밀번호 변경</h2>
+          <p className="text-sm text-gray-600 mt-1">현재 비밀번호 확인 후 새 비밀번호로 변경합니다.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="현재 비밀번호"
+              className="h-10 rounded-md border border-gray-300 px-3 text-sm"
+            />
+            <input
+              type="password"
+              value={nextPassword}
+              onChange={(e) => setNextPassword(e.target.value)}
+              placeholder="새 비밀번호"
+              className="h-10 rounded-md border border-gray-300 px-3 text-sm"
+            />
+            <input
+              type="password"
+              value={confirmNextPassword}
+              onChange={(e) => setConfirmNextPassword(e.target.value)}
+              placeholder="새 비밀번호 확인"
+              className="h-10 rounded-md border border-gray-300 px-3 text-sm"
+            />
+          </div>
+          <Button onClick={handleChangePassword} disabled={changingPassword} className="mt-3">
+            {changingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : '비밀번호 변경'}
           </Button>
         </section>
 

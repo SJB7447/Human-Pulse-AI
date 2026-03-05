@@ -39,6 +39,8 @@ const COPY = {
     processing: '처리 중...',
     orContinue: '다른 방식으로 계속',
     google: 'Google로 계속',
+    kakao: 'Kakao로 계속',
+    naver: 'Naver로 계속',
     demoLogin: '테스트 계정 로그인',
     toggleToLogin: '이미 계정이 있나요? 로그인',
     toggleToSignup: '계정이 없나요? 회원가입',
@@ -112,6 +114,8 @@ const COPY = {
     processing: 'Processing...',
     orContinue: 'Or continue with',
     google: 'Continue with Google',
+    kakao: 'Continue with Kakao',
+    naver: 'Continue with Naver',
     demoLogin: 'Test Account Login',
     toggleToLogin: 'Already have an account? Login',
     toggleToSignup: "Don't have an account? Sign up",
@@ -457,6 +461,14 @@ export default function LoginPage() {
     }
   };
 
+  const handleOAuthLogin = async (provider: 'google' | 'kakao' | 'naver') => {
+    const supabase = getSupabase();
+    await supabase.auth.signInWithOAuth({
+      provider: provider as any,
+      options: { redirectTo: `${window.location.origin}${redirectPath}` },
+    });
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'linear-gradient(180deg, #f8f9fa 0%, #ffffff 100%)' }}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="w-full max-w-md">
@@ -661,16 +673,30 @@ export default function LoginPage() {
                 type="button"
                 variant="outline"
                 className="w-full relative"
-                onClick={async () => {
-                  const supabase = getSupabase();
-                  await supabase.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: { redirectTo: `${window.location.origin}${redirectPath}` },
-                  });
-                }}
+                onClick={() => handleOAuthLogin('google')}
                 data-testid="button-google-login"
               >
                 {t.google}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full relative mt-2"
+                onClick={() => handleOAuthLogin('kakao')}
+                data-testid="button-kakao-login"
+              >
+                {t.kakao}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full relative mt-2"
+                onClick={() => handleOAuthLogin('naver')}
+                data-testid="button-naver-login"
+              >
+                {t.naver}
               </Button>
 
               <Button

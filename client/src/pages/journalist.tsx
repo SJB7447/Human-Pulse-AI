@@ -330,14 +330,6 @@ export default function JournalistPage() {
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const [regeneratingDraftSection, setRegeneratingDraftSection] = useState<DraftSectionKey | null>(null);
   const [draftSectionIssues, setDraftSectionIssues] = useState<Partial<Record<DraftSectionKey, string[]>>>({});
-  const [regeneratingParagraphIndex, setRegeneratingParagraphIndex] = useState<number | null>(null);
-  const [paragraphIssues, setParagraphIssues] = useState<Record<number, string[]>>({});
-  const [paragraphDiffPreview, setParagraphDiffPreview] = useState<{
-    index: number;
-    before: string;
-    after: string;
-    updatedAt: number;
-  } | null>(null);
   const [isCheckingGrammar, setIsCheckingGrammar] = useState(false);
   const [isGeneratingSEO, setIsGeneratingSEO] = useState(false);
   const [isOptimizingTitles, setIsOptimizingTitles] = useState(false);
@@ -882,12 +874,6 @@ export default function JournalistPage() {
     return withoutSource;
   };
 
-  const splitDraftParagraphs = (rawText: string) =>
-    stripDraftContentForSections(rawText)
-      .split(/\n\s*\n/g)
-      .map((row) => row.trim())
-      .filter(Boolean);
-
   const inferSectionsFromPlainText = (text: string) => {
     const chunks = String(text || '')
       .split(/\n\s*\n/g)
@@ -932,6 +918,35 @@ export default function JournalistPage() {
     return (searchKeyword || selectedRecommendedArticle?.title || '새 기사').trim();
   };
 
+  const normalizeVideoPromptForCurrentDuration = (raw: string, targetSeconds: number = 8) =>
+    String(raw || '')
+      .replace(/30\s*초/gi, `${targetSeconds}초`)
+      .replace(/8\s*초/gi, `${targetSeconds}초`)
+      .replace(/5\s*초/gi, `${targetSeconds}초`)
+      .replace(/\b30\b/g, String(targetSeconds))
+      .replace(/\b8\b/g, String(targetSeconds))
+      .replace(/\b5\b/g, String(targetSeconds))
+      .trim();
+
+  const composeDraftBodyFromSections = (
+    title: string,
+    content: string,
+    sections?: { core?: string; deepDive?: string; conclusion?: string } | null,
+  ) => {
+    const safeTitle = String(title || '').trim() || resolveCurrentDraftTitle();
+    const plainContent = String(content || '').trim();
+    const normalizedSections = {
+      core: String(sections?.core || '').trim(),
+      deepDive: String(sections?.deepDive || '').trim(),
+      conclusion: String(sections?.conclusion || '').trim(),
+    };
+    const sectionParts = [normalizedSections.core, normalizedSections.deepDive, normalizedSections.conclusion].filter(Boolean);
+    const joinedSections = sectionParts.join('\n\n').trim();
+    const shouldUseSections = joinedSections.length > 0 && joinedSections.length >= Math.max(180, Math.floor(plainContent.length * 0.8));
+    const nextBody = shouldUseSections ? joinedSections : (plainContent || joinedSections);
+    return `[${safeTitle}]\n\n${nextBody}`.trim();
+  };
+
   const handleRegenerateDraftSection = async (section: DraftSectionKey) => {
     if (!selectedRecommendedArticle) {
       toast({ title: '추천 기사 선택 후 진행해 주세요', variant: 'destructive' });
@@ -966,7 +981,8 @@ export default function JournalistPage() {
         },
       });
 
-      setDraftSections(result.sections || null);
+      const nextSections = result.sections || inferSectionsFromPlainText(result.content);
+      setDraftSections(nextSections || null);
       setComplianceResult(result.compliance || null);
       if (result.sourceCitation) {
         setDraftSourceCitation({
@@ -975,7 +991,7 @@ export default function JournalistPage() {
           source: String(result.sourceCitation.source || '').trim(),
         });
       }
-      setArticleContent(`[${result.title || title}]\n\n${result.content}`);
+      setArticleContent(composeDraftBodyFromSections(result.title || title, result.content, nextSections));
       setDraftSectionIssues((prev) => ({ ...prev, [section]: [] }));
       setLastAiFailedStep(null);
       setLastAiErrorMessage('');
@@ -1004,78 +1020,6 @@ export default function JournalistPage() {
       toast({ title: '섹션 재생성 실패', description: message, variant: 'destructive' });
     } finally {
       setRegeneratingDraftSection(null);
-    }
-  };
-
-  const handleRegenerateParagraph = async (index: number) => {
-    if (!selectedRecommendedArticle) {
-      toast({ title: '추천 기사 선택 후 진행해 주세요', variant: 'destructive' });
-      return;
-    }
-    const paragraphs = splitDraftParagraphs(articleContent);
-    if (paragraphs.length === 0 || index < 0 || index >= paragraphs.length) {
-      toast({ title: '재생성할 문단을 찾지 못했습니다.', variant: 'destructive' });
-      return;
-    }
-
-    const title = resolveCurrentDraftTitle();
-    const beforeParagraph = String(paragraphs[index] || '').trim();
-    setRegeneratingParagraphIndex(index);
-    setParagraphIssues((prev) => ({ ...prev, [index]: [] }));
-    try {
-      const result = await GeminiService.regenerateDraftParagraph({
-        keyword: searchKeyword.trim() || '최신 이슈',
-        mode: draftMode,
-        title,
-        paragraphIndex: index,
-        paragraphs,
-        selectedArticle: {
-          title: selectedRecommendedArticle.title,
-          summary: selectedRecommendedArticle.summary,
-          url: selectedRecommendedArticle.url,
-          source: selectedRecommendedArticle.source,
-        },
-      });
-
-      if (result.sourceCitation) {
-        setDraftSourceCitation({
-          title: String(result.sourceCitation.title || '').trim(),
-          url: String(result.sourceCitation.url || '').trim(),
-          source: String(result.sourceCitation.source || '').trim(),
-        });
-      }
-      setComplianceResult(result.compliance || null);
-      setArticleContent(`[${result.content ? title : resolveCurrentDraftTitle()}]\n\n${result.content}`);
-      setDraftSections(inferSectionsFromPlainText(result.content));
-      setParagraphIssues((prev) => ({ ...prev, [index]: [] }));
-      setParagraphDiffPreview({
-        index,
-        before: beforeParagraph,
-        after: String(result.text || result.paragraphs?.[index] || '').trim(),
-        updatedAt: Date.now(),
-      });
-      toast({ title: `${index + 1}번 문단 재생성 완료` });
-    } catch (error: any) {
-      const message =
-        error instanceof AIServiceError
-          ? (error.message || '문단 재생성에 실패했습니다.')
-          : (error?.message || '문단 재생성에 실패했습니다.');
-      const aiIssues = error instanceof AIServiceError
-        ? (error.issues || [])
-          .map((issue) => String(issue.message || issue.type || '').trim())
-          .filter(Boolean)
-        : [];
-      const complianceIssues = error instanceof AIServiceError
-        ? (error.compliance?.flags || [])
-          .map((flag) => `${flag.category}: ${flag.suggestion}`)
-          .filter(Boolean)
-        : [];
-      const next = [...aiIssues, ...complianceIssues];
-      if (next.length === 0) next.push(message);
-      setParagraphIssues((prev) => ({ ...prev, [index]: next.slice(0, 4) }));
-      toast({ title: '문단 재생성 실패', description: message, variant: 'destructive' });
-    } finally {
-      setRegeneratingParagraphIndex(null);
     }
   };
 
@@ -1645,9 +1589,10 @@ export default function JournalistPage() {
         setDraftBlockingError('초안 생성이 실패했습니다. 현재 결과는 임시 템플릿으로 판단되어 본문 반영을 차단했습니다. 다시 시도해 주세요.');
         return;
       }
-      const generatedContent = `[${result.title}]\n\n${result.content}`;
+      const nextSections = result.sections || inferSectionsFromPlainText(result.content);
+      const generatedContent = composeDraftBodyFromSections(result.title, result.content, nextSections);
       setArticleContent(generatedContent);
-      setDraftSections(result.sections || null);
+      setDraftSections(nextSections || null);
       setDraftSourceCitation(
         result.sourceCitation
           ? {
@@ -1680,7 +1625,7 @@ export default function JournalistPage() {
         setImagePromptInput(`${result.title} 기사 핵심 장면, 사실 기반 뉴스 일러스트`);
       }
       if (!videoPromptInput.trim()) {
-        setVideoPromptInput(`${result.title} 핵심 내용을 30초 뉴스 숏폼으로 요약`);
+        setVideoPromptInput(`${result.title} 핵심 내용을 8초 영상으로 구성, 2D animation style, no text`);
       }
       setWizardStep(3);
       saveDraftVersion('auto', {
@@ -2145,8 +2090,18 @@ export default function JournalistPage() {
     setGeneratedVideos([]);
 
     try {
-      const basePrompt = videoPromptInput.trim() || `${searchKeyword || '핵심 뉴스'} 5초 16:9 영상`;
-      const anchors = ['도입 컷', '배경 컷', '결론 컷'];
+      const basePrompt = normalizeVideoPromptForCurrentDuration(
+        videoPromptInput.trim() || `${searchKeyword || '핵심 뉴스'} 8초 16:9 1080p, 2D animation style, no text`,
+        8,
+      );
+      const selectedImage = generatedImages.length > 0 ? generatedImages[0] : undefined;
+      const result = await GeminiService.generateShortVideo(
+        articleContent,
+        selectedImage?.imageUrl,
+        selectedImage?.description,
+        basePrompt,
+        1,
+      );
       const created: Array<{
         videoUrl: string;
         script?: string;
@@ -2155,32 +2110,18 @@ export default function JournalistPage() {
         aspectRatio?: string;
         description?: string;
       }> = [];
-
-      for (let i = 0; i < 3; i += 1) {
-        const selectedImage = generatedImages.length > 0
-          ? generatedImages[Math.min(i, Math.max(0, generatedImages.length - 1))]
-          : undefined;
-        const perPrompt = `${basePrompt} | ${anchors[i]}`;
-        const result = await GeminiService.generateShortVideo(
-          articleContent,
-          selectedImage?.imageUrl,
-          selectedImage?.description,
-          perPrompt,
-          1,
-        );
-        if (result.videoPrompt && i === 0) {
-          setVideoPromptInput(result.videoPrompt);
-        }
-        if (result.videoUrl) {
-          created.push({
-            videoUrl: result.videoUrl,
-            script: result.script,
-            prompt: result.videoPrompt || perPrompt,
-            duration: result.duration ?? 5,
-            aspectRatio: result.aspectRatio || '16:9',
-            description: `AI 영상 ${i + 1} (${anchors[i]})`,
-          });
-        }
+      if (result.videoPrompt) {
+        setVideoPromptInput(normalizeVideoPromptForCurrentDuration(result.videoPrompt, 8));
+      }
+      if (result.videoUrl) {
+        created.push({
+          videoUrl: result.videoUrl,
+          script: result.script,
+          prompt: result.videoPrompt || basePrompt,
+          duration: result.duration ?? 8,
+          aspectRatio: result.aspectRatio || '16:9',
+          description: 'AI 영상 1 (핵심 컷)',
+        });
       }
 
       if (created.length > 0) {
@@ -2212,7 +2153,10 @@ export default function JournalistPage() {
     const target = generatedVideos[index];
     if (!target) return;
     setRegeneratingVideoIndex(index);
-    const prompt = String(target.prompt || videoPromptInput || '').trim() || `영상 ${index + 1} 변형`;
+    const prompt = normalizeVideoPromptForCurrentDuration(
+      String(target.prompt || videoPromptInput || '').trim() || `영상 ${index + 1} 변형`,
+      8,
+    );
     try {
       const selectedImage = generatedImages.length > 0
         ? generatedImages[Math.min(index, Math.max(0, generatedImages.length - 1))]
@@ -2231,7 +2175,7 @@ export default function JournalistPage() {
             ...item,
             videoUrl: result.videoUrl,
             script: result.script,
-            prompt: result.videoPrompt || prompt,
+            prompt: normalizeVideoPromptForCurrentDuration(result.videoPrompt || prompt, 8),
             duration: result.duration ?? 5,
             aspectRatio: result.aspectRatio || '16:9',
           }
@@ -2377,6 +2321,8 @@ export default function JournalistPage() {
           // Map dominant emotion to Korean label for DB lookup (or just use key)
           // The DBService now expects the English keys: 'vibrance', 'immersion', etc.
           const emotionLabel = finalPublishEmotion || 'serenity';
+          const sentimentScore = Number(sentimentData[emotionLabel as keyof typeof sentimentData]);
+          const publishIntensity = Math.max(0, Math.min(100, Math.round(Number.isFinite(sentimentScore) ? sentimentScore : 50)));
           const plainForMeta = String(articleContent || '')
             .replace(new RegExp(`${ARTICLE_META_OPEN}[\\s\\S]*?${ARTICLE_META_CLOSE}\\s*`, 'g'), '')
             .trim();
@@ -2410,6 +2356,7 @@ export default function JournalistPage() {
               source: ensuredSource,
               category: tags,
               emotion: emotionLabel,
+              intensity: publishIntensity,
               ...(selectedImage ? { image: selectedImage } : {})
             });
             toast({ title: "기사 수정 완료" });
@@ -2422,7 +2369,8 @@ export default function JournalistPage() {
               source: ensuredSource,
               image: selectedImage,
               category: tags,
-              emotionLabel: emotionLabel
+              emotionLabel: emotionLabel,
+              intensity: publishIntensity,
             });
             toast({ title: "기사 발행 완료" });
           }
@@ -2880,7 +2828,7 @@ export default function JournalistPage() {
                   <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50 p-3">
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <p className="text-xs font-semibold text-violet-900">섹션 단위 재생성</p>
-                      <p className="text-[11px] text-violet-700">필요한 문단만 다시 생성하고 전체 본문에 반영합니다.</p>
+                      <p className="text-[11px] text-violet-700">섹션 텍스트를 바로 확인한 뒤 재생성할 수 있습니다.</p>
                     </div>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                       {([
@@ -2911,9 +2859,11 @@ export default function JournalistPage() {
                                 {isLoading ? '재생성 중...' : '재생성'}
                               </Button>
                             </div>
-                              <p className="line-clamp-4 text-[11px] leading-5 text-gray-700">
-                              {preview || '아직 추출된 섹션 텍스트가 없습니다.'}
+                            <div className="max-h-36 overflow-y-auto rounded border border-violet-100 bg-white p-2">
+                              <p className="whitespace-pre-wrap text-[11px] leading-5 text-gray-700">
+                                {preview || '아직 추출된 섹션 텍스트가 없습니다.'}
                               </p>
+                            </div>
                             {hasSectionError && (
                               <div className="mt-2 rounded border border-red-200 bg-white p-2">
                                 <p className="text-[10px] font-semibold text-red-700">재생성 이슈</p>
@@ -2928,79 +2878,6 @@ export default function JournalistPage() {
                         );
                       })}
                     </div>
-                  </div>
-                )}
-
-                {articleContent.trim() && (
-                  <div className="mt-3 rounded-lg border border-sky-100 bg-sky-50 p-3">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-sky-900">문단 단위 부분 재생성</p>
-                      <p className="text-[11px] text-sky-700">필요한 문단만 선택해 재작성합니다.</p>
-                    </div>
-                    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
-                      {splitDraftParagraphs(articleContent).map((paragraph, idx) => {
-                        const isLoading = regeneratingParagraphIndex === idx;
-                        const issues = paragraphIssues[idx] || [];
-                        const hasError = issues.length > 0;
-                        const hasDiffPreview = paragraphDiffPreview?.index === idx;
-                        return (
-                          <div
-                            key={`paragraph-regenerate-${idx}`}
-                            className={`rounded-md border p-2 ${hasError ? 'border-red-200 bg-red-50' : hasDiffPreview ? 'border-emerald-200 bg-emerald-50/60' : 'border-sky-100 bg-white'}`}
-                          >
-                            <div className="mb-1 flex items-center justify-between gap-2">
-                              <p className={`text-[11px] font-semibold ${hasError ? 'text-red-800' : 'text-sky-900'}`}>
-                                문단 {idx + 1}
-                              </p>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-6 px-2 text-[10px]"
-                                disabled={regeneratingParagraphIndex !== null}
-                                onClick={() => handleRegenerateParagraph(idx)}
-                              >
-                                {isLoading ? '재생성 중...' : '재생성'}
-                              </Button>
-                            </div>
-                            <p className="line-clamp-3 text-[11px] leading-5 text-gray-700">{paragraph}</p>
-                            {hasError && (
-                              <ul className="mt-2 list-disc pl-4 text-[10px] leading-4 text-red-700">
-                                {issues.map((issue, issueIdx) => (
-                                  <li key={`paragraph-issue-${idx}-${issueIdx}`}>{issue}</li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {paragraphDiffPreview && (
-                      <div className="mt-3 rounded-md border border-emerald-200 bg-white p-2.5">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <p className="text-[11px] font-semibold text-emerald-900">
-                            변경 diff preview (문단 {paragraphDiffPreview.index + 1})
-                          </p>
-                          <p className="text-[10px] text-emerald-700">
-                            {new Date(paragraphDiffPreview.updatedAt).toLocaleTimeString()}
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                          <div className="rounded border border-red-100 bg-red-50 p-2">
-                            <p className="text-[10px] font-semibold text-red-700 mb-1">Before</p>
-                            <p className="text-[11px] leading-5 text-red-900 whitespace-pre-wrap">
-                              {paragraphDiffPreview.before || '(빈 문단)'}
-                            </p>
-                          </div>
-                          <div className="rounded border border-emerald-100 bg-emerald-50 p-2">
-                            <p className="text-[10px] font-semibold text-emerald-700 mb-1">After</p>
-                            <p className="text-[11px] leading-5 text-emerald-900 whitespace-pre-wrap">
-                              {paragraphDiffPreview.after || '(빈 문단)'}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -3161,7 +3038,9 @@ export default function JournalistPage() {
                 {/* Generated Video Display */}
                 {generatedVideos.length > 0 && (
                   <div className="mt-4 p-4 bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg border border-purple-200">
-                    <p className="text-sm font-medium text-indigo-800 mb-3">AI 영상 3개 (16:9, 5초)</p>
+                    <p className="text-sm font-medium text-indigo-800 mb-3">
+                      AI 영상 {generatedVideos.length}개 ({generatedVideos[0]?.aspectRatio || '16:9'}, {generatedVideos[0]?.duration ?? 8}초)
+                    </p>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       {generatedVideos.map((video, idx) => (
                         <div key={`video-${idx}`} className="rounded-lg border border-purple-100 bg-white p-2">

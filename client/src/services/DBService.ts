@@ -278,7 +278,7 @@ export const DBService = {
         return null;
     },
 
-    async saveArticle({ title, content, summary, source, image, category, emotionLabel }: {
+    async saveArticle({ title, content, summary, source, image, category, emotionLabel, intensity }: {
         title: string;
         content: string;
         summary?: string;
@@ -286,6 +286,7 @@ export const DBService = {
         image?: string;
         category?: string;
         emotionLabel: string;
+        intensity?: number;
     }) {
         const user = await this.getCurrentUser();
         if (!user) throw new Error('Login required');
@@ -304,6 +305,7 @@ export const DBService = {
                 image: image || null,
                 category: category || 'General',
                 emotion,
+                intensity: typeof intensity === 'number' ? Math.max(0, Math.min(100, Math.round(intensity))) : undefined,
                 authorId: sanitizeUuidOrNull(user.id),
                 authorName: user.user_metadata?.name || user.email || 'Anonymous',
             }),
