@@ -108,6 +108,52 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, 200, rows);
     }
 
+    if (path === "/api/admin/stats") {
+      return sendJson(res, 200, {
+        totalArticles: 0,
+        publishedArticles: 0,
+        pendingArticles: 0,
+        totalViews: 0,
+        aiDraftOps: { totals: { requests: 0, success: 0 } },
+        aiNewsOps: { totals: { requests: 0, success: 0 } },
+        aiNewsSettings: { source: "env", hydrated: false, values: { modelTimeoutMs: 24000 } },
+      });
+    }
+
+    if (path === "/api/admin/reviews" || path === "/api/admin/reports" || path === "/api/admin/reader-articles") {
+      return sendJson(res, 200, []);
+    }
+
+    if (path === "/api/admin/alerts") {
+      return sendJson(res, 200, []);
+    }
+
+    if (path === "/api/admin/alerts/summary") {
+      return sendJson(res, 200, {
+        windowMinutes: 10,
+        failureRate: 0,
+        p95LatencyMs: 0,
+        aiErrorCount: 0,
+        criticalCount: 0,
+        warningCount: 0,
+        alertCount: 0,
+      });
+    }
+
+    if (path === "/api/admin/exports/history") {
+      return sendJson(res, 200, []);
+    }
+
+    if (path === "/api/admin/exports/schedule") {
+      return sendJson(res, 200, {
+        enabled: false,
+        intervalMinutes: 60,
+        formats: ["excel", "pdf"],
+        lastRunAt: null,
+        nextRunAt: null,
+      });
+    }
+
     if (path.startsWith("/api/news/")) {
       const emotion = toEmotion(path.slice("/api/news/".length));
       const rows = await fetchRows(
