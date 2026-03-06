@@ -180,11 +180,10 @@ async function ensureFullApi(): Promise<void> {
 
   fullApiInitPromise = (async () => {
     try {
-      const [{ default: express }, { createServer }, authMod, routeLoader] = await Promise.all([
+      const [{ default: express }, { createServer }, routeLoader] = await Promise.all([
         import("express"),
         import("http"),
-        import("../server/auth"),
-        import("./vercel/loadServerRoutes"),
+        import("./vercel/loadServerRoutes.js"),
       ]);
 
       const app = express();
@@ -200,7 +199,16 @@ async function ensureFullApi(): Promise<void> {
       );
       app.use(express.urlencoded({ extended: false }));
 
-      authMod.setupAuth(app);
+      // Auth bootstrap can be skipped in serverless fallback if module is unavailable.
+      try {
+        const authMod: any = await import("../server/auth.js");
+        if (typeof authMod?.setupAuth === "function") {
+          authMod.setupAuth(app);
+        }
+      } catch {
+        // Non-fatal: routes that don't depend on session auth should still work.
+      }
+
       const registerRoutes = await routeLoader.loadServerRegisterRoutes();
       await registerRoutes(httpServer, app);
 
