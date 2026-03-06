@@ -1,4 +1,4 @@
-type ApiMode = "lightweight";
+type ApiMode = "full" | "lightweight";
 
 const EMOTION_TYPES = ["vibrance", "immersion", "clarity", "gravity", "serenity", "spectrum"] as const;
 type EmotionType = typeof EMOTION_TYPES[number];
@@ -73,19 +73,25 @@ function sendJson(res: any, status: number, body: unknown): void {
 }
 
 export default async function handler(req: any, res: any) {
-  const method = String(req?.method || "GET").toUpperCase();
+  await ensureFullApi();
+
   const path = getRequestPath(req?.url);
+  if (path === "/api/health") {
+    return sendJson(res, 200, {
+      status: "ok",
+      mode: fullApiHandler ? ("full" as ApiMode) : ("lightweight" as ApiMode),
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  if (fullApiHandler) {
+    return fullApiHandler(req, res);
+  }
+
+  const method = String(req?.method || "GET").toUpperCase();
   const query = getQuery(req?.url);
 
   try {
-    if (path === "/api/health") {
-      return sendJson(res, 200, {
-        status: "ok",
-        mode: "lightweight" as ApiMode,
-        timestamp: new Date().toISOString(),
-      });
-    }
-
     if (method !== "GET") {
       return sendJson(res, 503, {
         message: "API is running in lightweight mode. This route is unavailable.",
@@ -160,4 +166,64 @@ export default async function handler(req: any, res: any) {
       error: String(error),
     });
   }
+}
+
+let fullApiHandler: ((req: any, res: any) => void) | null = null;
+let fullApiInitPromise: Promise<void> | null = null;
+let fullApiInitErrorLogged = false;
+
+async function ensureFullApi(): Promise<void> {
+  if (fullApiHandler || fullApiInitPromise) return fullApiInitPromise ?? Promise.resolve();
+
+  fullApiInitPromise = (async () => {
+    try {
+      const [{ default: express }, { createServer }, authMod, routeLoader] = await Promise.all([
+        import("express"),
+        import("http"),
+        import("../server/auth"),
+        import("./vercel/loadServerRoutes"),
+      ]);
+
+      const app = express();
+      const httpServer = createServer(app);
+
+      app.use(
+        express.json({
+          limit: "50mb",
+          verify: (request: any, _res: any, buf: Buffer) => {
+            request.rawBody = buf;
+          },
+        }),
+      );
+      app.use(express.urlencoded({ extended: false }));
+
+      authMod.setupAuth(app);
+      const registerRoutes = await routeLoader.loadServerRegisterRoutes();
+      await registerRoutes(httpServer, app);
+
+      app.use((err: any, _req: any, response: any, next: any) => {
+        const status = Number(err?.status || err?.statusCode || 500);
+        const message = String(err?.message || "Internal Server Error");
+        if (response.headersSent) return next(err);
+        return response.status(status).json({ message });
+      });
+
+      fullApiHandler = (request: any, response: any) => {
+        app(request, response, () => {
+          if (!response.headersSent) {
+            sendJson(response, 404, { message: "Not Found" });
+          }
+        });
+      };
+    } catch (error) {
+      if (!fullApiInitErrorLogged) {
+        console.error("[Vercel API] full API bootstrap failed. Falling back to lightweight mode.", error);
+        fullApiInitErrorLogged = true;
+      }
+    } finally {
+      fullApiInitPromise = null;
+    }
+  })();
+
+  await fullApiInitPromise;
 }
