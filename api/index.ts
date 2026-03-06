@@ -80,6 +80,8 @@ export default async function handler(req: any, res: any) {
     return sendJson(res, 200, {
       status: "ok",
       mode: fullApiHandler ? ("full" as ApiMode) : ("lightweight" as ApiMode),
+      fullApiReady: Boolean(fullApiHandler),
+      fullApiBootstrapError: fullApiHandler ? null : fullApiLastError || null,
       timestamp: new Date().toISOString(),
     });
   }
@@ -171,6 +173,7 @@ export default async function handler(req: any, res: any) {
 let fullApiHandler: ((req: any, res: any) => void) | null = null;
 let fullApiInitPromise: Promise<void> | null = null;
 let fullApiInitErrorLogged = false;
+let fullApiLastError = "";
 
 async function ensureFullApi(): Promise<void> {
   if (fullApiHandler || fullApiInitPromise) return fullApiInitPromise ?? Promise.resolve();
@@ -216,6 +219,7 @@ async function ensureFullApi(): Promise<void> {
         });
       };
     } catch (error) {
+      fullApiLastError = String((error as any)?.message || error || "unknown error");
       if (!fullApiInitErrorLogged) {
         console.error("[Vercel API] full API bootstrap failed. Falling back to lightweight mode.", error);
         fullApiInitErrorLogged = true;
