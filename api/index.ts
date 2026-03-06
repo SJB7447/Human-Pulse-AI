@@ -76,7 +76,8 @@ export default async function handler(req: any, res: any) {
   await ensureFullApi();
 
   const path = getRequestPath(req?.url);
-  if (path === "/api/health") {
+  const normalizedPath = path !== "/" ? path.replace(/\/+$/, "") : path;
+  if (normalizedPath === "/api/health") {
     return sendJson(res, 200, {
       status: "ok",
       mode: fullApiHandler ? ("full" as ApiMode) : ("lightweight" as ApiMode),
@@ -101,14 +102,14 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    if (path === "/api/news" || path === "/api/articles") {
+    if (normalizedPath === "/api/news" || normalizedPath === "/api/articles") {
       const includeHidden = query.get("all") === "true";
       const select = "select=*&order=created_at.desc";
       const rows = await fetchRows("news_items", includeHidden ? select : `${select}&is_published=eq.true`);
       return sendJson(res, 200, rows);
     }
 
-    if (path === "/api/admin/stats") {
+    if (normalizedPath === "/api/admin/stats") {
       return sendJson(res, 200, {
         totalArticles: 0,
         publishedArticles: 0,
@@ -120,15 +121,19 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    if (path === "/api/admin/reviews" || path === "/api/admin/reports" || path === "/api/admin/reader-articles") {
+    if (
+      normalizedPath === "/api/admin/reviews" ||
+      normalizedPath === "/api/admin/reports" ||
+      normalizedPath === "/api/admin/reader-articles"
+    ) {
       return sendJson(res, 200, []);
     }
 
-    if (path === "/api/admin/alerts") {
+    if (normalizedPath === "/api/admin/alerts") {
       return sendJson(res, 200, []);
     }
 
-    if (path === "/api/admin/alerts/summary") {
+    if (normalizedPath === "/api/admin/alerts/summary") {
       return sendJson(res, 200, {
         windowMinutes: 10,
         failureRate: 0,
@@ -140,11 +145,11 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    if (path === "/api/admin/exports/history") {
+    if (normalizedPath === "/api/admin/exports/history") {
       return sendJson(res, 200, []);
     }
 
-    if (path === "/api/admin/exports/schedule") {
+    if (normalizedPath === "/api/admin/exports/schedule") {
       return sendJson(res, 200, {
         enabled: false,
         intervalMinutes: 60,
@@ -154,8 +159,12 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    if (path.startsWith("/api/news/")) {
-      const emotion = toEmotion(path.slice("/api/news/".length));
+    if (normalizedPath.startsWith("/api/admin/")) {
+      return sendJson(res, 200, []);
+    }
+
+    if (normalizedPath.startsWith("/api/news/")) {
+      const emotion = toEmotion(normalizedPath.slice("/api/news/".length));
       const rows = await fetchRows(
         "news_items",
         `select=*&emotion=eq.${encodeURIComponent(emotion)}&is_published=eq.true&order=created_at.desc`,
@@ -163,7 +172,7 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, 200, rows);
     }
 
-    if (path === "/api/community") {
+    if (normalizedPath === "/api/community") {
       const limit = Math.min(Number(query.get("limit") || 30), 100);
 
       let data: any[] = [];
@@ -195,7 +204,7 @@ export default async function handler(req: any, res: any) {
       return sendJson(res, 200, items);
     }
 
-    if (path.includes("/comments")) {
+    if (normalizedPath.includes("/comments")) {
       return sendJson(res, 200, []);
     }
 
@@ -205,7 +214,13 @@ export default async function handler(req: any, res: any) {
     });
   } catch (error) {
     console.error("[Vercel API] fatal:", error);
-    if (method === "GET" && (path === "/api/news" || path === "/api/articles" || path === "/api/community" || path.startsWith("/api/news/"))) {
+    if (method === "GET" && (
+      normalizedPath === "/api/news" ||
+      normalizedPath === "/api/articles" ||
+      normalizedPath === "/api/community" ||
+      normalizedPath.startsWith("/api/news/") ||
+      normalizedPath.startsWith("/api/admin/")
+    )) {
       return sendJson(res, 200, []);
     }
     return sendJson(res, 503, {
