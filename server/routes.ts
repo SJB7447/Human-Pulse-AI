@@ -3972,7 +3972,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const actorIdHeader = req.headers?.["x-actor-id"];
     const actorRoleHeader = req.headers?.["x-actor-role"];
     const actorId = typeof actorIdHeader === "string" && actorIdHeader.trim() ? actorIdHeader.trim().slice(0, 128) : null;
-    const actorRole = typeof actorRoleHeader === "string" && actorRoleHeader.trim() ? actorRoleHeader.trim().slice(0, 32) : "admin";
+    const normalizeActorRole = (value: unknown): "admin" | "journalist" | "general" => {
+      const raw = String(value || "").trim().toLowerCase();
+      if (!raw) return "general";
+      if (raw === "admin" || raw === "administrator" || raw.includes("관리자")) return "admin";
+      if (raw === "journalist" || raw === "reporter" || raw.includes("기자")) return "journalist";
+      return "general";
+    };
+    const actorRole = normalizeActorRole(actorRoleHeader);
     return { actorId, actorRole };
   };
 

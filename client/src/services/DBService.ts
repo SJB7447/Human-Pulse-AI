@@ -226,12 +226,20 @@ const createApiError = async (response: Response, fallbackMessage: string): Prom
     return error;
 };
 
+const normalizeActorRole = (value: unknown): 'admin' | 'journalist' | 'general' => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return 'general';
+    if (raw === 'admin' || raw === 'administrator' || raw.includes('관리자')) return 'admin';
+    if (raw === 'journalist' || raw === 'reporter' || raw.includes('기자')) return 'journalist';
+    return 'general';
+};
+
 const buildActorHeaders = (): Record<string, string> => {
     const actor = useEmotionStore.getState().user;
     if (!actor) return {};
     return {
         'x-actor-id': String(actor.id || '').slice(0, 128),
-        'x-actor-role': String(actor.role || 'admin').slice(0, 32),
+        'x-actor-role': normalizeActorRole(actor.role),
     };
 };
 
