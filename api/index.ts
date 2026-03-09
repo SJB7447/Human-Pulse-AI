@@ -1,3 +1,8 @@
+import express from "express";
+import { createServer } from "http";
+import { setupAuth } from "../server/auth.js";
+import { registerRoutes } from "../server/routes.js";
+
 type ApiMode = "full" | "lightweight";
 
 const EMOTION_TYPES = ["vibrance", "immersion", "clarity", "gravity", "serenity", "spectrum"] as const;
@@ -241,12 +246,6 @@ async function ensureFullApi(): Promise<void> {
 
   fullApiInitPromise = (async () => {
     try {
-      const [{ default: express }, { createServer }, routeLoader] = await Promise.all([
-        import("express"),
-        import("http"),
-        import("./vercel/loadServerRoutes.js"),
-      ]);
-
       const app = express();
       const httpServer = createServer(app);
 
@@ -260,17 +259,7 @@ async function ensureFullApi(): Promise<void> {
       );
       app.use(express.urlencoded({ extended: false }));
 
-      // Auth bootstrap can be skipped in serverless fallback if module is unavailable.
-      try {
-        const authMod: any = await import("../server/auth.js");
-        if (typeof authMod?.setupAuth === "function") {
-          authMod.setupAuth(app);
-        }
-      } catch {
-        // Non-fatal: routes that don't depend on session auth should still work.
-      }
-
-      const registerRoutes = await routeLoader.loadServerRegisterRoutes();
+      setupAuth(app);
       await registerRoutes(httpServer, app);
 
       app.use((err: any, _req: any, response: any, next: any) => {
