@@ -1,6 +1,5 @@
 import express from "express";
 import { createServer } from "http";
-import { setupAuth } from "../server/auth.js";
 import { registerRoutes } from "../server/routes.js";
 
 type ApiMode = "full" | "lightweight";
@@ -77,6 +76,21 @@ function sendJson(res: any, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+async function parseJsonBody(req: any): Promise<any> {
+  try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    if (!chunks.length) return {};
+    const text = Buffer.concat(chunks).toString("utf-8").trim();
+    if (!text) return {};
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
 export default async function handler(req: any, res: any) {
   await ensureFullApi();
 
@@ -88,6 +102,7 @@ export default async function handler(req: any, res: any) {
       mode: fullApiHandler ? ("full" as ApiMode) : ("lightweight" as ApiMode),
       fullApiReady: Boolean(fullApiHandler),
       fullApiBootstrapError: fullApiHandler ? null : fullApiLastError || null,
+      deployedCommit: String(process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 12) || null,
       timestamp: new Date().toISOString(),
     });
   }
@@ -100,6 +115,28 @@ export default async function handler(req: any, res: any) {
   const query = getQuery(req?.url);
 
   try {
+    if (method === "POST" && normalizedPath === "/api/ai/search-keyword-news") {
+      const body = await parseJsonBody(req);
+      const keyword = String(body?.keyword || "").trim() || "주요 이슈";
+      const articles = Array.from({ length: 5 }).map((_, index) => ({
+        id: `lightweight-fallback-${index + 1}`,
+        title: `${keyword} 관련 핵심 이슈 ${index + 1}`,
+        summary: `${keyword} 키워드를 중심으로 최근 쟁점을 정리한 참고 기사 요약입니다. (lightweight fallback)`,
+        url: "",
+        source: "lightweight fallback",
+        publishedAt: new Date().toISOString(),
+      }));
+      return sendJson(res, 200, {
+        keyword,
+        articles,
+        fallbackUsed: true,
+        diagnostics: {
+          stage: "unknown",
+          reason: "server is running in lightweight mode",
+        },
+      });
+    }
+
     if (method !== "GET") {
       return sendJson(res, 503, {
         message: "API is running in lightweight mode. This route is unavailable.",
@@ -259,7 +296,6 @@ async function ensureFullApi(): Promise<void> {
       );
       app.use(express.urlencoded({ extended: false }));
 
-      setupAuth(app);
       await registerRoutes(httpServer, app);
 
       app.use((err: any, _req: any, response: any, next: any) => {
