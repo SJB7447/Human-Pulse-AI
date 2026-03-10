@@ -18,13 +18,32 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
                 const currentPath = `${window.location.pathname}${window.location.search || ''}`;
                 setLocation(`/login?redirect=${encodeURIComponent(currentPath)}`);
             } else {
-                if (session?.user && !user) {
-                    setUser({
-                        id: session.user.id,
-                        email: session.user.email || undefined,
-                        name: session.user.user_metadata?.name || session.user.user_metadata?.full_name || undefined,
-                        role: session.user.user_metadata?.role || 'general',
-                    });
+                if (session?.user) {
+                    let role: 'admin' | 'journalist' | 'general' =
+                        (session.user.user_metadata?.role as 'admin' | 'journalist' | 'general') || 'general';
+
+                    try {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('role')
+                            .eq('id', session.user.id)
+                            .single();
+                        const profileRole = String(profile?.role || '').trim().toLowerCase();
+                        if (profileRole === 'admin' || profileRole === 'journalist' || profileRole === 'general') {
+                            role = profileRole;
+                        }
+                    } catch {
+                        // Keep metadata/default role when profile lookup is unavailable.
+                    }
+
+                    if (!user || user.id !== session.user.id || user.role !== role) {
+                        setUser({
+                            id: session.user.id,
+                            email: session.user.email || undefined,
+                            name: session.user.user_metadata?.name || session.user.user_metadata?.full_name || undefined,
+                            role,
+                        });
+                    }
                 }
                 setIsAuthenticated(true);
             }

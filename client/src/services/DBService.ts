@@ -237,9 +237,13 @@ const normalizeActorRole = (value: unknown): 'admin' | 'journalist' | 'general' 
 const buildActorHeaders = (): Record<string, string> => {
     const actor = useEmotionStore.getState().user;
     if (!actor) return {};
+    const isDemoAdminPath =
+        typeof window !== 'undefined' &&
+        String(actor.id || '').startsWith('demo-') &&
+        window.location.pathname.startsWith('/admin');
     return {
         'x-actor-id': String(actor.id || '').slice(0, 128),
-        'x-actor-role': normalizeActorRole(actor.role),
+        'x-actor-role': isDemoAdminPath ? 'admin' : normalizeActorRole(actor.role),
     };
 };
 
