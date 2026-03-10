@@ -60,6 +60,8 @@ export function Header({ transparent = false }: HeaderProps) {
   const { toast } = useToast();
   const [locale] = useState<AppLocale>(() => getInitialLocale());
   const t = COPY[locale];
+  const canAccessJournalist = user?.role === 'journalist' || user?.role === 'admin';
+  const canAccessAdmin = user?.role === 'admin';
 
   const handleLogout = async () => {
     const supabase = getSupabase();
@@ -157,21 +159,25 @@ export function Header({ transparent = false }: HeaderProps) {
                 {t.navPricing}
               </Button>
             </Link>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleRestrictedAccess('/journalist', t.navJournalist)}
-              className="text-gray-600 hover:text-gray-900 hover:bg-black/5 gap-2"
-            >
-              <Users className="w-4 h-4" />
-              {t.navJournalist}
-            </Button>
-            <Link href="/admin">
-              <Button variant="ghost" size="sm" className="text-gray-600 hover:text-gray-900 hover:bg-black/5 gap-2">
-                <Shield className="w-4 h-4" />
-                {t.navAdmin}
+            {canAccessJournalist ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleRestrictedAccess('/journalist', t.navJournalist)}
+                className="text-gray-600 hover:text-gray-900 hover:bg-black/5 gap-2"
+              >
+                <Users className="w-4 h-4" />
+                {t.navJournalist}
               </Button>
-            </Link>
+            ) : null}
+            {canAccessAdmin ? (
+              <Link href="/admin">
+                <Button variant="ghost" size="sm" className="text-gray-600 hover:text-gray-900 hover:bg-black/5 gap-2">
+                  <Shield className="w-4 h-4" />
+                  {t.navAdmin}
+                </Button>
+              </Link>
+            ) : null}
           </nav>
         </div>
 
@@ -230,21 +236,25 @@ export function Header({ transparent = false }: HeaderProps) {
             {t.navPricing}
           </Button>
         </Link>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => handleRestrictedAccess('/journalist', t.navJournalist)}
-          className="h-8 shrink-0 gap-1 px-2 text-xs text-gray-700"
-        >
-          <Users className="h-3.5 w-3.5" />
-          {t.navJournalist}
-        </Button>
-        <Link href="/admin">
-          <Button variant="ghost" size="sm" className="h-8 shrink-0 gap-1 px-2 text-xs text-gray-700">
-            <Shield className="h-3.5 w-3.5" />
-            {t.navAdmin}
+        {canAccessJournalist ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleRestrictedAccess('/journalist', t.navJournalist)}
+            className="h-8 shrink-0 gap-1 px-2 text-xs text-gray-700"
+          >
+            <Users className="h-3.5 w-3.5" />
+            {t.navJournalist}
           </Button>
-        </Link>
+        ) : null}
+        {canAccessAdmin ? (
+          <Link href="/admin">
+            <Button variant="ghost" size="sm" className="h-8 shrink-0 gap-1 px-2 text-xs text-gray-700">
+              <Shield className="h-3.5 w-3.5" />
+              {t.navAdmin}
+            </Button>
+          </Link>
+        ) : null}
       </nav>
     </header>
   );

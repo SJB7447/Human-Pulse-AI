@@ -36,17 +36,17 @@ function Router() {
           </ProtectedRoute>
         </Route>
         <Route path="/journalist">
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["journalist", "admin"]}>
             <JournalistPage />
           </ProtectedRoute>
         </Route>
         <Route path="/reporter">
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["journalist", "admin"]}>
             <JournalistPage />
           </ProtectedRoute>
         </Route>
         <Route path="/admin">
-          <ProtectedRoute>
+          <ProtectedRoute allowedRoles={["admin"]}>
             <AdminPage />
           </ProtectedRoute>
         </Route>
