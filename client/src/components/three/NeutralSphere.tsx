@@ -47,7 +47,7 @@ export function NeutralSphere() {
         return () => window.removeEventListener('resize', updateScale);
     }, []);
 
-    const baseScale = viewportScale;
+    const baseScale = isMobile ? config.scaleMobile : viewportScale;
 
     // Staggered appearance delay (appear last, in center)
     useEffect(() => {

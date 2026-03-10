@@ -39,9 +39,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
     colorVariations: ['#ffedc5', '#ffe197', '#ffd150', '#e6b83f'], // LOW/MID/BASE + deeper accent
     position: [0, 5.5, 0],
     positionDesktop: [0, 5.5, 0],
-    positionMobile: [0, 3.2, 0],
+    positionMobile: [-1.05, 3.65, 0],
     scaleDesktop: 0.95,
-    scaleMobile: 0.65
+    scaleMobile: 0.42
   },
   {
     type: 'immersion',
@@ -60,9 +60,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
     colorVariations: ['#ffc7ce', '#ff97a9', '#f4606b', '#d94a54'], // Light pink to deep coral red
     position: [5.2, 1.7, 0],
     positionDesktop: [5.2, 1.7, 0],
-    positionMobile: [1.3, 1.0, 0],
+    positionMobile: [1.1, 2.05, 0],
     scaleDesktop: 0.95,
-    scaleMobile: 0.65
+    scaleMobile: 0.42
   },
   {
     type: 'clarity',
@@ -81,9 +81,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
     colorVariations: ['#cad8ff', '#8dabff', '#3f65ef', '#2a4bc0'], // LOW/MID/BASE + deeper accent
     position: [3.2, -4.5, 0],
     positionDesktop: [3.2, -4.5, 0],
-    positionMobile: [0.9, -1.8, 0],
+    positionMobile: [1.05, -4.65, 0],
     scaleDesktop: 0.95,
-    scaleMobile: 0.65
+    scaleMobile: 0.42
   },
   {
     type: 'gravity',
@@ -101,9 +101,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
     colorVariations: ['#e5e5e5', '#d1d1d1', '#adadad', '#999898'], // LOW/MID/BASE + darker gray
     position: [-3.2, -4.5, 0],
     positionDesktop: [-3.2, -4.5, 0],
-    positionMobile: [-0.9, -1.8, 0],
+    positionMobile: [-1.1, -2.95, 0],
     scaleDesktop: 0.95,
-    scaleMobile: 0.65
+    scaleMobile: 0.42
   },
   {
     type: 'serenity',
@@ -122,9 +122,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
     colorVariations: ['#caf2a7', '#adef73', '#88d84a', '#66b53a'], // LOW/MID/BASE + deeper accent
     position: [-5.2, 1.7, 0],
     positionDesktop: [-5.2, 1.7, 0],
-    positionMobile: [-1.3, 1.0, 0],
+    positionMobile: [1.15, -1.3, 0],
     scaleDesktop: 0.95,
-    scaleMobile: 0.65
+    scaleMobile: 0.42
   },
   {
     type: 'spectrum',
@@ -141,9 +141,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
     gradientColor: '#a773f9',
     position: [0, 0, 0],
     positionDesktop: [0, 0, 0],
-    positionMobile: [0, 0, 0],
+    positionMobile: [-1.05, 0.35, 0],
     scaleDesktop: 0.95,
-    scaleMobile: 0.65
+    scaleMobile: 0.42
   },
 ];
 

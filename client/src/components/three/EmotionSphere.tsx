@@ -52,7 +52,7 @@ export function EmotionSphere({ config, onClick, index }: EmotionSphereProps) {
     return () => window.removeEventListener('resize', updateScale);
   }, []);
 
-  const baseScale = viewportScale;
+  const baseScale = isMobile ? config.scaleMobile : viewportScale;
 
   // Staggered appearance delay
   useEffect(() => {

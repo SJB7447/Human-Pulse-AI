@@ -18,10 +18,10 @@ function easeOutCubic(t: number): number {
 function CameraController({ isMobile }: { isMobile: boolean }) {
   const { camera } = useThree();
   const { activeEmotion, animationPhase, setAnimationPhase } = useEmotionStore();
-  const startPositionRef = { current: new THREE.Vector3(0, 0, isMobile ? 13 : 18) };
+  const startPositionRef = { current: new THREE.Vector3(0, 0, isMobile ? 15.2 : 18) };
   const [transitionStartTime, setTransitionStartTime] = useState<number | null>(null);
-  const defaultCameraZ = isMobile ? 13 : 18;
-  const focusDistance = isMobile ? 8 : 10;
+  const defaultCameraZ = isMobile ? 15.2 : 18;
+  const focusDistance = isMobile ? 8.8 : 10;
 
   useEffect(() => {
     if (animationPhase === 'focusing' && activeEmotion) {
@@ -82,7 +82,7 @@ function SceneContent({ isMobile }: { isMobile: boolean }) {
   const [, setLocation] = useLocation();
   const { setActiveEmotion, animationPhase, isSplit, setAnimationPhase } = useEmotionStore();
   const { goBackToSplit, goBackToInitial, activeEmotion } = useEmotionStore();
-  const defaultCameraZ = isMobile ? 13 : 18;
+  const defaultCameraZ = isMobile ? 15.2 : 18;
 
   const handleEmotionClick = (emotionType: EmotionType) => {
     if (!isSplit) return;

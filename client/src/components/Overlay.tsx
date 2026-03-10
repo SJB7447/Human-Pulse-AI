@@ -23,12 +23,12 @@ export function Overlay() {
           </div>
 
           {/* Footer tagline - fixed at bottom */}
-          <div className="absolute bottom-8 left-0 right-0 flex justify-center pointer-events-none">
+          <div className="absolute bottom-[104px] left-0 right-0 flex justify-center px-16 pointer-events-none sm:bottom-8 sm:px-0">
             <motion.p
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.6 }}
-              className="text-lg text-gray-500 tracking-wide"
+              className="text-center text-sm text-gray-500 tracking-wide sm:text-lg"
               style={{
                 fontFamily: '"Playfair Display", serif',
                 fontWeight: 400,

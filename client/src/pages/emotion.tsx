@@ -588,6 +588,13 @@ export default function EmotionPage() {
 
     setIsGenerating(true);
     try {
+      const authorId = String(user?.id || '').trim() || undefined;
+      const authorName = String(
+        user?.name ||
+        user?.email?.split('@')[0] ||
+        user?.email ||
+        ''
+      ).trim() || undefined;
       console.log("Generating news for:", type);
       const generatedItems = await GeminiService.generateNewsForEmotion(type);
       console.log("Generated Items:", generatedItems);
@@ -646,6 +653,8 @@ export default function EmotionPage() {
               image: null,
               category: 'AI Generated (Verified)',
               intensity: 50,
+              authorId,
+              authorName,
             }),
           });
 
