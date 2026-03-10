@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+﻿import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useParams, Link, useLocation } from 'wouter';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { createPortal } from 'react-dom';
@@ -6,7 +6,6 @@ import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Load
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { NewsDetailModal } from '@/components/NewsDetailModal';
 import { useNews, type NewsItem } from '@/hooks/useNews';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
@@ -136,7 +135,9 @@ function getRandomAuthor(id: number | string) {
 import { AIServiceError, GeminiService } from '@/services/gemini';
 import { useQueryClient } from '@tanstack/react-query';
 
-// ... (existing imports)
+const NewsDetailModal = lazy(() =>
+  import('@/components/NewsDetailModal').then((module) => ({ default: module.NewsDetailModal }))
+);
 
 const ARTICLE_META_OPEN = '<!-- HUEBRIEF_META_START -->';
 const ARTICLE_META_CLOSE = '<!-- HUEBRIEF_META_END -->';
@@ -486,7 +487,8 @@ export default function EmotionPage() {
   };
 
   const { data: news = [], isLoading, error } = useNews(type);
-  const { data: spectrumNews = [] } = useNews('spectrum');
+  const shouldLoadSpectrumRecommendations = Boolean(selectedArticle) && type !== 'spectrum';
+  const { data: spectrumNews = [] } = useNews(shouldLoadSpectrumRecommendations ? 'spectrum' : undefined);
 
   const sourceOptions = useMemo(() => {
     const set = new Set<string>();
@@ -1123,31 +1125,33 @@ export default function EmotionPage() {
         </motion.div>
       </main>
 
-      <NewsDetailModal
-        article={selectedArticle}
-        emotionType={selectedArticle?.emotion || type || 'serenity'}
-        cardBackground={selectedCardBg}
-        layoutId={selectedArticle ? `news-card-${selectedArticle.id}` : undefined}
-        relatedArticles={recommendationPool}
-        onSelectArticle={(nextArticle) => {
-          const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
-          const cardEmotionColor = getEmotionColor(nextArticle.emotion);
-          const cardPalette = getCardDepthPalette(cardEmotionColor, depth, nextArticle.emotion);
-          setSelectedCardBg(cardPalette.background);
+      <Suspense fallback={null}>
+        <NewsDetailModal
+          article={selectedArticle}
+          emotionType={selectedArticle?.emotion || type || 'serenity'}
+          cardBackground={selectedCardBg}
+          layoutId={selectedArticle ? `news-card-${selectedArticle.id}` : undefined}
+          relatedArticles={recommendationPool}
+          onSelectArticle={(nextArticle) => {
+            const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
+            const cardEmotionColor = getEmotionColor(nextArticle.emotion);
+            const cardPalette = getCardDepthPalette(cardEmotionColor, depth, nextArticle.emotion);
+            setSelectedCardBg(cardPalette.background);
 
-          if (nextArticle.emotion !== type) {
-            crossCategorySelectionRef.current = nextArticle;
-            setLocation(`/emotion/${nextArticle.emotion}`);
-          }
+            if (nextArticle.emotion !== type) {
+              crossCategorySelectionRef.current = nextArticle;
+              setLocation(`/emotion/${nextArticle.emotion}`);
+            }
 
-          setSelectedArticle(nextArticle);
-        }}
-        onClose={() => {
-          crossCategorySelectionRef.current = null;
-          setSelectedArticle(null);
-        }}
-        onConsumeEvidence={handleArticleConsumeEvidence}
-      />
+            setSelectedArticle(nextArticle);
+          }}
+          onClose={() => {
+            crossCategorySelectionRef.current = null;
+            setSelectedArticle(null);
+          }}
+          onConsumeEvidence={handleArticleConsumeEvidence}
+        />
+      </Suspense>
       {mounted && typeof document !== 'undefined' && type && showPeripheralNudge && !suppressPeripheralNudge ? (
         createPortal(
         <>

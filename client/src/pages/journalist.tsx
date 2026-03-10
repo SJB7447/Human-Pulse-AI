@@ -42,11 +42,30 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { EMOTION_CONFIG } from '@/lib/store';
 import { EMOTION_NEWS_LINKS } from '@/lib/emotionNewsLinks';
-import { GeminiService, AIServiceError, type KeywordNewsArticle } from '@/services/gemini';
+import type { KeywordNewsArticle } from '@/services/gemini';
 import { getSupabase } from '@/services/supabaseClient';
 import { DBService } from '@/services/DBService';
 import { useToast } from '@/hooks/use-toast';
-import { centerCropToAspectRatioDataUrl } from '@/lib/imageCrop';
+
+type GeminiModule = typeof import('@/services/gemini');
+type ImageCropModule = typeof import('@/lib/imageCrop');
+
+let geminiModulePromise: Promise<GeminiModule> | null = null;
+let imageCropModulePromise: Promise<ImageCropModule> | null = null;
+
+const loadGeminiModule = () => {
+  if (!geminiModulePromise) {
+    geminiModulePromise = import('@/services/gemini');
+  }
+  return geminiModulePromise;
+};
+
+const loadImageCropModule = () => {
+  if (!imageCropModulePromise) {
+    imageCropModulePromise = import('@/lib/imageCrop');
+  }
+  return imageCropModulePromise;
+};
 
 const PLATFORMS = [
   { id: 'interactive', label: '인터랙티브 페이지', Icon: Globe, description: 'HueBrief 서비스에 직접 발행' },
@@ -967,6 +986,7 @@ export default function JournalistPage() {
     setRegeneratingDraftSection(section);
     setDraftSectionIssues((prev) => ({ ...prev, [section]: [] }));
     try {
+      const { GeminiService } = await loadGeminiModule();
       const result = await GeminiService.regenerateDraftSection({
         keyword: searchKeyword.trim() || '최신 이슈',
         mode: draftMode,
@@ -998,18 +1018,20 @@ export default function JournalistPage() {
       toast({ title: `${section === 'core' ? '핵심' : section === 'deepDive' ? '심화 시사점' : '결론'} 섹션 재생성 완료` });
     } catch (error: any) {
       const defaultMessage = '섹션 재생성에 실패했습니다.';
+      const typedError = error as any;
+      const isAiServiceError = String(error?.name || '') === 'AIServiceError';
       const message =
-        error instanceof AIServiceError
-          ? (error.message || defaultMessage)
+        isAiServiceError
+          ? (typedError.message || defaultMessage)
           : (error?.message || defaultMessage);
-      const aiIssues = error instanceof AIServiceError
-        ? (error.issues || [])
-          .map((issue) => String(issue.message || issue.type || '').trim())
+      const aiIssues = isAiServiceError
+        ? (typedError.issues || [])
+          .map((issue: any) => String(issue.message || issue.type || '').trim())
           .filter(Boolean)
         : [];
-      const complianceIssues = error instanceof AIServiceError
-        ? (error.compliance?.flags || [])
-          .map((flag) => `${flag.category}: ${flag.suggestion}`)
+      const complianceIssues = isAiServiceError
+        ? (typedError.compliance?.flags || [])
+          .map((flag: any) => `${flag.category}: ${flag.suggestion}`)
           .filter(Boolean)
         : [];
       const sectionIssues = [...aiIssues, ...complianceIssues];
@@ -1110,6 +1132,7 @@ export default function JournalistPage() {
 
     setIsAnalyzingSentiment(true);
     try {
+      const { GeminiService } = await loadGeminiModule();
       const result = await GeminiService.analyzeSentiment(articleContent);
       const koreanFeedback = /[가-힣]/.test(result.feedback || '')
         ? result.feedback
@@ -1459,6 +1482,7 @@ export default function JournalistPage() {
     setDraftSourceCitation(null);
 
     try {
+      const { GeminiService } = await loadGeminiModule();
       const result = await GeminiService.searchKeywordNews(searchKeyword);
       const normalizedArticles = (result.articles || []).map((item, index) => ({
         ...item,
@@ -1528,51 +1552,53 @@ export default function JournalistPage() {
     setDraftBlockingCode('');
 
     const parseDraftGateError = (error: unknown): { code: string; message: string; issues: string[] } => {
-      if (!(error instanceof AIServiceError)) {
+      const typedError = error as any;
+      if (String(typedError?.name || '') !== 'AIServiceError') {
         return {
           code: 'AI_DRAFT_UNKNOWN_ERROR',
-          message: (error as any)?.message || '초안 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+          message: typedError?.message || '초안 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.',
           issues: [],
         };
       }
 
-      const issueMessages = (error.issues || [])
-        .map((issue) => String(issue.message || issue.type || '').trim())
+      const issueMessages = (typedError.issues || [])
+        .map((issue: any) => String(issue.message || issue.type || '').trim())
         .filter(Boolean);
 
-      if (error.code === 'AI_DRAFT_SCHEMA_INVALID') {
+      if (typedError.code === 'AI_DRAFT_SCHEMA_INVALID') {
         return {
-          code: error.code,
+          code: typedError.code,
           message: '초안이 모드 규칙을 충족하지 못해 차단되었습니다. 조건을 조정해 다시 생성해 주세요.',
           issues: issueMessages,
         };
       }
-      if (error.code === 'AI_DRAFT_COPY_BLOCKED' || error.code === 'AI_DRAFT_SIMILARITY_BLOCKED') {
+      if (typedError.code === 'AI_DRAFT_COPY_BLOCKED' || typedError.code === 'AI_DRAFT_SIMILARITY_BLOCKED') {
         return {
-          code: error.code,
+          code: typedError.code,
           message: '참고 기사 문구 복붙 가능성이 감지되어 차단되었습니다. 사실은 유지하고 문장을 새롭게 재구성해 주세요.',
           issues: issueMessages,
         };
       }
-      if (error.code === 'AI_DRAFT_COMPLIANCE_BLOCKED') {
-        const complianceIssues = (error.compliance?.flags || [])
-          .map((flag) => `${flag.category}: ${flag.suggestion}`)
+      if (typedError.code === 'AI_DRAFT_COMPLIANCE_BLOCKED') {
+        const complianceIssues = (typedError.compliance?.flags || [])
+          .map((flag: any) => `${flag.category}: ${flag.suggestion}`)
           .slice(0, 4);
         return {
-          code: error.code,
+          code: typedError.code,
           message: '컴플라이언스 고위험 항목이 감지되어 초안 반영이 차단되었습니다.',
           issues: complianceIssues.length > 0 ? complianceIssues : issueMessages,
         };
       }
 
       return {
-        code: error.code || 'AI_DRAFT_UNKNOWN_ERROR',
-        message: error.message || '초안 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+        code: typedError.code || 'AI_DRAFT_UNKNOWN_ERROR',
+        message: typedError.message || '초안 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.',
         issues: issueMessages,
       };
     };
 
     try {
+      const { GeminiService } = await loadGeminiModule();
       const result = await GeminiService.generateArticleDraft({
         keyword,
         mode: draftMode,
@@ -1663,6 +1689,7 @@ export default function JournalistPage() {
     setIsTranslating(true);
 
     try {
+      const { GeminiService } = await loadGeminiModule();
       const result = await GeminiService.translateText(articleContent);
       setArticleContent(result.translatedText);
       setLastAiFailedStep(null);
@@ -1688,6 +1715,7 @@ export default function JournalistPage() {
     setGrammarErrors([]);
 
     try {
+      const { GeminiService } = await loadGeminiModule();
       const result = await GeminiService.checkGrammar(articleContent);
       setArticleContent(result.correctedText);
       setGrammarErrors(result.errors);
@@ -1718,6 +1746,7 @@ export default function JournalistPage() {
     setIsGeneratingSEO(true);
 
     try {
+      const { GeminiService } = await loadGeminiModule();
       const result = await GeminiService.generateHashtags(articleContent, selectedPlatforms);
       setGeneratedHashtags(result.hashtags);
       setSelectedHashtagIndices(result.hashtags.map((_, idx) => idx));
@@ -1744,6 +1773,7 @@ export default function JournalistPage() {
     setSelectedTitleIndex(null); // 초기화 selection
 
     try {
+      const { GeminiService } = await loadGeminiModule();
       const result = await GeminiService.optimizeTitles(articleContent, selectedPlatforms);
       const bracketTitleMatch = String(articleContent || '').match(/^\s*\[([^\]]+)\]/);
       const currentTitleCandidates = new Set(
@@ -1786,6 +1816,7 @@ export default function JournalistPage() {
 
     setIsCheckingCompliance(true);
     try {
+      const { GeminiService } = await loadGeminiModule();
       const result = await GeminiService.checkCompliance(articleContent);
       setComplianceResult(result);
       setLastAiFailedStep(null);
@@ -2036,6 +2067,10 @@ export default function JournalistPage() {
     const effectiveDirective = rawDirective || '기사 핵심 장면을 사실 기반의 뉴스 이미지로 만들어 주세요.';
 
     try {
+      const [{ GeminiService }, { centerCropToAspectRatioDataUrl }] = await Promise.all([
+        loadGeminiModule(),
+        loadImageCropModule(),
+      ]);
       const result = await GeminiService.generateImage(articleContent, 4, effectiveDirective);
 
       const newImages = await Promise.all((result.images || []).map(async (img, idx) => {
@@ -2090,6 +2125,7 @@ export default function JournalistPage() {
     setGeneratedVideos([]);
 
     try {
+      const { GeminiService } = await loadGeminiModule();
       const basePrompt = normalizeVideoPromptForCurrentDuration(
         videoPromptInput.trim() || `${searchKeyword || '핵심 뉴스'} 8초 16:9 1080p, 2D animation style, no text`,
         8,
@@ -2158,6 +2194,7 @@ export default function JournalistPage() {
       8,
     );
     try {
+      const { GeminiService } = await loadGeminiModule();
       const selectedImage = generatedImages.length > 0
         ? generatedImages[Math.min(index, Math.max(0, generatedImages.length - 1))]
         : undefined;
@@ -2211,6 +2248,10 @@ export default function JournalistPage() {
     const effectiveDirective = rawDirective || `기사 흐름에 맞는 이미지 ${index + 1} 변형안을 생성해 주세요.`;
 
     try {
+      const [{ GeminiService }, { centerCropToAspectRatioDataUrl }] = await Promise.all([
+        loadGeminiModule(),
+        loadImageCropModule(),
+      ]);
       const result = await GeminiService.generateImage(articleContent, 1, effectiveDirective);
       const nextImage = result.images?.[0];
       if (!nextImage) {

@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
-import { Scene } from '@/components/three/Scene';
+import { lazy, Suspense, useEffect } from 'react';
 import { Overlay } from '@/components/Overlay';
 import { IntroOverlay } from '@/components/IntroOverlay';
 import { useEmotionStore } from '@/lib/store';
+
+const Scene = lazy(() => import('@/components/three/Scene').then((module) => ({ default: module.Scene })));
 
 export default function Home() {
   const {
@@ -25,7 +26,9 @@ export default function Home() {
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      <Scene />
+      <Suspense fallback={<div className="fixed inset-0 bg-[#f8f9fa]" aria-hidden="true" />}>
+        <Scene />
+      </Suspense>
       <Overlay />
       <IntroOverlay />
     </div>

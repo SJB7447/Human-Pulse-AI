@@ -1,8 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { DBService, type ApiHealthPayload, type UserComposedArticleRecord } from '@/services/DBService';
-import { GeminiService } from '@/services/gemini';
-import { centerCropToAspectRatioDataUrl } from '@/lib/imageCrop';
 import { useEmotionStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
@@ -42,6 +40,26 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+
+type GeminiModule = typeof import('@/services/gemini');
+type ImageCropModule = typeof import('@/lib/imageCrop');
+
+let geminiModulePromise: Promise<GeminiModule> | null = null;
+let imageCropModulePromise: Promise<ImageCropModule> | null = null;
+
+const loadGeminiModule = () => {
+  if (!geminiModulePromise) {
+    geminiModulePromise = import('@/services/gemini');
+  }
+  return geminiModulePromise;
+};
+
+const loadImageCropModule = () => {
+  if (!imageCropModulePromise) {
+    imageCropModulePromise = import('@/lib/imageCrop');
+  }
+  return imageCropModulePromise;
+};
 
 type AdminArticle = {
   id: string;
@@ -499,35 +517,32 @@ export default function AdminPage() {
   const { toast } = useToast();
   const { user } = useEmotionStore();
 
-  const fetchData = async () => {
+  const fetchData = async (targetTab: AdminTabKey = activeTab) => {
     try {
       setLoading(true);
       const baseHealth = await DBService.getApiHealth().catch(() => null);
       setApiHealth((baseHealth || null) as ApiHealthPayload | null);
 
-      const settled = await Promise.allSettled([
-        DBService.getAdminDashboardData(),
+      const coreSettled = await Promise.allSettled([
         DBService.getAdminStats(),
-        DBService.getAdminReviews(),
-        DBService.getAdminReports(),
-        DBService.getAdminReaderArticles(),
-        DBService.getAdminExportHistory(10),
-        DBService.getAdminExportSchedule(),
-        DBService.getAdminAlerts(8),
-        DBService.getAdminAlertSummary(),
       ]);
-      const [
-        articlesResult,
-        statsResult,
-        reviewsResult,
-        reportsResult,
-        readerArticlesResult,
-        exportHistoryResult,
-        exportScheduleResult,
-        opsAlertsResult,
-        opsAlertSummaryResult,
-      ] = settled;
+      const [statsResult] = coreSettled;
 
+      const tabSettled = targetTab === 'ops'
+        ? await Promise.allSettled([
+          DBService.getAdminExportHistory(10),
+          DBService.getAdminExportSchedule(),
+          DBService.getAdminAlerts(8),
+          DBService.getAdminAlertSummary(),
+        ])
+        : await Promise.allSettled([
+          DBService.getAdminDashboardData(),
+          DBService.getAdminReviews(),
+          DBService.getAdminReports(),
+          DBService.getAdminReaderArticles(),
+        ]);
+
+      const settled = [...coreSettled, ...tabSettled];
       const rejected = settled.filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected');
       const authRejection = rejected.find((entry) => {
         const status = (entry.reason as any)?.status;
@@ -544,27 +559,32 @@ export default function AdminPage() {
         return;
       }
 
-      const articlesData = articlesResult.status === 'fulfilled' ? articlesResult.value : [];
       const statsData = statsResult.status === 'fulfilled' ? statsResult.value : null;
-      const reviewsData = reviewsResult.status === 'fulfilled' ? reviewsResult.value : [];
-      const reportsData = reportsResult.status === 'fulfilled' ? reportsResult.value : [];
-      const readerArticlesData = readerArticlesResult.status === 'fulfilled' ? readerArticlesResult.value : [];
-      const exportHistoryData = exportHistoryResult.status === 'fulfilled' ? exportHistoryResult.value : [];
-      const exportScheduleData = exportScheduleResult.status === 'fulfilled' ? exportScheduleResult.value : exportSchedule;
-      const opsAlertsData = opsAlertsResult.status === 'fulfilled' ? opsAlertsResult.value : [];
-      const opsAlertSummaryData = opsAlertSummaryResult.status === 'fulfilled' ? opsAlertSummaryResult.value : null;
-
-      setArticles(((articlesData || []) as any[]).map(normalizeAdminArticle));
       setStats((statsData || null) as AdminStatsPayload | null);
-      setReviewMap(buildReviewMap((reviewsData || []) as AdminReviewPayload[]));
-      setReports(((reportsData || []) as AdminReportPayload[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
-      setReaderArticles(((readerArticlesData || []) as UserComposedArticleRecord[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
-      setExportHistory((exportHistoryData || []) as ExportJob[]);
-      setExportSchedule((exportScheduleData || exportSchedule) as ExportSchedule);
-      setOpsAlerts((opsAlertsData || []) as OpsAlert[]);
-      setOpsAlertSummary((opsAlertSummaryData || null) as OpsAlertSummary | null);
       const timeoutFromStats = Number((statsData as AdminStatsPayload | null)?.aiNewsSettings?.values?.modelTimeoutMs ?? 24000);
       setAiNewsTimeoutMs(Number.isFinite(timeoutFromStats) ? timeoutFromStats : 24000);
+
+      if (targetTab === 'ops') {
+        const [exportHistoryResult, exportScheduleResult, opsAlertsResult, opsAlertSummaryResult] = tabSettled;
+        const exportHistoryData = exportHistoryResult.status === 'fulfilled' ? exportHistoryResult.value : [];
+        const exportScheduleData = exportScheduleResult.status === 'fulfilled' ? exportScheduleResult.value : exportSchedule;
+        const opsAlertsData = opsAlertsResult.status === 'fulfilled' ? opsAlertsResult.value : [];
+        const opsAlertSummaryData = opsAlertSummaryResult.status === 'fulfilled' ? opsAlertSummaryResult.value : null;
+        setExportHistory((exportHistoryData || []) as ExportJob[]);
+        setExportSchedule((exportScheduleData || exportSchedule) as ExportSchedule);
+        setOpsAlerts((opsAlertsData || []) as OpsAlert[]);
+        setOpsAlertSummary((opsAlertSummaryData || null) as OpsAlertSummary | null);
+      } else {
+        const [articlesResult, reviewsResult, reportsResult, readerArticlesResult] = tabSettled;
+        const articlesData = articlesResult.status === 'fulfilled' ? articlesResult.value : [];
+        const reviewsData = reviewsResult.status === 'fulfilled' ? reviewsResult.value : [];
+        const reportsData = reportsResult.status === 'fulfilled' ? reportsResult.value : [];
+        const readerArticlesData = readerArticlesResult.status === 'fulfilled' ? readerArticlesResult.value : [];
+        setArticles(((articlesData || []) as any[]).map(normalizeAdminArticle));
+        setReviewMap(buildReviewMap((reviewsData || []) as AdminReviewPayload[]));
+        setReports(((reportsData || []) as AdminReportPayload[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+        setReaderArticles(((readerArticlesData || []) as UserComposedArticleRecord[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
+      }
 
       if (rejected.length > 0) {
         const healthAfterFailure = await DBService.getApiHealth().catch(() => null);
@@ -598,8 +618,8 @@ export default function AdminPage() {
       setLocation(`/login?redirect=${encodeURIComponent('/admin')}`);
       return;
     }
-    fetchData();
-  }, [user]);
+    fetchData(activeTab);
+  }, [user, activeTab]);
 
   useEffect(() => {
     setSelectedArticleIds((prev) => {
@@ -854,6 +874,10 @@ export default function AdminPage() {
 
     setIsGeneratingEditImage(true);
     try {
+      const [{ GeminiService }, { centerCropToAspectRatioDataUrl }] = await Promise.all([
+        loadGeminiModule(),
+        loadImageCropModule(),
+      ]);
       const promptSpec = JSON.stringify({
         language: 'en',
         task: 'news_editorial_image',
@@ -1800,7 +1824,8 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className={`${showOpsTab ? '' : 'hidden'} rounded-2xl border border-indigo-100 bg-white shadow-sm`}>
+      {showOpsTab ? (
+      <div className="rounded-2xl border border-indigo-100 bg-white shadow-sm">
         <div className="px-5 py-4 border-b border-indigo-100 bg-indigo-50/50">
           <p className="text-sm font-semibold text-indigo-800">운영 체계/통계 탭</p>
           <p className="text-xs text-indigo-600 mt-1">핵심 지표는 상단에서 빠르게 보고, 상세 데이터는 2단 아코디언에서 확인합니다.</p>
@@ -2111,6 +2136,7 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+      ) : null}
 
       <div className="hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2415,7 +2441,8 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div className={`${showArticlesTab ? '' : 'hidden'} bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4`}>
+      {showArticlesTab ? (
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
         <div className="px-5 py-4 border-b border-amber-100 bg-amber-50/50">
           <p className="text-sm font-semibold text-amber-900">독자 기사 검증 대기열</p>
           <p className="text-xs text-amber-700 mt-1">내 의견으로 생성된 기사의 커뮤니티 노출 승인/반려를 처리합니다.</p>
@@ -2484,8 +2511,10 @@ export default function AdminPage() {
           ))}
         </div>
       </div>
+      ) : null}
 
-      <div className={`${showArticlesTab ? '' : 'hidden'} bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4`}>
+      {showArticlesTab ? (
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
         <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/70">
           <p className="text-sm font-semibold text-slate-900">이전 기록 보기 (최근 7일)</p>
           <p className="text-xs text-slate-600 mt-1">승인/반려 처리된 독자 기사 이력을 확인합니다.</p>
@@ -2548,8 +2577,10 @@ export default function AdminPage() {
           ))}
         </div>
       </div>
+      ) : null}
 
-      <div className={`${showArticlesTab ? '' : 'hidden'} bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden`}>
+      {showArticlesTab ? (
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-5 py-4 border-b border-indigo-100 bg-indigo-50/45">
           <p className="text-sm font-semibold text-indigo-800">기사 관리 탭</p>
           <p className="text-xs text-indigo-600 mt-1">기사 상태, 감정/카테고리 분류, 검수와 이슈를 이 탭에서 관리합니다.</p>
@@ -2957,6 +2988,7 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+      ) : null}
 
       <Dialog open={Boolean(selectedReaderHistoryArticle)} onOpenChange={(open) => !open && setSelectedReaderHistoryArticle(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden">

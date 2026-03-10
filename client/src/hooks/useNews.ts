@@ -46,7 +46,6 @@ function toNewsItem(item: any): NewsItem {
 async function safeFetchJson(url: string): Promise<any[]> {
     try {
         let response = await fetch(url, {
-            cache: 'no-cache',
             headers: { Accept: 'application/json' },
         });
 
@@ -154,12 +153,8 @@ export function useNews(emotion: EmotionType | undefined) {
             // Spectrum: fetch balanced visible articles per emotion via server policy
             if (emotion === 'spectrum') {
                 const emotions: EmotionType[] = ['vibrance', 'immersion', 'clarity', 'gravity', 'serenity'];
-                const allNews: NewsItem[] = [];
-
-                for (const emo of emotions) {
-                    const rows = await fetchEmotionNewsResilient(emo);
-                    allNews.push(...rows.slice(0, 3));
-                }
+                const groups = await Promise.all(emotions.map((emo) => fetchEmotionNewsResilient(emo)));
+                const allNews = groups.flatMap((rows) => rows.slice(0, 3));
 
                 // Shuffle and return balanced mix
                 const shuffled = allNews.sort(() => Math.random() - 0.5);
@@ -174,8 +169,9 @@ export function useNews(emotion: EmotionType | undefined) {
             }
         },
         enabled: !!emotion,
-        staleTime: 0,
-        refetchOnMount: 'always',
+        staleTime: 60_000,
+        gcTime: 5 * 60_000,
+        refetchOnMount: false,
         refetchOnReconnect: true,
         retry: 1,
     });

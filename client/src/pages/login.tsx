@@ -445,10 +445,26 @@ export default function LoginPage() {
         if (error) throw error;
 
         if (data.user) {
+          let resolvedRole: UserRole = (data.user.user_metadata?.role as UserRole) || 'general';
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', data.user.id)
+              .single();
+            const profileRole = String(profile?.role || '').trim().toLowerCase();
+            if (profileRole === 'admin' || profileRole === 'journalist' || profileRole === 'general') {
+              resolvedRole = profileRole;
+            }
+          } catch {
+            // Keep metadata/default role when profile lookup is unavailable.
+          }
+
           setUser({
             id: data.user.id,
             email: data.user.email || undefined,
             name: data.user.user_metadata?.name || name,
+            role: resolvedRole,
           });
           toast({ title: t.loginSuccessTitle, description: t.loginSuccessDesc });
           setLocation(redirectPath);
@@ -467,6 +483,31 @@ export default function LoginPage() {
       provider: provider as any,
       options: { redirectTo: `${window.location.origin}${redirectPath}` },
     });
+  };
+
+  const handleDemoLogin = (roleOverride?: UserRole) => {
+    setIsLoading(true);
+    window.setTimeout(() => {
+      const inferredRole: UserRole = roleOverride || (
+        redirectPath.startsWith('/admin')
+          ? 'admin'
+          : redirectPath.startsWith('/journalist') || redirectPath.startsWith('/reporter')
+            ? 'journalist'
+            : 'general'
+      );
+      const demoTarget = redirectPath === '/'
+        ? (inferredRole === 'admin' ? '/admin' : inferredRole === 'journalist' ? '/journalist' : '/')
+        : redirectPath;
+      setUser({
+        id: `demo-${inferredRole}-123`,
+        email: `demo-${inferredRole}@example.com`,
+        name: `Demo ${inferredRole === 'admin' ? 'Admin' : inferredRole === 'journalist' ? 'Journalist' : 'User'}`,
+        role: inferredRole,
+      });
+      toast({ title: t.demoLoginDoneTitle, description: t.demoLoginDoneDesc });
+      setLocation(demoTarget);
+      setIsLoading(false);
+    }, 500);
   };
 
   return (
@@ -699,31 +740,35 @@ export default function LoginPage() {
                 {t.naver}
               </Button>
 
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full relative mt-2 border-dashed border-human-main/40 text-human-main hover:bg-human-main/5"
-                onClick={() => {
-                  setIsLoading(true);
-                  setTimeout(() => {
-                    const inferredRole: UserRole = redirectPath.startsWith('/admin')
-                      ? 'admin'
-                      : redirectPath.startsWith('/journalist') || redirectPath.startsWith('/reporter')
-                        ? 'journalist'
-                        : 'general';
-                    const demoTarget = redirectPath === '/'
-                      ? (inferredRole === 'admin' ? '/admin' : inferredRole === 'journalist' ? '/journalist' : '/')
-                      : redirectPath;
-                    setUser({ id: 'demo-user-123', email: 'demo@example.com', name: 'Demo User', role: inferredRole });
-                    toast({ title: t.demoLoginDoneTitle, description: t.demoLoginDoneDesc });
-                    setLocation(demoTarget);
-                    setIsLoading(false);
-                  }, 500);
-                }}
-                data-testid="button-demo-login"
-              >
-                <FlaskConical className="w-4 h-4 mr-2" />{t.demoLogin}
-              </Button>
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="relative border-dashed border-human-main/40 text-human-main hover:bg-human-main/5"
+                  onClick={() => handleDemoLogin('general')}
+                  data-testid="button-demo-login-general"
+                >
+                  <FlaskConical className="w-4 h-4 mr-2" />일반 데모
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="relative border-dashed border-blue-400/50 text-blue-700 hover:bg-blue-50"
+                  onClick={() => handleDemoLogin('journalist')}
+                  data-testid="button-demo-login-journalist"
+                >
+                  <FlaskConical className="w-4 h-4 mr-2" />기자 데모
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="relative border-dashed border-amber-400/50 text-amber-700 hover:bg-amber-50"
+                  onClick={() => handleDemoLogin('admin')}
+                  data-testid="button-demo-login-admin"
+                >
+                  <FlaskConical className="w-4 h-4 mr-2" />관리자 데모
+                </Button>
+              </div>
 
               <div className="mt-6 text-center">
                 <button
