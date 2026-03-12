@@ -3983,10 +3983,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const alertCooldownMs = 5 * 60 * 1000;
   const lastAlertAtByType = new Map<AlertType, number>();
 
-  const resolveActor = (req: any): { actorId: string | null; actorRole: string } => {
+  const resolveActor = (req: any): { actorId: string | null; actorRole: string; actorName: string; actorEmail: string } => {
     const actorIdHeader = req.headers?.["x-actor-id"];
     const actorRoleHeader = req.headers?.["x-actor-role"];
+    const actorNameHeader = req.headers?.["x-actor-name"];
+    const actorEmailHeader = req.headers?.["x-actor-email"];
     const actorId = typeof actorIdHeader === "string" && actorIdHeader.trim() ? actorIdHeader.trim().slice(0, 128) : null;
+    const actorName = typeof actorNameHeader === "string" ? actorNameHeader.trim().slice(0, 160) : "";
+    const actorEmail = typeof actorEmailHeader === "string" ? actorEmailHeader.trim().slice(0, 160) : "";
     const normalizeActorRole = (value: unknown): "admin" | "journalist" | "general" => {
       const raw = String(value || "").trim().toLowerCase();
       if (!raw) return "general";
@@ -3995,8 +3999,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       return "general";
     };
     const actorRole = normalizeActorRole(actorRoleHeader);
-    return { actorId, actorRole };
+    return { actorId, actorRole, actorName, actorEmail };
   };
+
+  const normalizeOwnerToken = (value: unknown): string =>
+    String(value || "").trim().toLowerCase();
 
   const writeAdminActionLog = async (
     req: any,
@@ -7887,10 +7894,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
     const actor = resolveActor(req);
     const actorRole = String(actor.actorRole || "").trim().toLowerCase();
-    const actorId = String(actor.actorId || "").trim().toLowerCase();
-    const ownerId = String((prev as any).authorId ?? (prev as any).author_id ?? "").trim().toLowerCase();
+    const actorId = normalizeOwnerToken(actor.actorId);
+    const ownerId = normalizeOwnerToken((prev as any).authorId ?? (prev as any).author_id);
+    const ownerName = normalizeOwnerToken((prev as any).authorName ?? (prev as any).author_name);
+    const actorName = normalizeOwnerToken(actor.actorName);
+    const actorEmail = normalizeOwnerToken(actor.actorEmail);
+    const actorEmailLocal = normalizeOwnerToken(actorEmail.split("@")[0]);
     const isAdmin = actorRole === "admin";
-    const isJournalistOwner = actorRole === "journalist" && Boolean(actorId) && actorId === ownerId;
+    const isJournalistOwner = actorRole === "journalist" && (
+      (Boolean(actorId) && actorId === ownerId) ||
+      (Boolean(ownerName) && Boolean(actorName) && ownerName === actorName) ||
+      (Boolean(ownerName) && Boolean(actorEmail) && ownerName === actorEmail) ||
+      (Boolean(ownerName) && Boolean(actorEmailLocal) && ownerName === actorEmailLocal)
+    );
 
     if (!isAdmin && !isJournalistOwner) {
       return res.status(403).json({

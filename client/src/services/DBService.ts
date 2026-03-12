@@ -244,6 +244,8 @@ const buildActorHeaders = (): Record<string, string> => {
     return {
         'x-actor-id': String(actor.id || '').slice(0, 128),
         'x-actor-role': isDemoAdminPath ? 'admin' : normalizeActorRole(actor.role),
+        'x-actor-name': String(actor.name || '').slice(0, 160),
+        'x-actor-email': String(actor.email || '').slice(0, 160),
     };
 };
 
@@ -283,6 +285,8 @@ export const DBService = {
                 },
                 user_metadata: {
                     name: storeUser.name,
+                    email: storeUser.email,
+                    role: storeUser.role,
                 },
             };
         }

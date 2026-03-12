@@ -545,6 +545,19 @@ export default function JournalistPage() {
       return acc;
     }, []);
 
+  const toPersistableMediaUrl = (value: string | undefined): string => {
+    const raw = String(value || '').trim();
+    return /^https?:\/\//i.test(raw) ? raw : '';
+  };
+
+  const sanitizePersistedMediaSlots = (slots: MediaSlot[]): MediaSlot[] =>
+    resolveBoundMediaSlots(slots)
+      .map((slot) => ({
+        ...slot,
+        sourceUrl: toPersistableMediaUrl(slot.sourceUrl),
+      }))
+      .filter((slot) => Boolean(slot.sourceUrl));
+
   useEffect(() => {
     if (mediaAssets.length === 0 || suggestedMediaSlots.length === 0) return;
 
@@ -2408,9 +2421,10 @@ export default function JournalistPage() {
           }
 
           // 2. Determine Image
-          const selectedImage = generatedImages.length > 0 && selectedImageIndices.length > 0
+          const selectedImageRaw = generatedImages.length > 0 && selectedImageIndices.length > 0
             ? generatedImages[selectedImageIndices[0]].imageUrl
             : undefined;
+          const selectedImage = toPersistableMediaUrl(selectedImageRaw);
 
           // 3. Determine Tags (Category)
           const tags = generatedHashtags.length > 0
@@ -2435,7 +2449,7 @@ export default function JournalistPage() {
             deepDive: paragraphsForMeta.slice(splitIdx, Math.max(splitIdx * 2, splitIdx + 1)).join('\n\n').trim(),
             conclusion: paragraphsForMeta.slice(Math.max(splitIdx * 2, splitIdx + 1)).join('\n\n').trim(),
           };
-          const resolvedMediaSlots = resolveBoundMediaSlots(suggestedMediaSlots);
+          const resolvedMediaSlots = sanitizePersistedMediaSlots(suggestedMediaSlots);
           const contentWithMeta = withArticleMeta(articleContent, {
             sections: draftSections || inferredSectionsForMeta,
             mediaSlots: resolvedMediaSlots,
@@ -2473,6 +2487,13 @@ export default function JournalistPage() {
               intensity: publishIntensity,
             });
             toast({ title: "기사 발행 완료" });
+          }
+
+          if (!selectedImage && selectedImageRaw) {
+            toast({
+              title: '로컬 미디어는 기사 대표 이미지로 저장되지 않았습니다',
+              description: '브라우저 임시 URL(data/blob)은 서버 저장 시 제외했습니다.',
+            });
           }
 
           setPublishingStatus(prev => ({ ...prev, [platformId]: 'success' }));
