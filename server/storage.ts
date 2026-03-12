@@ -1781,6 +1781,19 @@ export class SupabaseStorage implements IStorage {
       updated_at: new Date().toISOString(),
     };
 
+    const { data: existingRow, error: existingError } = await supabase
+      .from("user_composed_articles")
+      .select("*")
+      .eq("id", safeArticleId)
+      .maybeSingle();
+
+    if (!existingError && existingRow) {
+      const mappedExisting = this.mapUserComposedArticle(existingRow);
+      this.fallbackUserComposedArticles.set(String(mappedExisting.id), mappedExisting);
+    } else if (existingError && !this.isMissingTableError(existingError) && !this.isRlsError(existingError)) {
+      throw existingError;
+    }
+
     const { data, error } = await supabase
       .from("user_composed_articles")
       .update(payload)
@@ -1793,8 +1806,32 @@ export class SupabaseStorage implements IStorage {
       this.fallbackUserComposedArticles.set(String(mapped.id), mapped);
       return mapped;
     }
-    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+    if (error && this.isRlsError(error)) {
+      throw new Error("Admin reader article approval is blocked by Supabase RLS. Check SUPABASE_SERVICE_ROLE_KEY for backend writes.");
+    }
+    if (error && !this.isMissingTableError(error)) {
       throw error;
+    }
+
+    const { data: refreshedRow, error: refreshedError } = await supabase
+      .from("user_composed_articles")
+      .select("*")
+      .eq("id", safeArticleId)
+      .maybeSingle();
+
+    if (!refreshedError && refreshedRow) {
+      const mappedRefreshed = this.mapUserComposedArticle(refreshedRow);
+      this.fallbackUserComposedArticles.set(String(mappedRefreshed.id), mappedRefreshed);
+      if (String(mappedRefreshed.submissionStatus || "pending") === safeSubmissionStatus) {
+        return mappedRefreshed;
+      }
+      throw new Error("Reader article exists, but the admin decision was not persisted.");
+    }
+    if (refreshedError && this.isRlsError(refreshedError)) {
+      throw new Error("Admin reader article approval is blocked by Supabase RLS. Check SUPABASE_SERVICE_ROLE_KEY for backend writes.");
+    }
+    if (refreshedError && !this.isMissingTableError(refreshedError)) {
+      throw refreshedError;
     }
 
     const fallback = this.fallbackUserComposedArticles.get(safeArticleId);

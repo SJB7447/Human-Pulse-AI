@@ -1520,11 +1520,20 @@ export default function AdminPage() {
         moderationMemo,
       });
       if (!updated) throw new Error('업데이트된 독자 기사를 찾지 못했습니다.');
-      setReaderArticles((prev) => [updated, ...prev.filter((row) => row.id !== article.id)]);
+      const nextReaderArticles = await DBService.getAdminReaderArticles().catch(() => null);
+      if (nextReaderArticles) {
+        setReaderArticles(
+          ((nextReaderArticles || []) as UserComposedArticleRecord[])
+            .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()),
+        );
+      } else {
+        setReaderArticles((prev) => [updated, ...prev.filter((row) => row.id !== article.id)]);
+      }
       toast({
         title: submissionStatus === 'approved' ? '독자 기사 승인 완료' : '독자 기사 반려 완료',
       });
     } catch (error: any) {
+      await fetchData('articles');
       toast({
         title: '독자 기사 상태 업데이트 실패',
         description: error?.message || '잠시 후 다시 시도해 주세요.',
