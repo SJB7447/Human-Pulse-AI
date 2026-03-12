@@ -132,8 +132,6 @@ function getRandomAuthor(id: number | string) {
   return MOCK_AUTHORS[numericId % MOCK_AUTHORS.length];
 }
 
-import { AIServiceError, GeminiService } from '@/services/gemini';
-import { useQueryClient } from '@tanstack/react-query';
 
 const NewsDetailModal = lazy(() =>
   import('@/components/NewsDetailModal').then((module) => ({ default: module.NewsDetailModal }))
@@ -168,8 +166,6 @@ export default function EmotionPage() {
   const { type } = useParams<{ type: EmotionType }>();
   const [mounted, setMounted] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<NewsItem | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
   const { user } = useEmotionStore();
   const { toast } = useToast();
@@ -408,30 +404,8 @@ export default function EmotionPage() {
     setLocation(`/emotion/${emotionType}`);
   };
 
-  const handleGenerateNewsWithAuth = async () => {
-    if (!user) {
-      toast({
-        title: "로그인 필요",
-        description: "AI 뉴스 생성은 로그인 후 이용 가능합니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (user.role !== 'journalist' && user.role !== 'admin') {
-      toast({
-        title: "권한 필요",
-        description: "기자 또는 관리자만 AI 뉴스를 생성할 수 있습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    await handleGenerateNews();
-  };
-
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === type);
   const Icon = type ? EMOTION_ICONS[type] : Heart;
-  const canGenerateAiNews = user?.role === 'journalist' || user?.role === 'admin';
 
   const getEmotionColor = (emotionType?: EmotionType | null) => {
     const config = EMOTION_CONFIG.find((entry) => entry.type === emotionType);
@@ -560,139 +534,6 @@ export default function EmotionPage() {
   );
   const peripheralRecommendations = type ? getPeripheralRecommendations(type) : [];
 
-  const handleGenerateNews = async () => {
-    if (!type) return;
-
-    if (!user) {
-      toast({
-        title: "로그인 필요",
-        description: "AI 뉴스 생성은 로그인 후 이용 가능합니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsGenerating(true);
-    try {
-      const authorId = String(user?.id || '').trim() || undefined;
-      const authorName = String(
-        user?.name ||
-        user?.email?.split('@')[0] ||
-        user?.email ||
-        ''
-      ).trim() || undefined;
-      const generatedItems = await GeminiService.generateNewsForEmotion(type);
-
-      const saveEligibleItems = generatedItems.filter((item) => {
-        if (item.fallbackUsed) return false;
-        const citations = Array.isArray(item.sourceCitation) ? item.sourceCitation : [];
-        return citations.some((citation) => /^https?:\/\//i.test(String(citation.url || '').trim()));
-      });
-      const fallbackItems = generatedItems.filter((item) => item.fallbackUsed);
-
-      if (saveEligibleItems.length === 0) {
-        const reason = fallbackItems[0]?.reasonCode || 'AI_NEWS_FALLBACK';
-        const reasonMessageMap: Record<string, string> = {
-          AI_NEWS_KEY_MISSING: '서버 Gemini API 키가 설정되지 않았습니다. .env의 GEMINI_API_KEY를 확인하세요.',
-          AI_NEWS_MODEL_TIMEOUT: 'Gemini 응답 시간이 초과되었습니다. 잠시 후 다시 시도하거나 timeout 설정을 늘려주세요.',
-          AI_NEWS_MODEL_ERROR: 'Gemini 호출 오류가 발생했습니다. 모델명/키 권한 상태를 점검하세요.',
-          AI_NEWS_MODEL_EMPTY: 'Gemini 응답이 비어 있어 생성하지 못했습니다.',
-          AI_NEWS_REFERENCE_REQUIRED: '레퍼런스 기사 기반 생성 조건을 충족하지 못했습니다.',
-          AI_NEWS_REFERENCE_OUT_OF_SCOPE: '출처 URL이 수집된 레퍼런스 범위를 벗어나 생성이 차단되었습니다.',
-          AI_NEWS_REFERENCE_WEAK_GROUNDING: '생성 본문이 레퍼런스 기사와 충분히 연결되지 않아 생성이 차단되었습니다.',
-          AI_NEWS_TITLE_COPY_DETECTED: '레퍼런스 제목과 유사도가 높아 생성이 차단되었습니다.',
-          AI_NEWS_CONTENT_COPY_DETECTED: '레퍼런스 본문/요약 복붙 패턴이 감지되어 생성이 차단되었습니다.',
-        };
-        toast({
-          title: "실시간 기사 생성 실패",
-          description: `${reasonMessageMap[reason] || '생성 결과가 fallback 상태라 저장하지 않았습니다.'} (${reason})`,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Save through server API to avoid client-side Supabase RLS insert failure.
-      const saveResults = await Promise.all(
-        saveEligibleItems.map(async (item) => {
-          const citations = (Array.isArray(item.sourceCitation) ? item.sourceCitation : [])
-            .filter((citation) => /^https?:\/\//i.test(String(citation.url || '').trim()))
-            .slice(0, 3);
-          const articleMeta = {
-            aiGenerated: true,
-            verified: true,
-            emotion: type,
-            sourceCitation: citations,
-            savedAt: new Date().toISOString(),
-          };
-          const contentWithMeta = `${item.content}\n\n${ARTICLE_META_OPEN}\n${JSON.stringify(articleMeta, null, 2)}\n${ARTICLE_META_CLOSE}`;
-          const response = await fetch('/api/articles', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              title: item.title,
-              summary: item.summary,
-              content: contentWithMeta,
-              source: citations[0]?.source || item.source,
-              emotion: type,
-              image: null,
-              category: 'AI Generated (Verified)',
-              intensity: 50,
-              authorId,
-              authorName,
-            }),
-          });
-
-          if (!response.ok) {
-            const payload = await response.json().catch(() => ({}));
-            throw new Error(payload.error || `Failed to save article (${response.status})`);
-          }
-
-          return response.json();
-        })
-      );
-
-      if (!saveResults.length) {
-        throw new Error("No generated articles were saved.");
-      }
-
-      await queryClient.invalidateQueries({ queryKey: ['news', type] });
-      if (fallbackItems.length > 0) {
-        toast({
-          title: "부분 생성 완료",
-          description: `정상 생성 ${saveEligibleItems.length}건 저장, fallback ${fallbackItems.length}건은 저장하지 않았습니다.`,
-        });
-      } else {
-        toast({
-          title: "생성 완료",
-          description: `AI 뉴스 ${saveEligibleItems.length}건을 생성해 목록에 반영했습니다.`,
-        });
-      }
-
-    } catch (e) {
-      console.error("News Generation Failed:", e);
-      const aiError = e as AIServiceError;
-      const rawMessage = e instanceof Error ? e.message : "Unknown error";
-      const looksLikeHtmlResponse = rawMessage.includes('non-JSON response') || rawMessage.includes('<!doctype') || rawMessage.includes('<html');
-      const isAuthError = aiError.status === 401 || aiError.status === 403;
-
-      if (isAuthError || (!user && looksLikeHtmlResponse)) {
-        toast({
-          title: "로그인 필요",
-          description: "AI 뉴스 생성은 로그인 후 이용 가능합니다.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "뉴스 생성 실패",
-          description: rawMessage,
-          variant: "destructive",
-        });
-      }
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -765,28 +606,6 @@ export default function EmotionPage() {
           <p className="text-human-sub text-sm">
             {filteredNews.length}/{news.length} articles
           </p>
-          {canGenerateAiNews && (
-            <div className="mt-4">
-              <Button
-                onClick={handleGenerateNewsWithAuth}
-                disabled={isGenerating}
-                className="w-full sm:w-auto border-0 bg-gradient-to-r from-[#a773f9] to-[#8b5cf6] hover:from-[#9564ed] hover:to-[#7c4deb] text-white transition-all duration-200"
-                size="sm"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin text-white" />
-                    AI 생성 중...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 mr-2 text-white" />
-                    AI 뉴스 생성 (Gemini)
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
         </motion.div>
 
         {isLoading ? (
@@ -808,25 +627,6 @@ export default function EmotionPage() {
         ) : news.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-human-sub mb-4" data-testid="text-empty">해당 감정에 등록된 뉴스가 없습니다. (데이터 0건)</p>
-            {canGenerateAiNews && (
-              <Button
-                onClick={handleGenerateNewsWithAuth}
-                disabled={isGenerating}
-                className="border-0 bg-gradient-to-r from-[#a773f9] to-[#8b5cf6] hover:from-[#9564ed] hover:to-[#7c4deb] text-white shadow-sm transform hover:scale-105 transition-all duration-200"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin text-white" />
-                    AI 생성 중...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 mr-2 text-white" />
-                    AI 뉴스 생성 (Gemini)
-                  </>
-                )}
-              </Button>
-            )}
             <p className="text-xs text-gray-400 mt-4">DB 연결은 정상이나 현재 표시할 뉴스 데이터가 없습니다.</p>
           </div>
         ) : (

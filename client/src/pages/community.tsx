@@ -36,6 +36,15 @@ const emotionColorMap = EMOTION_CONFIG.reduce<Record<string, string>>((acc, emot
   return acc;
 }, {});
 
+function getEmotionBadgeStyle(emotion: EmotionType) {
+  const color = emotionColorMap[emotion] || '#00abaf';
+  return {
+    color,
+    border: `1px solid ${color}66`,
+    backgroundColor: `${color}14`,
+  };
+}
+
 export default function CommunityPage() {
   const { toast } = useToast();
   const { user } = useEmotionStore();
@@ -557,7 +566,7 @@ export default function CommunityPage() {
         {!loading && !error && renderedItems.length > 0 && (
           <div className="columns-1 md:columns-2 lg:columns-3 gap-5 space-y-5">
             {renderedItems.map((item) => {
-              const emotionColor = emotionColorMap[item.emotion] || '#00abaf';
+              const badgeStyle = getEmotionBadgeStyle(item.emotion);
               return (
                 <article
                   key={item.id}
@@ -567,11 +576,7 @@ export default function CommunityPage() {
                   <div className="flex items-center justify-between mb-3">
                     <span
                       className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                      style={{
-                        color: emotionColor,
-                        border: `1px solid ${emotionColor}66`,
-                        backgroundColor: `${emotionColor}14`,
-                      }}
+                      style={badgeStyle}
                     >
                       {item.emotion}
                     </span>
@@ -585,7 +590,7 @@ export default function CommunityPage() {
 
                   {item.category && (
                     <div className="mb-2">
-                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                      <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={badgeStyle}>
                         {item.category}
                       </span>
                     </div>
@@ -648,7 +653,9 @@ export default function CommunityPage() {
               {selectedPost?.category ? (
                 <>
                   <span>·</span>
-                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{selectedPost.category}</span>
+                  <span className="px-2 py-0.5 rounded-full font-medium" style={getEmotionBadgeStyle(selectedPost.emotion)}>
+                    {selectedPost.category}
+                  </span>
                 </>
               ) : null}
             </div>
