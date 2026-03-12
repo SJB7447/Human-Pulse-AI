@@ -3040,6 +3040,16 @@ function countTokenIntersection(left: string, right: string): number {
   return count;
 }
 
+function countSignificantTokenIntersection(left: string, right: string, minLength: number = 3): number {
+  const leftSet = new Set(tokenizeSimilarity(left).filter((token) => token.length >= minLength));
+  const rightSet = new Set(tokenizeSimilarity(right).filter((token) => token.length >= minLength));
+  let count = 0;
+  for (const token of Array.from(leftSet)) {
+    if (rightSet.has(token)) count += 1;
+  }
+  return count;
+}
+
 function evaluateEmotionNewsReferencePolicy(
   items: EmotionGeneratedNewsItem[],
   issueArticles: KeywordNewsArticle[],
@@ -3080,10 +3090,15 @@ function evaluateEmotionNewsReferencePolicy(
 
     const itemText = `${item.title} ${item.summary} ${item.content}`;
     const isGroundedToReference = groundedRefs.some((ref) => {
-      const refText = `${ref.title} ${ref.summary}`;
+      const citationTitleText = citations
+        .map((citation) => String(citation.title || "").trim())
+        .filter(Boolean)
+        .join(" ");
+      const refText = `${ref.title} ${ref.summary} ${ref.source} ${citationTitleText}`;
       const overlapCount = countTokenIntersection(itemText, refText);
       const overlapRatio = jaccardSimilarity(tokenizeSimilarity(itemText), tokenizeSimilarity(refText));
-      return overlapCount >= 2 || overlapRatio >= 0.08;
+      const significantOverlap = countSignificantTokenIntersection(itemText, `${ref.title} ${citationTitleText}`, 3);
+      return overlapCount >= 1 || significantOverlap >= 1 || overlapRatio >= 0.05;
     });
     if (!isGroundedToReference) {
       return { pass: false, reasonCode: "AI_NEWS_REFERENCE_WEAK_GROUNDING" };

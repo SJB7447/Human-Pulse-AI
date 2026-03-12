@@ -526,6 +526,57 @@ export default function JournalistPage() {
     ];
   })();
 
+  const resolveBoundMediaSlots = (slots: MediaSlot[]): MediaSlot[] =>
+    slots.reduce<MediaSlot[]>((acc, slot) => {
+      const matchedAsset = mediaAssets.find((asset) => asset.key === slot.sourceAssetKey && asset.type === slot.type);
+      const fallbackAsset = mediaAssets.find((asset) => asset.type === slot.type);
+      const resolvedAsset = matchedAsset || fallbackAsset || null;
+
+      if (!resolvedAsset) return acc;
+      if (!['core', 'deepDive', 'conclusion'].includes(slot.anchorLabel)) return acc;
+      if (!['before', 'inline', 'after'].includes(slot.position)) return acc;
+
+      acc.push({
+        ...slot,
+        sourceAssetKey: resolvedAsset.key,
+        sourceUrl: resolvedAsset.url,
+        caption: String(slot.caption || '추천 미디어 배치').trim() || '추천 미디어 배치',
+      });
+      return acc;
+    }, []);
+
+  useEffect(() => {
+    if (mediaAssets.length === 0 || suggestedMediaSlots.length === 0) return;
+
+    const resolvedSlots = suggestedMediaSlots.reduce<MediaSlot[]>((acc, slot) => {
+      const matchedAsset = mediaAssets.find((asset) => asset.key === slot.sourceAssetKey && asset.type === slot.type);
+      const fallbackAsset = mediaAssets.find((asset) => asset.type === slot.type);
+      const resolvedAsset = matchedAsset || fallbackAsset || null;
+
+      if (!resolvedAsset) return acc;
+      if (!['core', 'deepDive', 'conclusion'].includes(slot.anchorLabel)) return acc;
+      if (!['before', 'inline', 'after'].includes(slot.position)) return acc;
+
+      acc.push({
+        ...slot,
+        sourceAssetKey: resolvedAsset.key,
+        sourceUrl: resolvedAsset.url,
+        caption: String(slot.caption || '추천 미디어 배치').trim() || '추천 미디어 배치',
+      });
+      return acc;
+    }, []);
+    const needsRepair =
+      resolvedSlots.length === suggestedMediaSlots.length &&
+      resolvedSlots.some((slot, index) =>
+        slot.sourceAssetKey !== suggestedMediaSlots[index]?.sourceAssetKey ||
+        slot.sourceUrl !== suggestedMediaSlots[index]?.sourceUrl,
+      );
+
+    if (needsRepair) {
+      setSuggestedMediaSlots(resolvedSlots);
+    }
+  }, [mediaAssets, suggestedMediaSlots]);
+
   const scrollToFlowSection = (key: keyof typeof flowCompletion) => {
     const sectionMap: Partial<Record<keyof typeof flowCompletion, { current: HTMLDivElement | null }>> = {
       step1: keywordSectionRef,
@@ -1108,11 +1159,18 @@ export default function JournalistPage() {
         const hasSourceBinding = Boolean(String(slot.sourceAssetKey || '').trim() || String(slot.sourceUrl || '').trim());
         if (!hasValidAnchor || !hasCaption) return true;
         if (!hasSourceBinding) return false;
-        return !matchedAsset || !String(slot.sourceUrl || '').trim();
+        return Boolean(slot.sourceAssetKey) && (!matchedAsset || !String(slot.sourceUrl || '').trim());
       },
     );
     if (invalidSlots.length > 0) {
       errors.push(`[${modeLabel}] 미디어 배치 정보가 유효하지 않습니다. 앵커/캡션/소스 연결을 확인해 주세요.`);
+    }
+
+    const unboundSlots = suggestedMediaSlots.filter(
+      (slot) => !String(slot.sourceAssetKey || '').trim() || !String(slot.sourceUrl || '').trim(),
+    );
+    if (unboundSlots.length > 0 && mediaAssets.length > 0) {
+      warnings.push(`[${modeLabel}] 일부 미디어 슬롯이 자동으로 첫 번째 사용 가능한 자산에 연결됩니다.`);
     }
 
     if (suggestedMediaSlots.length === 0 && draftMode === 'interactive-longform') {
@@ -2377,9 +2435,10 @@ export default function JournalistPage() {
             deepDive: paragraphsForMeta.slice(splitIdx, Math.max(splitIdx * 2, splitIdx + 1)).join('\n\n').trim(),
             conclusion: paragraphsForMeta.slice(Math.max(splitIdx * 2, splitIdx + 1)).join('\n\n').trim(),
           };
+          const resolvedMediaSlots = resolveBoundMediaSlots(suggestedMediaSlots);
           const contentWithMeta = withArticleMeta(articleContent, {
             sections: draftSections || inferredSectionsForMeta,
-            mediaSlots: suggestedMediaSlots,
+            mediaSlots: resolvedMediaSlots,
             sourceCitation: draftSourceCitation,
           });
           const ensuredSource =
