@@ -450,8 +450,7 @@ function parseDataUrlPayload(dataUrl: string): { mimeType: string; buffer: Buffe
 }
 
 function buildArticleMediaProxyUrl(req: any, objectPath: string, bucket: string = ARTICLE_MEDIA_BUCKET): string {
-  const baseUrl = resolveRequestBaseUrl(req);
-  return `${baseUrl}/api/media/object?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(objectPath)}`;
+  return `/api/media/object?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(objectPath)}`;
 }
 
 function createDraftOpsCounters(): DraftOpsCounters {

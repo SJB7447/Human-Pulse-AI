@@ -28,8 +28,27 @@ function coerceArrayPayload(payload: unknown, url: string): any[] {
     throw new Error(`API payload is not an array for ${url}`);
 }
 
+function normalizeAppMediaUrl(value: unknown): string | null {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    if (/^\/api\/media\/object\?/i.test(raw)) return raw;
+
+    if (/^https?:\/\//i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            if (parsed.pathname === '/api/media/object') {
+                return `${parsed.pathname}${parsed.search}`;
+            }
+        } catch {
+            return raw;
+        }
+    }
+
+    return raw;
+}
+
 function toNewsItem(item: any): NewsItem {
-    const resolvedImage = item.image || item.image_url || item.thumbnail_url || null;
+    const resolvedImage = normalizeAppMediaUrl(item.image || item.image_url || item.thumbnail_url || null);
     return {
         id: String(item.id),
         title: item.title,

@@ -34,6 +34,25 @@ type ArticleSourceCitation = {
   source?: string;
 };
 
+function normalizeAppMediaUrl(value: unknown): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^\/api\/media\/object\?/i.test(raw)) return raw;
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      if (parsed.pathname === '/api/media/object') {
+        return `${parsed.pathname}${parsed.search}`;
+      }
+    } catch {
+      return raw;
+    }
+  }
+
+  return raw;
+}
+
 function stripArticleMeta(content: string | null | undefined): string {
   const text = String(content || '');
   return text
@@ -71,7 +90,7 @@ function parseArticleMeta(content: string | null | undefined): {
             ? String(slot.position)
             : 'inline',
           caption: String(slot?.caption || ''),
-          sourceUrl: String(slot?.sourceUrl || ''),
+          sourceUrl: normalizeAppMediaUrl(slot?.sourceUrl),
         }))
         : [];
     return {
