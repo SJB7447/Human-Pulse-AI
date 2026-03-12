@@ -12,6 +12,7 @@ export interface NewsItem {
     emotion: EmotionType;
     intensity: number;
     created_at: string | null;
+    updated_at?: string | null;
 }
 
 function coerceArrayPayload(payload: unknown, url: string): any[] {
@@ -39,14 +40,20 @@ function toNewsItem(item: any): NewsItem {
         category: item.category || null,
         emotion: item.emotion as EmotionType,
         intensity: item.intensity || 50,
-        created_at: item.created_at || null,
+        created_at: item.created_at || item.createdAt || null,
+        updated_at: item.updated_at || item.updatedAt || null,
     };
 }
 
 async function safeFetchJson(url: string): Promise<any[]> {
     try {
         let response = await fetch(url, {
-            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+            headers: {
+                Accept: 'application/json',
+                'Cache-Control': 'no-cache',
+                Pragma: 'no-cache',
+            },
         });
 
         // Some CDNs/proxies can respond 304 to conditional GET; retry once with cache-busting.
@@ -169,9 +176,10 @@ export function useNews(emotion: EmotionType | undefined) {
             }
         },
         enabled: !!emotion,
-        staleTime: 60_000,
+        staleTime: 0,
         gcTime: 5 * 60_000,
-        refetchOnMount: false,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: true,
         refetchOnReconnect: true,
         retry: 1,
     });

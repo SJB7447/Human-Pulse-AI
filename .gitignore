@@ -5,3 +5,19 @@ server/public
 vite.config.ts.*
 *.tar.gz
 .env
+
+# Local temp and runtime logs
+.local/
+attached_assets/
+*.log
+*.out.log
+*.err.log
+.tmp-*.log
+tmp_*.json
+tmp_*.log
+
+# Runtime server artifacts
+server/data/ai_news_model_compare.jsonl
+server/data/ai_news_parse_failures.jsonl
+server/data/share_short_links_v1.json
+server/data/ai_news_ops_metrics.json

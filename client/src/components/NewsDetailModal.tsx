@@ -725,7 +725,10 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const [revealedParagraphCount, setRevealedParagraphCount] = useState(1);
   const [hasStartedScrollReveal, setHasStartedScrollReveal] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const proseSectionRef = useRef<HTMLDivElement | null>(null);
+  const nextHandoffRef = useRef<HTMLDivElement | null>(null);
   const recommendationSectionRef = useRef<HTMLDivElement | null>(null);
+  const footerActionSectionRef = useRef<HTMLDivElement | null>(null);
   const dialogPanelRef = useRef<HTMLDivElement | null>(null);
   const insightPanelRef = useRef<HTMLDivElement | null>(null);
   const opinionComposerPanelRef = useRef<HTMLDivElement | null>(null);
@@ -929,35 +932,20 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       return;
     }
 
-    // Start reveal quickly to avoid "stuck first paragraph" feeling.
-    if (node.scrollTop > 2) {
-      setHasStartedScrollReveal(true);
-      if (totalParagraphs > 1) {
-        setRevealedParagraphCount((prev) => Math.max(prev, 2));
-      }
-    }
-
-    // Piecewise reveal:
-    // - early section: hold back (avoid too-early reveal)
-    // - mid/late section: accelerate (avoid late tail reveal)
-    // - near end: flush all
+    const proseNode = proseSectionRef.current;
+    const nextHandoffNode = nextHandoffRef.current;
+    const recommendationNode = recommendationSectionRef.current;
+    const footerNode = footerActionSectionRef.current;
+    const revealBoundaryNode = nextHandoffNode || recommendationNode || footerNode || proseNode;
+    const revealBoundaryTop = revealBoundaryNode
+      ? Math.max(0, revealBoundaryNode.offsetTop - Math.round(node.clientHeight * 0.34))
+      : maxScroll;
+    const revealMaxScroll = Math.max(1, Math.min(maxScroll, Math.round(revealBoundaryTop * 0.82)));
+    const revealProgress = Math.max(0, Math.min(1, node.scrollTop / revealMaxScroll));
     const revealSpan = Math.max(1, totalParagraphs - 1);
-    const earlyThreshold = 0.2;
-    const lateThreshold = 0.82;
-    let normalized = 0;
-    if (progress <= earlyThreshold) {
-      normalized = (progress / earlyThreshold) * 0.08;
-    } else if (progress <= lateThreshold) {
-      normalized = 0.08 + ((progress - earlyThreshold) / (lateThreshold - earlyThreshold)) * 0.74;
-    } else {
-      normalized = 0.82 + ((progress - lateThreshold) / (1 - lateThreshold)) * 0.18;
-    }
-    const steppedReveal = 1 + Math.floor(Math.max(0, Math.min(1, normalized)) * revealSpan);
-    const nearBottom = progress >= (totalParagraphs >= 10 ? 0.88 : 0.92);
-    const targetReveal = nearBottom
-      ? totalParagraphs
-      : Math.max(1, Math.min(totalParagraphs, steppedReveal));
-    setRevealedParagraphCount((prev) => Math.max(prev, Math.min(totalParagraphs, targetReveal)));
+    const targetReveal = 1 + Math.round(revealProgress * revealSpan);
+    setHasStartedScrollReveal(node.scrollTop > 4);
+    setRevealedParagraphCount((prev) => Math.max(prev, Math.max(1, Math.min(totalParagraphs, targetReveal))));
   };
 
   useEffect(() => {
@@ -975,15 +963,6 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       const entry = entries[0];
       if (!entry || !entry.isIntersecting || hasLoggedFirstIntersect) return;
       hasLoggedFirstIntersect = true;
-      const elapsedMs = modalOpenedAtRef.current > 0 ? (Date.now() - modalOpenedAtRef.current) : 0;
-      if (import.meta.env.DEV) {
-        console.info('[NewsDetailModal][IO-AB]', {
-          articleId: article.id,
-          threshold: recommendationObserverThreshold,
-          ratio: Number(entry.intersectionRatio.toFixed(3)),
-          elapsedMs,
-        });
-      }
     }, {
       root: rootNode,
       threshold: [0, recommendationObserverThreshold],
@@ -1305,9 +1284,11 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
       if (anchor === 'conclusion') return Math.max(0, proseBlocks.length - 1);
       return Math.max(0, Math.floor(proseBlocks.length / 2));
     };
+    const heroSource = String(article?.image || '').trim();
+    let skippedHeroDuplicate = false;
     return articleMeta.mediaSlots
       .map((slot) => {
-        const source = String(slot.sourceUrl || '').trim() || String(article?.image || '').trim();
+        const source = String(slot.sourceUrl || '').trim();
         if (!source) return null;
         return {
           ...slot,
@@ -1315,7 +1296,19 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
           targetIndex: anchorIndex(String(slot.anchorLabel || 'deepDive')),
         };
       })
-      .filter((slot): slot is ArticleMediaSlot & { targetIndex: number; source: string } => Boolean(slot));
+      .filter((slot): slot is ArticleMediaSlot & { targetIndex: number; source: string } => Boolean(slot))
+      .filter((slot) => {
+        if (
+          skippedHeroDuplicate ||
+          slot.type !== 'image' ||
+          !heroSource ||
+          slot.source !== heroSource
+        ) {
+          return true;
+        }
+        skippedHeroDuplicate = true;
+        return false;
+      });
   }, [articleMeta.mediaSlots, proseBlocks.length, article?.image]);
 
   useEffect(() => {
@@ -1691,7 +1684,12 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                     )}
                   </div>
 
-                  <div id="news-detail-content" className="font-normal text-[17px] md:text-[18px] leading-8 md:leading-9 mb-12 min-h-[120px] whitespace-pre-wrap tracking-wide" style={{ color: articleTextToken.detailBody }}>
+                  <div
+                    id="news-detail-content"
+                    ref={proseSectionRef}
+                    className="font-normal text-[17px] md:text-[18px] leading-8 md:leading-9 mb-12 min-h-[120px] whitespace-pre-wrap tracking-wide"
+                    style={{ color: articleTextToken.detailBody }}
+                  >
                 {interactiveArticle ? (
                   <div className="bg-white/5 p-6 rounded-xl border border-white/10 shadow-inner">
                     <div className="flex justify-between items-center mb-4">
@@ -1819,6 +1817,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
 
                   {showNextHandoffCue && (
                 <motion.div
+                  ref={nextHandoffRef}
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
                   transition={{ duration: shouldReduceMotion ? 0.1 : 0.25 }}
@@ -1868,6 +1867,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                       const recommendationTextColor = recommendationTextToken.usesLightText ? '#ffffff' : '#232221';
                       const recommendationSubTextColor = recommendationTextToken.body;
                       const compactCategory = formatRecommendationCategory(item.category, itemEmotionMeta.label);
+                      const hasRecommendationImage = Boolean(String(item.image || '').trim());
                       return (
                         <button
                           key={item.id}
@@ -1876,20 +1876,20 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                             onSelectArticle?.(item);
                             scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="flex items-stretch gap-3 md:block md:gap-0 text-left rounded-2xl overflow-hidden transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-700 focus-visible:ring-offset-2 h-full"
+                          className="flex h-[208px] md:h-[224px] flex-col text-left rounded-2xl overflow-hidden transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-700 focus-visible:ring-offset-2"
                           style={{
                             background: palette.background,
                             color: recommendationTextColor,
                           }}
                         >
-                          <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-full md:aspect-[4/3] shrink-0 rounded-none overflow-hidden bg-white/20">
-                            {item.image && (
-                              <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-                            )}
+                          <div className={`h-[92px] md:h-[96px] w-full overflow-hidden ${hasRecommendationImage ? 'bg-white/20' : ''}`}>
+                            {hasRecommendationImage ? (
+                              <img src={String(item.image || '')} alt={item.title} className="w-full h-full object-cover" />
+                            ) : null}
                           </div>
-                          <div className="p-3 flex-1 min-w-0 flex flex-col">
-                            <div className="flex items-start justify-between gap-2 mb-1.5">
-                              <p className="text-[11px] leading-4 min-w-0 line-clamp-2 break-all pr-1" style={{ color: recommendationSubTextColor }}>{compactCategory}</p>
+                          <div className="flex min-h-0 flex-1 flex-col p-3">
+                            <div className="mb-2 flex h-[22px] items-start justify-between gap-2">
+                              <p className="text-[11px] leading-4 min-w-0 line-clamp-1 break-all pr-1" style={{ color: recommendationSubTextColor }}>{compactCategory}</p>
                               <span
                                 className="text-[10px] px-2 py-0.5 rounded-full border shrink-0"
                                 style={isBalanceItem
@@ -1907,8 +1907,8 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                                 {isBalanceItem ? '균형 추천' : '연결 추천'}
                               </span>
                             </div>
-                            <p className="text-sm font-semibold line-clamp-1 md:line-clamp-2" style={{ color: recommendationTextColor }}>{item.title}</p>
-                            <p className="mt-1 text-xs line-clamp-1" style={{ color: recommendationSubTextColor }}>{item.summary}</p>
+                            <p className="min-h-[50px] text-sm font-semibold line-clamp-2" style={{ color: recommendationTextColor }}>{item.title}</p>
+                            <p className="mt-2 text-xs leading-4 line-clamp-2" style={{ color: recommendationSubTextColor }}>{item.summary}</p>
                           </div>
                         </button>
                       );
@@ -1918,7 +1918,7 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
                   )}
 
                   {/* Footer Action Buttons */}
-                  <div className="mt-6 max-w-3xl mx-auto p-2 border border-black/10 bg-white/58 backdrop-blur rounded-2xl">
+                  <div ref={footerActionSectionRef} className="mt-6 max-w-3xl mx-auto p-2 border border-black/10 bg-white/58 backdrop-blur rounded-2xl">
                     <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-center gap-1.5 sm:gap-2">
                       <Button
                         variant="ghost"

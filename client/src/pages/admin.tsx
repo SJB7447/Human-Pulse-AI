@@ -4,6 +4,7 @@ import { DBService, type ApiHealthPayload, type UserComposedArticleRecord } from
 import { useEmotionStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle,
   ChevronLeft,
@@ -496,6 +497,7 @@ export default function AdminPage() {
   const [editingContent, setEditingContent] = useState('');
   const [editingSource, setEditingSource] = useState('');
   const [editingImage, setEditingImage] = useState('');
+  const [editingImagePrompt, setEditingImagePrompt] = useState('');
   const [imagePreviewUrl, setImagePreviewUrl] = useState('');
   const [isGeneratingEditImage, setIsGeneratingEditImage] = useState(false);
   const [savingArticleContent, setSavingArticleContent] = useState(false);
@@ -516,6 +518,21 @@ export default function AdminPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { user } = useEmotionStore();
+  const queryClient = useQueryClient();
+
+  const buildAdminImagePrompt = (article: AdminArticle | null) => {
+    if (!article) return '';
+    const title = String(article.title || '').trim();
+    const summary = String(article.summary || '').trim();
+    const source = String(article.source || '').trim();
+    return [
+      `대표 기사 이미지 프롬프트`,
+      title ? `주제: ${title}` : '',
+      summary ? `맥락: ${summary}` : '',
+      source ? `출처 톤 참고: ${source}` : '',
+      '요구사항: 텍스트 오버레이 없음, 워터마크 없음, 로고 없음, 16:9 보도사진 스타일',
+    ].filter(Boolean).join('\n');
+  };
 
   const fetchData = async (targetTab: AdminTabKey = activeTab) => {
     try {
@@ -690,6 +707,7 @@ export default function AdminPage() {
     setEditingContent(stripArticleMetaForEditor(selectedArticle.content));
     setEditingSource(String(selectedArticle.source || ''));
     setEditingImage(String(selectedArticle.image || ''));
+    setEditingImagePrompt(buildAdminImagePrompt(selectedArticle));
   }, [selectedArticle]);
 
   useEffect(() => {
@@ -777,6 +795,7 @@ export default function AdminPage() {
         category: nextCategory,
       });
       applyLocalArticlePatch(selectedArticle.id, { emotion: nextEmotion, category: nextCategory });
+      await queryClient.invalidateQueries({ queryKey: ['news'] });
       toast({
         title: '카테고리 업데이트 완료',
         description: `감정 ${nextEmotion.toUpperCase()} / 카테고리 ${nextCategory}로 저장했습니다.`,
@@ -820,6 +839,7 @@ export default function AdminPage() {
         image: nextImage || null,
       });
       applyLocalArticlePatch(selectedArticle.id, normalizeAdminArticle(updated));
+      await queryClient.invalidateQueries({ queryKey: ['news'] });
       toast({
         title: '기사 수정 완료',
         description: '제목/요약/본문/출처/이미지가 저장되었습니다.',
@@ -878,22 +898,7 @@ export default function AdminPage() {
         loadGeminiModule(),
         loadImageCropModule(),
       ]);
-      const promptSpec = JSON.stringify({
-        language: 'en',
-        task: 'news_editorial_image',
-        directive: `Generate a representative editorial image for: ${editingTitle || 'news article'}`,
-        hard_constraints: [
-          'No text overlay',
-          'No watermark',
-          'No logo',
-          '16:9 composition',
-        ],
-        output: {
-          aspect_ratio: '16:9',
-          style: 'photorealistic editorial',
-        },
-      }, null, 2);
-
+      const promptSpec = String(editingImagePrompt || '').trim() || buildAdminImagePrompt(selectedArticle);
       const result = await GeminiService.generateImage(articleSeed, 1, promptSpec);
       const nextImageRaw = String(result?.images?.[0]?.url || '').trim();
       if (!nextImageRaw) {
@@ -902,6 +907,10 @@ export default function AdminPage() {
       }
       const croppedImage = await centerCropToAspectRatioDataUrl(nextImageRaw, 16, 9);
       setEditingImage(croppedImage || nextImageRaw);
+      const returnedPrompt = String(result?.images?.[0]?.prompt || '').trim();
+      if (returnedPrompt) {
+        setEditingImagePrompt(returnedPrompt);
+      }
       const observed = String(result?.images?.[0]?.aspectRatioObserved || '').trim();
       const model = String(result?.model || '').trim();
       toast({
@@ -954,6 +963,7 @@ export default function AdminPage() {
 
     try {
       await DBService.updateArticle(id, { isPublished: !currentStatus });
+      await queryClient.invalidateQueries({ queryKey: ['news'] });
       toast({
         title: '상태 변경 완료',
         description: !currentStatus ? '기사가 공개 상태로 변경되었습니다.' : '기사가 숨김 상태로 변경되었습니다.',
@@ -3175,13 +3185,22 @@ export default function AdminPage() {
                         이미지 삭제
                       </Button>
                     </div>
-                    <input
-                      type="text"
-                      value={editingImage}
-                      onChange={(e) => setEditingImage(e.target.value)}
-                      className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                      placeholder="이미지 URL (업로드/AI 생성 시 자동 입력)"
+                    <textarea
+                      value={editingImagePrompt}
+                      onChange={(e) => setEditingImagePrompt(e.target.value)}
+                      className="min-h-[88px] w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 resize-y"
+                      placeholder="이미지 프롬프트를 수정한 뒤 AI 이미지 재생성을 눌러주세요."
                     />
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                      <p className="text-[11px] font-medium text-gray-600">현재 이미지 소스</p>
+                      <p className="mt-1 break-all text-[11px] text-gray-500">
+                        {editingImage
+                          ? (/^data:image\//i.test(editingImage)
+                            ? 'AI/업로드 이미지가 data URL로 편집 상태에 저장되어 있습니다.'
+                            : editingImage)
+                          : '등록된 이미지가 없습니다.'}
+                      </p>
+                    </div>
                     {editingImage ? (
                       <button
                         type="button"

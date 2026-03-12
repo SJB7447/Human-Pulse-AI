@@ -295,13 +295,6 @@ export default function EmotionPage() {
       consumedArticleIdsRef.current.add(articleId);
       sameEmotionConsumeRef.current = consumedArticleIdsRef.current.size;
       setSameEmotionConsumeCount(sameEmotionConsumeRef.current);
-      if (import.meta.env.DEV) {
-        console.info('[PeripheralNudge.consume]', {
-          articleId,
-          reason,
-          consumeCount: sameEmotionConsumeRef.current,
-        });
-      }
     };
 
     if (detailQuickConsumeTimerRef.current) {
@@ -337,13 +330,6 @@ export default function EmotionPage() {
     consumedArticleIdsRef.current.add(articleId);
     sameEmotionConsumeRef.current = consumedArticleIdsRef.current.size;
     setSameEmotionConsumeCount(sameEmotionConsumeRef.current);
-    if (import.meta.env.DEV) {
-      console.info('[PeripheralNudge.consume]', {
-        articleId,
-        reason: evidence,
-        consumeCount: sameEmotionConsumeRef.current,
-      });
-    }
   };
 
   useEffect(() => {
@@ -595,9 +581,7 @@ export default function EmotionPage() {
         user?.email ||
         ''
       ).trim() || undefined;
-      console.log("Generating news for:", type);
       const generatedItems = await GeminiService.generateNewsForEmotion(type);
-      console.log("Generated Items:", generatedItems);
 
       const saveEligibleItems = generatedItems.filter((item) => {
         if (item.fallbackUsed) return false;

@@ -397,7 +397,6 @@ export default function JournalistPage() {
   const [showUploadModal, setShowUploadModal] = useState<'image' | 'video' | null>(null);
   const [uploadedImages, setUploadedImages] = useState<{ name: string; url: string; size: number }[]>([]);
   const [uploadedVideos, setUploadedVideos] = useState<{ name: string; url: string; size: number }[]>([]);
-  const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
   const MAX_TOTAL_SIZE = 500 * 1024 * 1024; // 500MB
   const fileInputRef = useRef<HTMLInputElement>(null);
   const keywordSectionRef = useRef<HTMLDivElement | null>(null);
@@ -549,6 +548,29 @@ export default function JournalistPage() {
   const toPersistableMediaUrl = (value: string | undefined): string => {
     const raw = String(value || '').trim();
     return /^https?:\/\//i.test(raw) ? raw : '';
+  };
+
+  const sameMediaSource = (left: string | undefined, right: string | undefined): boolean => {
+    const normalizedLeft = toPersistableMediaUrl(left);
+    const normalizedRight = toPersistableMediaUrl(right);
+    return Boolean(normalizedLeft) && normalizedLeft === normalizedRight;
+  };
+
+  const buildSentimentSnapshotFromArticle = (article: any) => {
+    const emotion = emotionOptions.includes(String(article?.emotion || '') as EmotionOption)
+      ? String(article.emotion) as EmotionOption
+      : 'spectrum';
+    const storedIntensity = Math.max(0, Math.min(100, Number(article?.intensity || 0)));
+    const baseValue = emotion === 'spectrum' ? 20 : 15;
+    return {
+      vibrance: emotion === 'vibrance' ? storedIntensity : baseValue,
+      immersion: emotion === 'immersion' ? storedIntensity : baseValue,
+      clarity: emotion === 'clarity' ? storedIntensity : baseValue,
+      gravity: emotion === 'gravity' ? storedIntensity : baseValue,
+      serenity: emotion === 'serenity' ? storedIntensity : baseValue,
+      dominantEmotion: emotion,
+      feedback: '기존 기사에 저장된 감정 데이터를 불러왔습니다.',
+    };
   };
 
   useEffect(() => {
@@ -1275,6 +1297,14 @@ export default function JournalistPage() {
       clearTimeout(analysisTimeoutRef.current);
     }
 
+    if (isEditingMode) {
+      return () => {
+        if (analysisTimeoutRef.current) {
+          clearTimeout(analysisTimeoutRef.current);
+        }
+      };
+    }
+
     if (articleContent.trim().length >= 100) {
       analysisTimeoutRef.current = setTimeout(() => {
         handleAnalyzeSentiment();
@@ -1286,7 +1316,7 @@ export default function JournalistPage() {
         clearTimeout(analysisTimeoutRef.current);
       }
     };
-  }, [articleContent, handleAnalyzeSentiment]);
+  }, [articleContent, handleAnalyzeSentiment, isEditingMode]);
 
   useEffect(() => {
     if (!isEmotionManuallySelected) {
@@ -1523,9 +1553,71 @@ export default function JournalistPage() {
     setSearchKeyword(article.title);
     setArticleOutline('');
     const parsed = parseArticleMeta(article.content || '');
+    const restoredCoverImageUrl = toPersistableMediaUrl(article.image);
+    const restoredImageUrls = new Map<string, number>();
+    const restoredImageCards: { imageUrl: string; description: string; prompt?: string }[] = [];
+    const restoredVideos: { name: string; url: string; size: number }[] = [];
+    const registerRestoredImage = (url: string, description: string) => {
+      const normalizedUrl = toPersistableMediaUrl(url);
+      if (!normalizedUrl) return -1;
+      const existingIndex = restoredImageUrls.get(normalizedUrl);
+      if (typeof existingIndex === 'number') return existingIndex;
+      const nextIndex = restoredImageCards.push({
+        imageUrl: normalizedUrl,
+        description,
+        prompt: description,
+      }) - 1;
+      restoredImageUrls.set(normalizedUrl, nextIndex);
+      return nextIndex;
+    };
+
+    if (restoredCoverImageUrl) {
+      registerRestoredImage(restoredCoverImageUrl, '기존 대표 이미지');
+    }
+
+    const restoredMediaSlots = (parsed.mediaSlots || []).map((slot, index) => {
+      const sourceUrl = toPersistableMediaUrl(slot.sourceUrl);
+      if (!sourceUrl) {
+        return {
+          ...slot,
+          sourceAssetKey: '',
+          sourceUrl: '',
+        };
+      }
+
+      if (slot.type === 'video') {
+        const assetIndex = restoredVideos.push({
+          name: `기존 영상 ${restoredVideos.length + 1}`,
+          url: sourceUrl,
+          size: 0,
+        }) - 1;
+        return {
+          ...slot,
+          sourceAssetKey: `upload-video-${assetIndex}`,
+          sourceUrl,
+        };
+      }
+
+      const assetIndex = registerRestoredImage(
+        sourceUrl,
+        sameMediaSource(sourceUrl, restoredCoverImageUrl)
+          ? '기존 대표 이미지'
+          : `기존 본문 이미지 ${index + 1}`,
+      );
+      return {
+        ...slot,
+        sourceAssetKey: assetIndex >= 0 ? `gen-image-${assetIndex}` : '',
+        sourceUrl,
+      };
+    });
+
+    setGeneratedImages(restoredImageCards);
+    setSelectedImageIndices(restoredImageCards.length > 0 ? [0] : []);
+    setUploadedImages([]);
+    setUploadedVideos(restoredVideos);
     setArticleContent(parsed.plainText || '');
     setDraftSections(parsed.sections || null);
-    setSuggestedMediaSlots(parsed.mediaSlots || []);
+    setSuggestedMediaSlots(restoredMediaSlots);
     setDraftSourceCitation(
       parsed.sourceCitation || {
         title: String(article.title || '').trim(),
@@ -1533,6 +1625,14 @@ export default function JournalistPage() {
         url: '',
       },
     );
+    setSentimentData(buildSentimentSnapshotFromArticle(article));
+    setSelectedPublishEmotion(
+      emotionOptions.includes(String(article?.emotion || '') as EmotionOption)
+        ? String(article.emotion) as EmotionOption
+        : 'spectrum',
+    );
+    setIsEmotionManuallySelected(false);
+    setPendingAutoEmotion(null);
     setWizardStep(3);
     // Restore tags if possible (simple split)
     if (article.category) {
@@ -1563,6 +1663,11 @@ export default function JournalistPage() {
     setSelectedHashtagIndices([]);
     setOptimizedTitles([]);
     setSuggestedMediaSlots([]);
+    setGeneratedImages([]);
+    setSelectedImageIndices([]);
+    setGeneratedVideos([]);
+    setUploadedImages([]);
+    setUploadedVideos([]);
     setImagePromptInput('');
     setVideoPromptInput('');
     setDraftBlockingError('');
@@ -1600,6 +1705,7 @@ export default function JournalistPage() {
     setSelectedTitleIndex(null);
     setSuggestedMediaSlots([]);
     setGeneratedImages([]);
+    setSelectedImageIndices([]);
     setGeneratedVideos([]);
     setUploadedImages([]);
     setUploadedVideos([]);
@@ -2162,24 +2268,6 @@ export default function JournalistPage() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleGoogleDriveUpload = async () => {
-    setIsUploadingToDrive(true);
-    try {
-      // Simulate Google Drive picker - in production, use Google Picker API
-      toast({
-        title: 'Google Drive 연동',
-        description: 'Google Drive API 연동이 필요합니다. 관리자에게 문의하세요.',
-      });
-      // 아니오te: For actual implementation, use:
-      // gapi.load('picker', () => { ... }) or @react-google-drive-picker
-    } catch (error) {
-      toast({ title: 'Google Drive 연결 실패', variant: 'destructive' });
-    } finally {
-      setIsUploadingToDrive(false);
-      setShowUploadModal(null);
-    }
-  };
-
   const removeUploadedFile = (type: 'image' | 'video', index: number) => {
     if (type === 'image') {
       setUploadedImages(prev => prev.filter((_, i) => i !== index));
@@ -2563,9 +2651,21 @@ export default function JournalistPage() {
               };
             }),
           )).filter(Boolean) as MediaSlot[];
+          let skippedCoverDuplicate = false;
+          const normalizedMediaSlots = resolvedMediaSlots.filter((slot) => {
+            if (
+              skippedCoverDuplicate ||
+              slot.type !== 'image' ||
+              !sameMediaSource(slot.sourceUrl, selectedImage)
+            ) {
+              return true;
+            }
+            skippedCoverDuplicate = true;
+            return false;
+          });
           const contentWithMeta = withArticleMeta(articleContent, {
             sections: draftSections || inferredSectionsForMeta,
-            mediaSlots: resolvedMediaSlots,
+            mediaSlots: normalizedMediaSlots,
             sourceCitation: draftSourceCitation,
           });
           const ensuredSource =
@@ -3150,7 +3250,10 @@ export default function JournalistPage() {
                 <div className="flex flex-wrap gap-2 mb-4">
                   <GlassButton
                     variant="outline"
-                    onClick={() => setShowUploadModal('image')}
+                    onClick={() => {
+                      setShowUploadModal('image');
+                      fileInputRef.current?.click();
+                    }}
                     disabled={unlockedWizardStep < 3}
                     data-testid="button-upload-image"
                   >
@@ -3158,7 +3261,10 @@ export default function JournalistPage() {
                     이미지 업로드                  </GlassButton>
                   <GlassButton
                     variant="outline"
-                    onClick={() => setShowUploadModal('video')}
+                    onClick={() => {
+                      setShowUploadModal('video');
+                      fileInputRef.current?.click();
+                    }}
                     disabled={unlockedWizardStep < 3}
                     data-testid="button-upload-video"
                   >
@@ -3314,6 +3420,46 @@ export default function JournalistPage() {
                               </pre>
                             </details>
                           )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(uploadedImages.length > 0 || uploadedVideos.length > 0) && (
+                  <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <p className="text-sm font-medium text-slate-800">
+                        업로드한 미디어 ({formatFileSize(getTotalUploadedSize())} / 500MB)
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      {uploadedImages.map((img, i) => (
+                        <div key={`uploaded-inline-image-${i}`} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-2">
+                          <img
+                            src={img.url}
+                            alt={img.name}
+                            className="h-14 w-20 rounded object-cover"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-slate-800">{img.name}</p>
+                            <p className="text-xs text-slate-500">{formatFileSize(img.size)}</p>
+                          </div>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => removeUploadedFile('image', i)}>
+                            삭제
+                          </Button>
+                        </div>
+                      ))}
+                      {uploadedVideos.map((vid, i) => (
+                        <div key={`uploaded-inline-video-${i}`} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-2">
+                          <Video className="h-10 w-10 text-slate-400" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-slate-800">{vid.name}</p>
+                            <p className="text-xs text-slate-500">{formatFileSize(vid.size)}</p>
+                          </div>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => removeUploadedFile('video', i)}>
+                            삭제
+                          </Button>
                         </div>
                       ))}
                     </div>
@@ -4396,73 +4542,9 @@ export default function JournalistPage() {
         type="file"
         ref={fileInputRef}
         onChange={handleLocalFileUpload}
-        accept={showUploadModal === 'image' ? 'image/*' : 'video/*'}
+        accept={showUploadModal === 'video' ? 'video/*' : 'image/*'}
         className="hidden"
       />
-
-      {/* Upload Modal */}
-      {
-        showUploadModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowUploadModal(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                {showUploadModal === 'image' ? '이미지 업로드' : '영상 업로드'}
-              </h3>
-
-              <p className="text-xs text-gray-500 mb-4">
-                총 용량 제한: 500MB (현재: {formatFileSize(getTotalUploadedSize())})
-              </p>
-
-              <div className="space-y-3">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-colors flex flex-col items-center gap-2"
-                >
-                  <Upload className="w-8 h-8 text-gray-400" />
-                  <span className="text-sm font-medium text-gray-700">로컬 파일 선택</span>
-                  <span className="text-xs text-gray-500">컴퓨터에서 파일 선택</span>
-                </button>
-
-                <button
-                  onClick={handleGoogleDriveUpload}
-                  disabled={isUploadingToDrive}
-                  className="w-full p-4 border-2 border-gray-200 rounded-xl hover:border-green-400 hover:bg-green-50 transition-colors flex flex-col items-center gap-2"
-                >
-                  <svg className="w-8 h-8" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
-                    <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
-                    <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47" />
-                    <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.5l5.85 13.8z" fill="#ea4335" />
-                    <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
-                    <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
-                    <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
-                  </svg>
-                  <span className="text-sm font-medium text-gray-700">
-                    {isUploadingToDrive ? '연결 중...' : 'Google Drive'}
-                  </span>
-                  <span className="text-xs text-gray-500">드라이브에서 파일 선택</span>
-                </button>
-              </div>
-
-              <button
-                onClick={() => setShowUploadModal(null)}
-                className="mt-4 w-full text-sm text-gray-500 hover:text-gray-700"
-              >
-                취소
-              </button>
-            </motion.div>
-          </motion.div>
-        )
-      }
 
       {previewImageUrl && (
         <motion.div
@@ -4493,38 +4575,6 @@ export default function JournalistPage() {
         </motion.div>
       )}
 
-      {/* Uploaded Files Display */}
-      {
-        (uploadedImages.length > 0 || uploadedVideos.length > 0) && (
-          <div className="fixed bottom-4 right-4 bg-white rounded-2xl p-4 shadow-lg border border-gray-200 max-w-xs z-40">
-            <p className="text-sm font-medium text-gray-800 mb-2">
-              최근 업로드한 파일 ({formatFileSize(getTotalUploadedSize())} / 500MB)
-            </p>
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {uploadedImages.map((img, i) => (
-                <div key={`img-${i}`} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg">
-                  <img src={img.url} alt={img.name} className="w-10 h-10 object-cover rounded" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-700 truncate">{img.name}</p>
-                    <p className="text-xs text-gray-400">{formatFileSize(img.size)}</p>
-                  </div>
-                  <button onClick={() => removeUploadedFile('image', i)} className="text-red-400 hover:text-red-600">삭제</button>
-                </div>
-              ))}
-              {uploadedVideos.map((vid, i) => (
-                <div key={`vid-${i}`} className="flex items-center gap-2 bg-gray-50 p-2 rounded-lg">
-                  <Video className="w-10 h-10 text-gray-400" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-700 truncate">{vid.name}</p>
-                    <p className="text-xs text-gray-400">{formatFileSize(vid.size)}</p>
-                  </div>
-                  <button onClick={() => removeUploadedFile('video', i)} className="text-red-400 hover:text-red-600">삭제</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      }
     </div >
   );
 }

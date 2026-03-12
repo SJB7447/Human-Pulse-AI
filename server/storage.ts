@@ -10,6 +10,77 @@ const sanitizeUuidOrNull = (value: unknown): string | null => {
   return UUID_REGEX.test(normalized) ? normalized : null;
 };
 
+const canonicalizeNewsSource = (value: unknown): string => {
+  const raw = String(value || "").trim();
+  if (!raw || !/^https?:\/\//i.test(raw)) return raw;
+
+  try {
+    const parsed = new URL(raw);
+    parsed.hash = "";
+
+    if (parsed.hostname === "news.google.com" && parsed.pathname.includes("/rss/articles/")) {
+      parsed.pathname = parsed.pathname.replace("/rss/articles/", "/articles/");
+    }
+
+    [
+      "utm_source",
+      "utm_medium",
+      "utm_campaign",
+      "utm_content",
+      "utm_term",
+      "ved",
+      "usg",
+      "oc",
+      "hl",
+      "gl",
+      "ceid",
+    ].forEach((key) => parsed.searchParams.delete(key));
+
+    return parsed.toString();
+  } catch {
+    return raw;
+  }
+};
+
+const getNewsRowTimestamp = (row: any): number => {
+  const raw = row?.updatedAt ?? row?.updated_at ?? row?.createdAt ?? row?.created_at ?? 0;
+  const parsed = new Date(raw).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const getNewsRowScore = (row: any): number => {
+  let score = 0;
+  if (isPublishedVisible(row)) score += 8;
+  if (String(row?.image || "").trim()) score += 4;
+  if (String(row?.summary || "").trim()) score += 2;
+  score += Math.min(String(row?.content || "").trim().length, 4000) / 1000;
+  score += Math.min(String(row?.title || "").trim().length, 300) / 100;
+  score += getNewsRowTimestamp(row) / 1_000_000_000_000;
+  return score;
+};
+
+const pickPreferredNewsRow = (left: NewsItem, right: NewsItem): NewsItem => {
+  return getNewsRowScore(right) >= getNewsRowScore(left) ? right : left;
+};
+
+const collapseDuplicateNewsRows = (rows: NewsItem[]): NewsItem[] => {
+  const bySource = new Map<string, NewsItem>();
+  const withoutSourceKey: NewsItem[] = [];
+
+  for (const row of rows) {
+    const sourceKey = canonicalizeNewsSource((row as any)?.source);
+    if (!sourceKey || !/^https?:\/\//i.test(sourceKey)) {
+      withoutSourceKey.push(row);
+      continue;
+    }
+
+    const existing = bySource.get(sourceKey);
+    bySource.set(sourceKey, existing ? pickPreferredNewsRow(existing, row) : row);
+  }
+
+  return withoutSourceKey.concat(Array.from(bySource.values()));
+};
+
 const isPublishedVisible = (row: any): boolean => {
   if (typeof row?.isPublished === "boolean") return row.isPublished;
   if (typeof row?.is_published === "boolean") return row.is_published;
@@ -765,7 +836,7 @@ export class SupabaseStorage implements IStorage {
     const merged = new Map<string, NewsItem>();
     dbRows.forEach((row) => merged.set(String(row.id), row));
     this.fallbackNews.forEach((row, id) => merged.set(String(id), row));
-    return Array.from(merged.values()).sort((a, b) => {
+    return collapseDuplicateNewsRows(Array.from(merged.values())).sort((a, b) => {
       const bt = new Date((b as any).createdAt || (b as any).created_at || 0).getTime();
       const at = new Date((a as any).createdAt || (a as any).created_at || 0).getTime();
       return bt - at;

@@ -1554,11 +1554,11 @@ function parseJsonFromModelText<T>(raw: string): T | null {
   return null;
 }
 
-const FIXED_GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image-002";
+const FIXED_GEMINI_IMAGE_MODEL = String(process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image").trim() || "gemini-2.5-flash-image";
 const GEMINI_IMAGE_MODEL_FALLBACKS = [
   FIXED_GEMINI_IMAGE_MODEL,
-  "gemini-2.5-flash-image",
-  "gemini-2.5-flash-image-001",
+  "gemini-3.1-flash-image-preview",
+  "gemini-3-pro-image-preview",
 ] as const;
 const FIXED_GEMINI_VIDEO_MODEL = String(process.env.GEMINI_VIDEO_MODEL || "veo-3.1-fast-generate-preview").trim() || "veo-3.1-fast-generate-preview";
 const VIDEO_GENERATION_ASPECT_RATIO = "16:9";
@@ -7889,8 +7889,26 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  const canonicalizeArticleSource = (value: unknown): string => {
+    const raw = String(value || "").trim();
+    if (!raw || !/^https?:\/\//i.test(raw)) return raw;
+
+    try {
+      const parsed = new URL(raw);
+      parsed.hash = "";
+      if (parsed.hostname === "news.google.com" && parsed.pathname.includes("/rss/articles/")) {
+        parsed.pathname = parsed.pathname.replace("/rss/articles/", "/articles/");
+      }
+      ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "ved", "usg", "oc", "hl", "gl", "ceid"]
+        .forEach((key) => parsed.searchParams.delete(key));
+      return parsed.toString();
+    } catch {
+      return raw;
+    }
+  };
+
   const deriveArticleSource = (payload: any): string => {
-    const direct = String(payload?.source || "").trim();
+    const direct = canonicalizeArticleSource(payload?.source);
     if (direct) return direct.slice(0, 240);
 
     const content = String(payload?.content || "");
@@ -7902,7 +7920,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         .find(Boolean) || "";
       const url = firstLine.match(/https?:\/\/[^\s)]+/i)?.[0] || "";
       const withoutUrl = firstLine.replace(/https?:\/\/[^\s)]+/ig, "").replace(/[()]/g, "").trim();
-      const extracted = (withoutUrl || url).trim();
+      const extracted = canonicalizeArticleSource((withoutUrl || url).trim());
       if (extracted) return extracted.slice(0, 240);
     }
 

@@ -15,11 +15,11 @@ const parser = new Parser({
 // 1. Supabase 諛?Gemini ?ㅼ젙
 const apiKey = process.env.GEMINI_API_KEY || "";
 const genAI = new GoogleGenerativeAI(apiKey);
-const FIXED_GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image-002";
+const FIXED_GEMINI_IMAGE_MODEL = String(process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image").trim() || "gemini-2.5-flash-image";
 const GEMINI_IMAGE_MODEL_FALLBACKS = [
     FIXED_GEMINI_IMAGE_MODEL,
-    "gemini-2.5-flash-image",
-    "gemini-2.5-flash-image-001",
+    "gemini-3.1-flash-image-preview",
+    "gemini-3-pro-image-preview",
 ] as const;
 
 // 援??蹂?RSS 二쇱냼
@@ -95,6 +95,38 @@ const EMOTION_ALIAS_MAP: Record<string, EmotionType> = {
     균형: 'spectrum',
     중립: 'spectrum',
 };
+
+function canonicalizeSourceUrl(value: string): string {
+    const raw = String(value || "").trim();
+    if (!raw || !/^https?:\/\//i.test(raw)) return raw;
+
+    try {
+        const parsed = new URL(raw);
+        parsed.hash = '';
+
+        if (parsed.hostname === 'news.google.com' && parsed.pathname.includes('/rss/articles/')) {
+            parsed.pathname = parsed.pathname.replace('/rss/articles/', '/articles/');
+        }
+
+        [
+            'utm_source',
+            'utm_medium',
+            'utm_campaign',
+            'utm_content',
+            'utm_term',
+            'ved',
+            'usg',
+            'oc',
+            'hl',
+            'gl',
+            'ceid',
+        ].forEach((key) => parsed.searchParams.delete(key));
+
+        return parsed.toString();
+    } catch {
+        return raw;
+    }
+}
 
 function normalizeEmotionKey(raw: unknown): EmotionType | null {
     const text = String(raw || "").trim().toLowerCase();
@@ -318,10 +350,12 @@ export async function runAutoNewsUpdate(options: Partial<AutoNewsUpdateOptions> 
     await pMap(allCandidates, async (item) => {
         try {
             // ??1?④퀎: 以묐났 湲곗궗 泥댄겕
+            const canonicalSource = canonicalizeSourceUrl(item.link);
+            const sourceCandidates = Array.from(new Set([String(item.link || "").trim(), canonicalSource].filter(Boolean)));
             const { data: existing } = await supabase
                 .from('news_items')
                 .select('id')
-                .eq('source', item.link)
+                .in('source', sourceCandidates)
                 .maybeSingle();
 
             if (existing) {
@@ -404,7 +438,7 @@ export async function runAutoNewsUpdate(options: Partial<AutoNewsUpdateOptions> 
                 title: aiResult.title || `[${item.country.toUpperCase()}] ${item.title}`,
                 content: safeContent,
                 summary: item.contentSnippet || safeContent.substring(0, 100),
-                source: item.link,
+                source: canonicalSource || item.link,
                 emotion: mappedEmotion,
                 image: imageUrl,
                 category: mappedCategory,
