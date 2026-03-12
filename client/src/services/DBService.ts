@@ -261,6 +261,14 @@ const uniqueNormalized = (values: unknown[]): Set<string> => {
     return out;
 };
 
+const blobToDataUrl = (blob: Blob): Promise<string> =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('Failed to read blob as data URL'));
+        reader.readAsDataURL(blob);
+    });
+
 export const DBService = {
     async getCurrentUser() {
         const { data: { user } } = await supabase.auth.getUser();
@@ -331,6 +339,39 @@ export const DBService = {
             throw await createApiError(response, 'Failed to save article');
         }
 
+        return await response.json();
+    },
+
+    async uploadArticleMedia(input: {
+        sourceUrl: string;
+        kind: 'image' | 'video';
+        hint?: string;
+    }): Promise<{ url: string; path: string; bucket: string; mimeType?: string; size?: number }> {
+        const sourceUrl = String(input.sourceUrl || '').trim();
+        if (!sourceUrl) throw new Error('sourceUrl is required');
+        if (/^https?:\/\//i.test(sourceUrl)) {
+            return { url: sourceUrl, path: '', bucket: '', mimeType: undefined, size: undefined };
+        }
+
+        let dataUrl = sourceUrl;
+        if (!/^data:/i.test(sourceUrl)) {
+            const response = await fetch(sourceUrl);
+            if (!response.ok) throw new Error('미디어 소스를 읽지 못했습니다.');
+            const blob = await response.blob();
+            dataUrl = await blobToDataUrl(blob);
+        }
+
+        const response = await fetch('/api/media/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...buildActorHeaders() },
+            body: JSON.stringify({
+                dataUrl,
+                kind: input.kind,
+                hint: String(input.hint || input.kind).slice(0, 80),
+            }),
+        });
+
+        if (!response.ok) throw await createApiError(response, 'Failed to upload article media');
         return await response.json();
     },
 

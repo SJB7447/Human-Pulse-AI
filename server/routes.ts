@@ -6,6 +6,7 @@ import path from "path";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleGenAI, type GenerateVideosOperation, type GenerateVideosSource, type Image } from "@google/genai";
 import { storage } from "./storage.js";
+import { supabase } from "./supabase.js";
 import { runAutoNewsUpdate } from "./services/newsCron.js";
 import { emotionTypes, type EmotionType } from "../shared/schema.js";
 import { buildDraftGenerationPrompt, normalizeDraftMode, type DraftMode } from "./services/articlePrompt.js";
@@ -212,6 +213,7 @@ const shareShortLinksBySlug = new Map<string, ShareShortLinkRecord>();
 const shareShortLinksByTarget = new Map<string, string>();
 let shareShortLinksHydrated = false;
 let shareShortLinksPersistScheduled = false;
+const ARTICLE_MEDIA_BUCKET = String(process.env.SUPABASE_ARTICLE_MEDIA_BUCKET || "article-media").trim() || "article-media";
 const SHORT_LINK_PATH_PREFIX = String(process.env.SHARE_SHORT_PATH_PREFIX || "").trim().replace(/^\/+|\/+$/g, "");
 const SHORT_LINK_SLUG_LENGTH = Math.max(4, Math.min(Number(process.env.SHARE_SHORT_SLUG_LENGTH || 6), 12));
 const SHORT_LINK_DISPLAY_MAX_LENGTH = 20;
@@ -422,6 +424,34 @@ function toShortDisplayUrl(shortUrl: string): string {
   const head = withoutProtocol.slice(0, 12);
   const tail = withoutProtocol.slice(-5);
   return `${head}...${tail}`;
+}
+
+function parseDataUrlPayload(dataUrl: string): { mimeType: string; buffer: Buffer; extension: string } | null {
+  const match = String(dataUrl || "").match(/^data:(image\/[a-zA-Z0-9.+-]+|video\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/i);
+  if (!match) return null;
+  const mimeType = String(match[1] || "").toLowerCase();
+  const base64 = String(match[2] || "").trim();
+  if (!base64) return null;
+  const buffer = Buffer.from(base64, "base64");
+  if (!buffer.length) return null;
+
+  const extensionMap: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/quicktime": "mov",
+  };
+  const extension = extensionMap[mimeType] || (mimeType.startsWith("image/") ? "png" : "bin");
+  return { mimeType, buffer, extension };
+}
+
+function buildArticleMediaProxyUrl(req: any, objectPath: string, bucket: string = ARTICLE_MEDIA_BUCKET): string {
+  const baseUrl = resolveRequestBaseUrl(req);
+  return `${baseUrl}/api/media/object?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(objectPath)}`;
 }
 
 function createDraftOpsCounters(): DraftOpsCounters {
@@ -7878,6 +7908,85 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
     return "출처 확인 필요";
   };
+
+  app.post("/api/media/upload", async (req, res) => {
+    const actor = resolveActor(req);
+    if (!["admin", "journalist"].includes(actor.actorRole)) {
+      return res.status(403).json({
+        error: "미디어 업로드 권한이 없습니다.",
+        code: "MEDIA_UPLOAD_FORBIDDEN",
+      });
+    }
+
+    const dataUrl = String(req.body?.dataUrl || "").trim();
+    const kind = String(req.body?.kind || "image").trim().toLowerCase();
+    const hint = String(req.body?.hint || kind).trim().replace(/[^a-z0-9_-]/gi, "-").slice(0, 80) || kind;
+    const parsed = parseDataUrlPayload(dataUrl);
+    if (!parsed) {
+      return res.status(400).json({
+        error: "유효한 data URL(base64) 미디어가 필요합니다.",
+        code: "MEDIA_UPLOAD_INVALID_DATA_URL",
+      });
+    }
+
+    const allowedKind = kind === "video" ? "video" : "image";
+    if (!parsed.mimeType.startsWith(`${allowedKind}/`)) {
+      return res.status(400).json({
+        error: `${allowedKind} 형식의 미디어만 업로드할 수 있습니다.`,
+        code: "MEDIA_UPLOAD_KIND_MISMATCH",
+      });
+    }
+
+    const ownerToken = normalizeOwnerToken(actor.actorId || actor.actorName || "anonymous") || "anonymous";
+    const objectPath = `${allowedKind}s/${ownerToken}/${new Date().toISOString().slice(0, 10)}/${randomUUID()}-${hint}.${parsed.extension}`;
+
+    const { error } = await supabase.storage
+      .from(ARTICLE_MEDIA_BUCKET)
+      .upload(objectPath, parsed.buffer, {
+        contentType: parsed.mimeType,
+        upsert: false,
+        cacheControl: "31536000",
+      });
+
+    if (error) {
+      console.error("[MEDIA_UPLOAD] storage upload failed:", error);
+      return res.status(502).json({
+        error: "미디어 저장에 실패했습니다.",
+        code: "MEDIA_UPLOAD_FAILED",
+        detail: String((error as any)?.message || "unknown"),
+      });
+    }
+
+    return res.status(201).json({
+      bucket: ARTICLE_MEDIA_BUCKET,
+      path: objectPath,
+      url: buildArticleMediaProxyUrl(req, objectPath, ARTICLE_MEDIA_BUCKET),
+      mimeType: parsed.mimeType,
+      size: parsed.buffer.byteLength,
+    });
+  });
+
+  app.get("/api/media/object", async (req, res) => {
+    const bucket = String(req.query.bucket || ARTICLE_MEDIA_BUCKET).trim() || ARTICLE_MEDIA_BUCKET;
+    const objectPath = String(req.query.path || "").trim();
+    if (!objectPath) {
+      return res.status(400).json({ error: "path is required." });
+    }
+
+    const { data, error } = await supabase.storage.from(bucket).download(objectPath);
+    if (error || !data) {
+      return res.status(404).json({
+        error: "미디어를 찾을 수 없습니다.",
+        code: "MEDIA_NOT_FOUND",
+      });
+    }
+
+    const arrayBuffer = await data.arrayBuffer();
+    const contentType = data.type || "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return res.send(Buffer.from(arrayBuffer));
+  });
 
   app.post("/api/articles", async (req, res) => {
     const articleData = {

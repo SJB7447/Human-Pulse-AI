@@ -550,14 +550,6 @@ export default function JournalistPage() {
     return /^https?:\/\//i.test(raw) ? raw : '';
   };
 
-  const sanitizePersistedMediaSlots = (slots: MediaSlot[]): MediaSlot[] =>
-    resolveBoundMediaSlots(slots)
-      .map((slot) => ({
-        ...slot,
-        sourceUrl: toPersistableMediaUrl(slot.sourceUrl),
-      }))
-      .filter((slot) => Boolean(slot.sourceUrl));
-
   useEffect(() => {
     if (mediaAssets.length === 0 || suggestedMediaSlots.length === 0) return;
 
@@ -2402,6 +2394,7 @@ export default function JournalistPage() {
     if (isPublishingInProgress) return;
     const finalPublishEmotion = effectivePublishEmotion;
     setIsPublishingInProgress(true);
+    const persistedMediaCache = new Map<string, string>();
     // Process each platform
     const promises = selectedPlatforms.map(async (platformId) => {
       setPublishingStatus(prev => ({ ...prev, [platformId]: 'loading' }));
@@ -2424,7 +2417,6 @@ export default function JournalistPage() {
           const selectedImageRaw = generatedImages.length > 0 && selectedImageIndices.length > 0
             ? generatedImages[selectedImageIndices[0]].imageUrl
             : undefined;
-          const selectedImage = toPersistableMediaUrl(selectedImageRaw);
 
           // 3. Determine Tags (Category)
           const tags = generatedHashtags.length > 0
@@ -2449,7 +2441,37 @@ export default function JournalistPage() {
             deepDive: paragraphsForMeta.slice(splitIdx, Math.max(splitIdx * 2, splitIdx + 1)).join('\n\n').trim(),
             conclusion: paragraphsForMeta.slice(Math.max(splitIdx * 2, splitIdx + 1)).join('\n\n').trim(),
           };
-          const resolvedMediaSlots = sanitizePersistedMediaSlots(suggestedMediaSlots);
+          const boundMediaSlots = resolveBoundMediaSlots(suggestedMediaSlots);
+          const persistMediaSource = async (sourceUrl: string | undefined, kind: 'image' | 'video', hint: string) => {
+            const raw = String(sourceUrl || '').trim();
+            if (!raw) return '';
+            if (/^https?:\/\//i.test(raw)) return raw;
+            const cached = persistedMediaCache.get(raw);
+            if (cached) return cached;
+            const uploaded = await DBService.uploadArticleMedia({ sourceUrl: raw, kind, hint });
+            persistedMediaCache.set(raw, uploaded.url);
+            return uploaded.url;
+          };
+
+          const selectedImage = await persistMediaSource(
+            selectedImageRaw,
+            'image',
+            `cover-${emotionLabel}`,
+          );
+          const resolvedMediaSlots = (await Promise.all(
+            boundMediaSlots.map(async (slot, idx) => {
+              const persistedUrl = await persistMediaSource(
+                slot.sourceUrl,
+                slot.type,
+                `${slot.type}-${slot.anchorLabel}-${idx + 1}`,
+              );
+              if (!persistedUrl) return null;
+              return {
+                ...slot,
+                sourceUrl: persistedUrl,
+              };
+            }),
+          )).filter(Boolean) as MediaSlot[];
           const contentWithMeta = withArticleMeta(articleContent, {
             sections: draftSections || inferredSectionsForMeta,
             mediaSlots: resolvedMediaSlots,
@@ -2487,13 +2509,6 @@ export default function JournalistPage() {
               intensity: publishIntensity,
             });
             toast({ title: "기사 발행 완료" });
-          }
-
-          if (!selectedImage && selectedImageRaw) {
-            toast({
-              title: '로컬 미디어는 기사 대표 이미지로 저장되지 않았습니다',
-              description: '브라우저 임시 URL(data/blob)은 서버 저장 시 제외했습니다.',
-            });
           }
 
           setPublishingStatus(prev => ({ ...prev, [platformId]: 'success' }));
