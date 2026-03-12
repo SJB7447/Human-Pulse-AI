@@ -96,7 +96,7 @@ const PLATFORM_SETTINGS: Record<string, {
       '이미지 alt 텍스트 추가',
     ],
     bestTimes: '오전 8-9시, 오후 12-1시, 저녁 6-8시',
-    contentFormat: 'HTML 기사 형식, 최소 500자 권장',
+    contentFormat: '텍스트 기사 형식, 최소 500자 권장',
   },
   instagram: {
     deploymentGuide: [
@@ -440,6 +440,7 @@ export default function JournalistPage() {
 
   const hasAngerWarning = sentimentData.immersion > 40;
   const hasPublishErrors = Object.values(publishingStatus).includes('error');
+  const isEditingMode = Boolean(editingArticleId);
   const autoRecommendedEmotion: EmotionOption = emotionOptions.includes(sentimentData.dominantEmotion as EmotionOption)
     ? (sentimentData.dominantEmotion as EmotionOption)
     : 'spectrum';
@@ -455,18 +456,18 @@ export default function JournalistPage() {
     ? recommendedArticles.find((row) => row.id === selectedRecommendedArticleId) || null
     : null;
   const publishStageRequirements: Array<{ key: 'step3' | 'step4'; label: string; done: boolean }> = [
-    { key: 'step3', label: '추천 기사 선택', done: Boolean(selectedRecommendedArticle) },
+    { key: 'step3', label: isEditingMode ? '기존 기사 불러오기' : '추천 기사 선택', done: isEditingMode || Boolean(selectedRecommendedArticle) },
     { key: 'step4', label: '본문 작성', done: Boolean(articleContent.trim()) },
   ];
   const missingPublishRequirements = publishStageRequirements.filter((item) => !item.done);
   const canEnterPublishStage = Boolean(
-    selectedRecommendedArticle &&
+    (isEditingMode || selectedRecommendedArticle) &&
     articleContent.trim(),
   );
   const flowCompletion = {
-    step1: recommendedArticles.length > 0,
-    step2: recommendedArticles.length >= 5,
-    step3: Boolean(selectedRecommendedArticle),
+    step1: isEditingMode || recommendedArticles.length > 0,
+    step2: isEditingMode || recommendedArticles.length >= 5,
+    step3: isEditingMode || Boolean(selectedRecommendedArticle),
     step4: Boolean(articleContent.trim()),
     step5: uploadedImages.length + uploadedVideos.length + generatedImages.length + generatedVideos.length > 0,
     step51: Boolean(generatedImages.length > 0 || generatedVideos.length > 0),
@@ -612,7 +613,9 @@ export default function JournalistPage() {
     if (!canEnterPublishStage) {
       toast({
         title: '배포 준비 단계 진입 조건 미충족',
-        description: '추천 기사 선택 + 본문 작성이 필요합니다.',
+        description: isEditingMode
+          ? '기존 기사 본문 작성이 필요합니다.'
+          : '추천 기사 선택 + 본문 작성이 필요합니다.',
         variant: 'destructive',
       });
       if (scrollToMissing && missingPublishRequirements.length > 0) {
@@ -1022,6 +1025,49 @@ export default function JournalistPage() {
     return `[${safeTitle}]\n\n${nextBody}`.trim();
   };
 
+  const decodeDraftHtmlEntities = (input: string): string =>
+    String(input || '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'");
+
+  const sanitizeDraftTextForEditor = (input: string): string => {
+    const decoded = decodeDraftHtmlEntities(String(input || ''))
+      .replace(/^```(?:json|html|markdown|md)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .replace(/<\s*br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|section|article|li|h[1-6])>/gi, '\n\n')
+      .replace(/<(p|div|section|article|ul|ol|li|h[1-6])[^>]*>/gi, '\n')
+      .replace(/<strong[^>]*>/gi, '')
+      .replace(/<\/strong>/gi, '')
+      .replace(/<em[^>]*>/gi, '')
+      .replace(/<\/em>/gi, '')
+      .replace(/<code[^>]*>/gi, '')
+      .replace(/<\/code>/gi, '')
+      .replace(/<pre[^>]*>/gi, '\n')
+      .replace(/<\/pre>/gi, '\n')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/^\s*`{1,3}\s*$/gm, '')
+      .replace(/\r\n/g, '\n');
+
+    return decoded
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter((line, index, lines) => Boolean(line) || (index > 0 && index < lines.length - 1))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  };
+
+  const sanitizeDraftSectionsForEditor = (sections?: { core?: string; deepDive?: string; conclusion?: string } | null) => ({
+    core: sanitizeDraftTextForEditor(String(sections?.core || '')),
+    deepDive: sanitizeDraftTextForEditor(String(sections?.deepDive || '')),
+    conclusion: sanitizeDraftTextForEditor(String(sections?.conclusion || '')),
+  });
+
   const handleRegenerateDraftSection = async (section: DraftSectionKey) => {
     if (!selectedRecommendedArticle) {
       toast({ title: '추천 기사 선택 후 진행해 주세요', variant: 'destructive' });
@@ -1057,7 +1103,8 @@ export default function JournalistPage() {
         },
       });
 
-      const nextSections = result.sections || inferSectionsFromPlainText(result.content);
+      const sanitizedContent = sanitizeDraftTextForEditor(result.content);
+      const nextSections = sanitizeDraftSectionsForEditor(result.sections || inferSectionsFromPlainText(sanitizedContent));
       setDraftSections(nextSections || null);
       setComplianceResult(result.compliance || null);
       if (result.sourceCitation) {
@@ -1067,7 +1114,7 @@ export default function JournalistPage() {
           source: String(result.sourceCitation.source || '').trim(),
         });
       }
-      setArticleContent(composeDraftBodyFromSections(result.title || title, result.content, nextSections));
+      setArticleContent(composeDraftBodyFromSections(result.title || title, sanitizedContent, nextSections));
       setDraftSectionIssues((prev) => ({ ...prev, [section]: [] }));
       setLastAiFailedStep(null);
       setLastAiErrorMessage('');
@@ -1530,6 +1577,49 @@ export default function JournalistPage() {
     setSelectedPublishEmotion('spectrum');
     setIsEmotionManuallySelected(false);
   };
+
+  const resetAuthoringFormAfterPublish = () => {
+    clearWizardSnapshot();
+    setPendingWizardSnapshot(null);
+    setShowRestoreDraftBanner(false);
+    setEditingArticleId(null);
+    setPreviewArticle(null);
+    setSearchKeyword('');
+    setArticleOutline('');
+    setArticleContent('');
+    setDraftSections(null);
+    setDraftSourceCitation(null);
+    setSearchResults(null);
+    setRecommendedArticles([]);
+    setSelectedRecommendedArticleId(null);
+    setDraftMode('draft');
+    setWizardStep(1);
+    setGeneratedHashtags([]);
+    setSelectedHashtagIndices([]);
+    setOptimizedTitles([]);
+    setSelectedTitleIndex(null);
+    setSuggestedMediaSlots([]);
+    setGeneratedImages([]);
+    setGeneratedVideos([]);
+    setUploadedImages([]);
+    setUploadedVideos([]);
+    setImagePromptInput('');
+    setVideoPromptInput('');
+    setDraftBlockingError('');
+    setDraftBlockingIssues([]);
+    setDraftBlockingCode('');
+    setPublishGateFeedback(null);
+    setArticleOutline('');
+    setSentimentData({
+      vibrance: 20, immersion: 20, clarity: 20, gravity: 20, serenity: 20,
+      dominantEmotion: 'spectrum',
+      feedback: '기사 내용을 작성하면 감정 분석을 시작합니다.'
+    });
+    setSelectedPublishEmotion('spectrum');
+    setIsEmotionManuallySelected(false);
+    setPendingAutoEmotion(null);
+    setActiveComposeStage('author');
+  };
   // --- End of My Articles Handlers ---
 
   const handleSearchKeyword = async () => {
@@ -1678,8 +1768,9 @@ export default function JournalistPage() {
         setDraftBlockingError('초안 생성이 실패했습니다. 현재 결과는 임시 템플릿으로 판단되어 본문 반영을 차단했습니다. 다시 시도해 주세요.');
         return;
       }
-      const nextSections = result.sections || inferSectionsFromPlainText(result.content);
-      const generatedContent = composeDraftBodyFromSections(result.title, result.content, nextSections);
+      const sanitizedContent = sanitizeDraftTextForEditor(result.content);
+      const nextSections = sanitizeDraftSectionsForEditor(result.sections || inferSectionsFromPlainText(sanitizedContent));
+      const generatedContent = composeDraftBodyFromSections(result.title, sanitizedContent, nextSections);
       setArticleContent(generatedContent);
       setDraftSections(nextSections || null);
       setDraftSourceCitation(
@@ -2516,6 +2607,7 @@ export default function JournalistPage() {
             ...prev,
             [platformId]: `/emotion/${emotionLabel}?id=${data.id}`
           }));
+          return { platformId, success: true as const };
 
         } else {
           // Mock simulation for other platforms
@@ -2527,6 +2619,7 @@ export default function JournalistPage() {
             ...prev,
             [platformId]: `https://${platformId}.com/article/${Date.now()}`
           }));
+          return { platformId, success: true as const };
         }
       } catch (error: any) {
         console.error(`Publishing failed for ${platformId}:`, error);
@@ -2535,12 +2628,18 @@ export default function JournalistPage() {
           ...prev,
           [platformId]: `오류: ${error.message}`
         }));
+        return { platformId, success: false as const };
       }
     });
 
-    await Promise.all(promises);
+    const results = await Promise.all(promises);
     setIsPublishingComplete(true);
     setIsPublishingInProgress(false);
+    if (results.every((item) => item.success)) {
+      resetAuthoringFormAfterPublish();
+      void fetchMyArticles();
+      updateJournalistViewHistory('write', { replace: true });
+    }
   };
 
   const togglePlatform = (platformId: string) => {
