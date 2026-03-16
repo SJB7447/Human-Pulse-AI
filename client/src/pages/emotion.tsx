@@ -66,6 +66,25 @@ function normalizeCategoryLabel(rawCategory: string | null | undefined): string 
   return value.length <= 12 ? value : `${value.slice(0, 12)}…`;
 }
 
+function extractCategoryLabels(rawCategory: string | null | undefined): string[] {
+  const value = String(rawCategory || '').trim();
+  if (!value) return ['기타'];
+
+  const hashtagMatches = value.match(/#[^\s#]+/g);
+  const baseTokens = hashtagMatches && hashtagMatches.length > 0
+    ? hashtagMatches
+    : value.split(/[,\n]+/).flatMap((chunk) => chunk.split(/\s+/));
+
+  const labels = baseTokens
+    .map((token) => String(token || '').trim())
+    .filter(Boolean)
+    .map((token) => token.replace(/^#+/, '').trim())
+    .filter(Boolean)
+    .map((token) => normalizeCategoryLabel(token));
+
+  return Array.from(new Set(labels.length > 0 ? labels : [normalizeCategoryLabel(value)]));
+}
+
 const MOCK_AUTHORS = [
   { name: 'Kim J.', avatar: null },
   { name: 'Lee S.', avatar: null },
@@ -502,7 +521,7 @@ export default function EmotionPage() {
   const categoryOptions = useMemo(() => {
     const labels = new Set<string>();
     for (const item of news) {
-      labels.add(normalizeCategoryLabel(item.category));
+      extractCategoryLabels(item.category).forEach((label) => labels.add(label));
     }
     return Array.from(labels).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko'));
   }, [news]);
@@ -525,7 +544,7 @@ export default function EmotionPage() {
     }
 
     if (categoryFilter !== 'all') {
-      rows = rows.filter((item) => normalizeCategoryLabel(item.category) === categoryFilter);
+      rows = rows.filter((item) => extractCategoryLabels(item.category).includes(categoryFilter));
     }
 
     rows.sort((a, b) => {

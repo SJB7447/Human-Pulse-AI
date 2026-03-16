@@ -213,6 +213,26 @@ const extractCategoryTokens = (value: unknown): string[] => {
   return Array.from(new Set(tokens));
 };
 
+const extractHashtagTokens = (value: unknown): string[] => {
+  const text = String(value || '').trim();
+  if (!text) return [];
+  const hashtagMatches = text.match(/#[^\s#]+/g);
+  const rawTokens = hashtagMatches && hashtagMatches.length > 0
+    ? hashtagMatches
+    : text.split(/[,\n]+/).flatMap((chunk) => chunk.split(/\s+/));
+
+  return Array.from(
+    new Set(
+      rawTokens
+        .map((token) => String(token || '').trim())
+        .filter(Boolean)
+        .map((token) => (token.startsWith('#') ? token : `#${token.replace(/^#+/, '')}`))
+        .map((token) => token.replace(/[.,/]+$/g, ''))
+        .filter((token) => token.length > 1),
+    ),
+  );
+};
+
 const getEmotionVisual = (emotionRaw: unknown): { key: string; label: string; color: string } => {
   const key = String(emotionRaw || '').trim().toLowerCase();
   const config = EMOTION_CONFIG.find((row) => row.type === key);
@@ -1474,6 +1494,10 @@ export default function JournalistPage() {
     () => filteredMyArticles.filter((article) => selectedArticleIds.has(String(article.id))).length,
     [filteredMyArticles, selectedArticleIds],
   );
+  const normalizedGeneratedHashtags = useMemo(
+    () => generatedHashtags.flatMap((tag) => extractHashtagTokens(tag)),
+    [generatedHashtags],
+  );
 
   const allFilteredSelected = filteredMyArticles.length > 0 && selectedFilteredCount === filteredMyArticles.length;
 
@@ -2598,8 +2622,8 @@ export default function JournalistPage() {
             : undefined;
 
           // 3. Determine Tags (Category)
-          const tags = generatedHashtags.length > 0
-            ? generatedHashtags.map(t => t.startsWith('#') ? t : `#${t}`).join(' ')
+          const tags = normalizedGeneratedHashtags.length > 0
+            ? normalizedGeneratedHashtags.join(' ')
             : searchKeyword;
 
           // Map dominant emotion to Korean label for DB lookup (or just use key)
@@ -2930,8 +2954,8 @@ export default function JournalistPage() {
         )}
 
         {view === 'write' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
+          <div className={activeComposeStage === 'publish' ? 'grid grid-cols-1 xl:grid-cols-[minmax(0,1.18fr)_minmax(420px,0.92fr)] gap-6' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
+            <div className={activeComposeStage === 'publish' ? 'space-y-6' : 'lg:col-span-2 space-y-6'}>
               {activeComposeStage === 'author' && (
               <>
               <motion.div
@@ -3829,110 +3853,127 @@ export default function JournalistPage() {
                     배포 설정
                   </h2>
 
-                  <div className="space-y-4">
-                    <GlassButton
-                      variant="primary"
-                      onClick={handleOptimizeTitles}
-                      disabled={isOptimizingTitles}
-                      className="w-full"
-                      data-testid="button-optimize-titles"
-                    >
-                      {isOptimizingTitles ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                      {isOptimizingTitles ? '최적화 중...' : 'AI 제목 최적화'}
-                    </GlassButton>
-
-                    {optimizedTitles.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs text-gray-500 font-medium">플랫폼별 최적화 제목 (아래에서 선택)</p>
-                        {optimizedTitles.map((item, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => setSelectedTitleIndex(i)}
-                            className={`w-full text-left rounded-lg p-3 border transition-all ${selectedTitleIndex === i
-                              ? 'bg-orange-100 border-orange-400 shadow-sm'
-                              : 'bg-white border-orange-100 hover:bg-orange-50'
-                              }`}
+                  <div className="space-y-5">
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_280px]">
+                      <div className="rounded-2xl border border-orange-200 bg-white/80 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">고급 배포 설정</p>
+                            <p className="mt-1 text-xs leading-5 text-gray-500">제목 후보 확인, 플랫폼 선택 현황, 상세 가이드를 한 번에 보고 바로 발행 단계로 이어갈 수 있습니다.</p>
+                          </div>
+                          <GlassButton
+                            variant="primary"
+                            onClick={handleOptimizeTitles}
+                            disabled={isOptimizingTitles}
+                            className="sm:min-w-[180px]"
+                            data-testid="button-optimize-titles"
                           >
-                            <span className="text-xs font-medium text-orange-600 block mb-1">{item.platform}</span>
-                            <p className={`text-sm ${selectedTitleIndex === i ? 'text-orange-900 font-semibold' : 'text-gray-800'}`}>{item.title}</p>
-                          </button>
-                        ))}
+                            {isOptimizingTitles ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                            {isOptimizingTitles ? '최적화 중...' : 'AI 제목 최적화'}
+                          </GlassButton>
+                        </div>
                       </div>
-                    )}
 
-                    <div className="pt-2 border-t border-orange-200">
-                      <p className="text-xs text-gray-500 mb-2">선택한 플랫폼 {selectedPlatforms.length}개</p>
-                      <div className="flex flex-wrap gap-1">
-                        {selectedPlatforms.map(p => {
-                          const platform = PLATFORMS.find(pl => pl.id === p);
-                          return platform ? (
-                            <span key={p} className="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-700">
-                              {platform.label}
-                            </span>
-                          ) : null;
-                        })}
+                      <div className="rounded-2xl border border-orange-200 bg-white/80 p-4">
+                        <p className="text-xs font-semibold text-gray-500">선택한 플랫폼</p>
+                        <p className="mt-1 text-2xl font-semibold text-gray-900">{selectedPlatforms.length}개</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {selectedPlatforms.map((p) => {
+                            const platform = PLATFORMS.find((pl) => pl.id === p);
+                            return platform ? (
+                              <span key={p} className="inline-flex items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700">
+                                {platform.label}
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Platform-Specific Settings Display */}
-                    <div className="space-y-4 pt-4 border-t border-orange-200">
-                      <p className="text-sm font-medium text-gray-700">플랫폼별 상세 설정</p>
-                      {selectedPlatforms.map(platformId => {
-                        const settings = PLATFORM_SETTINGS[platformId];
-                        const platform = PLATFORMS.find(p => p.id === platformId);
-                        if (!settings || !platform) return null;
+                    {optimizedTitles.length > 0 && (
+                      <div className="space-y-3">
+                        <p className="text-xs text-gray-500 font-medium">플랫폼별 최적화 제목</p>
+                        <div className="grid gap-3 xl:grid-cols-2">
+                          {optimizedTitles.map((item, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => setSelectedTitleIndex(i)}
+                              className={`w-full text-left rounded-xl p-4 border transition-all ${selectedTitleIndex === i
+                                ? 'bg-orange-100 border-orange-400 shadow-sm'
+                                : 'bg-white border-orange-100 hover:bg-orange-50'
+                                }`}
+                            >
+                              <span className="text-xs font-medium text-orange-600 block mb-1">{item.platform}</span>
+                              <p className={`text-sm leading-6 ${selectedTitleIndex === i ? 'text-orange-900 font-semibold' : 'text-gray-800'}`}>{item.title}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-                        return (
-                          <div key={platformId} className="bg-white rounded-xl p-4 border border-orange-100 space-y-3">
-                            <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
-                              <platform.Icon className="w-5 h-5 text-orange-500" />
-                              <span className="font-medium text-gray-800">{platform.label}</span>
-                            </div>
+                    <div className="space-y-4 border-t border-orange-200 pt-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-gray-700">플랫폼별 상세 설정</p>
+                        <p className="text-xs text-gray-500">가이드는 플랫폼별 카드로 나눠 확인할 수 있습니다.</p>
+                      </div>
+                      <div className="grid gap-4">
+                        {selectedPlatforms.map(platformId => {
+                          const settings = PLATFORM_SETTINGS[platformId];
+                          const platform = PLATFORMS.find(p => p.id === platformId);
+                          if (!settings || !platform) return null;
 
-                            {/* Deployment Guide */}
-                            <div>
-                              <p className="text-xs font-medium text-blue-600 mb-2">배포 가이드</p>
-                              <ul className="space-y-1">
-                                {settings.deploymentGuide.map((item, i) => (
-                                  <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
-                                    <span className="text-blue-400 mt-0.5">•</span>
-                                    {item}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
+                          return (
+                            <div key={platformId} className="bg-white rounded-xl p-4 border border-orange-100">
+                              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                                <div className="flex items-center gap-2">
+                                  <platform.Icon className="w-5 h-5 text-orange-500" />
+                                  <span className="font-medium text-gray-800">{platform.label}</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <span className="text-xs px-2 py-1 bg-purple-50 text-purple-600 rounded-full">
+                                    최적 시간: {settings.bestTimes}
+                                  </span>
+                                  <span className="text-xs px-2 py-1 bg-cyan-50 text-cyan-600 rounded-full">
+                                    형식: {settings.contentFormat}
+                                  </span>
+                                  {settings.characterLimit && (
+                                    <span className="text-xs px-2 py-1 bg-amber-50 text-amber-600 rounded-full">
+                                      텍스트 길이 제한: {settings.characterLimit.toLocaleString()}자
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
 
-                            {/* SEO Tips */}
-                            <div>
-                              <p className="text-xs font-medium text-green-600 mb-2">SEO 권장사항</p>
-                              <ul className="space-y-1">
-                                {settings.seoTips.map((tip, i) => (
-                                  <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
-                                    <span className="text-green-400 mt-0.5">•</span>
-                                    {tip}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <div className="rounded-xl bg-slate-50 p-3">
+                                  <p className="text-xs font-medium text-blue-600 mb-2">배포 가이드</p>
+                                  <ul className="space-y-1.5">
+                                    {settings.deploymentGuide.map((item, i) => (
+                                      <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                                        <span className="text-blue-400 mt-0.5">•</span>
+                                        {item}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
 
-                            {/* Additional Info */}
-                            <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
-                              <span className="text-xs px-2 py-1 bg-purple-50 text-purple-600 rounded-full">
-                                최적 시간: {settings.bestTimes}
-                              </span>
-                              <span className="text-xs px-2 py-1 bg-cyan-50 text-cyan-600 rounded-full">
-                                형식: {settings.contentFormat}
-                              </span>
-                              {settings.characterLimit && (
-                                <span className="text-xs px-2 py-1 bg-amber-50 text-amber-600 rounded-full">
-                                  텍스트 길이 제한: {settings.characterLimit.toLocaleString()}자
-                                </span>
-                              )}
+                                <div className="rounded-xl bg-emerald-50/60 p-3">
+                                  <p className="text-xs font-medium text-green-600 mb-2">SEO 권장사항</p>
+                                  <ul className="space-y-1.5">
+                                    {settings.seoTips.map((tip, i) => (
+                                      <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                                        <span className="text-green-400 mt-0.5">•</span>
+                                        {tip}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -4136,9 +4177,9 @@ export default function JournalistPage() {
                   {isGeneratingSEO ? <Loader2 className="w-4 h-4 animate-spin" /> : <Hash className="w-4 h-4" />}
                   {isGeneratingSEO ? '생성 중...' : '해시태그 생성'}
                 </GlassButton>
-                {generatedHashtags.length > 0 && (
+                {normalizedGeneratedHashtags.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {generatedHashtags.map((tag, i) => (
+                    {normalizedGeneratedHashtags.map((tag, i) => (
                       <span
                         key={i}
                         className="px-2 py-1 rounded-md text-sm bg-cyan-50 text-cyan-700"
