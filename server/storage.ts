@@ -1,5 +1,5 @@
 
-import { type User, type InsertUser, type NewsItem, type InsertNewsItem, type EmotionType, type Report, type ArticleReview, type InsertUserConsent, type UserConsent, type AdminActionLog, type InsertUserInsight, type UserInsight, type InsertUserComposedArticle, type UserComposedArticle } from "../shared/schema.js";
+import { type User, type InsertUser, type NewsItem, type InsertNewsItem, emotionTypes, type EmotionType, type Report, type ArticleReview, type InsertUserConsent, type UserConsent, type AdminActionLog, type InsertUserInsight, type UserInsight, type InsertUserComposedArticle, type UserComposedArticle } from "../shared/schema.js";
 import { randomUUID } from "crypto";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -40,6 +40,11 @@ const canonicalizeNewsSource = (value: unknown): string => {
   } catch {
     return raw;
   }
+};
+
+const normalizeEmotion = (value: unknown, fallback: EmotionType = "spectrum"): EmotionType => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return emotionTypes.includes(normalized as EmotionType) ? (normalized as EmotionType) : fallback;
 };
 
 const getNewsRowTimestamp = (row: any): number => {
@@ -102,6 +107,21 @@ export interface AdminStats {
   reviewSlaMetRate: number;
 }
 
+export interface AdminArticleListQuery {
+  page: number;
+  pageSize: number;
+  includeHidden?: boolean;
+  emotion?: string | null;
+  search?: string | null;
+}
+
+export interface AdminArticleListResult {
+  items: NewsItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export interface AdminReviewUpdateInput {
   completed?: boolean;
   memo?: string;
@@ -141,6 +161,7 @@ export interface IStorage {
   getNewsItemById(id: string): Promise<NewsItem | null>;
   getNewsByEmotion(emotion: EmotionType): Promise<NewsItem[]>;
   getAllNews(includeHidden?: boolean): Promise<NewsItem[]>;
+  getAdminArticlesPage(input: AdminArticleListQuery): Promise<AdminArticleListResult>;
   createNewsItem(item: InsertNewsItem): Promise<NewsItem>;
   updateNewsItem(id: string, updates: Partial<NewsItem>): Promise<NewsItem | null>;
   deleteNewsItem(id: string): Promise<boolean>;
@@ -172,6 +193,15 @@ export interface IStorage {
 }
 
 const REVIEW_SLA_TARGET_HOURS = 24;
+const NEWS_LIST_CACHE_TTL_MS = 15_000;
+const ADMIN_STATS_CACHE_TTL_MS = 30_000;
+
+const NEWS_LIST_SELECT =
+  "id,title,summary,content,source,image,category,emotion,intensity,views,saves,platforms,is_published,author_id,author_name,created_at";
+const ADMIN_STATS_NEWS_SELECT =
+  "id,title,emotion,views,saves,is_published,created_at";
+const ADMIN_STATS_REVIEW_SELECT =
+  "id,article_id,completed,issues,memo,created_at,updated_at";
 
 function toEpochMs(value: unknown): number | null {
   if (!value) return null;
@@ -395,6 +425,32 @@ export class MemStorage implements IStorage {
     return Array.from(this.newsItems.values())
       .filter(item => includeHidden || isPublishedVisible(item))
       .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+  }
+
+  async getAdminArticlesPage(input: AdminArticleListQuery): Promise<AdminArticleListResult> {
+    const safePage = Math.max(1, Number(input.page || 1));
+    const safePageSize = Math.max(1, Math.min(Number(input.pageSize || 10), 100));
+    const safeEmotion = String(input.emotion || "").trim().toLowerCase();
+    const safeSearch = String(input.search || "").trim().toLowerCase();
+    const includeHidden = input.includeHidden !== false;
+
+    const filtered = Array.from(this.newsItems.values())
+      .filter((item) => includeHidden || isPublishedVisible(item))
+      .filter((item) => !safeEmotion || String(item.emotion || "").trim().toLowerCase() === safeEmotion)
+      .filter((item) => {
+        if (!safeSearch) return true;
+        const haystack = [item.title, item.summary, item.source, item.id].join(" ").toLowerCase();
+        return haystack.includes(safeSearch);
+      })
+      .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
+
+    const start = (safePage - 1) * safePageSize;
+    return {
+      items: filtered.slice(start, start + safePageSize),
+      total: filtered.length,
+      page: safePage,
+      pageSize: safePageSize,
+    };
   }
 
   async createNewsItem(item: InsertNewsItem): Promise<NewsItem> {
@@ -727,6 +783,44 @@ export class SupabaseStorage implements IStorage {
   private fallbackUserConsents: Map<string, UserConsent> = new Map();
   private fallbackUserInsights: Map<string, UserInsight> = new Map();
   private fallbackUserComposedArticles: Map<string, UserComposedArticle> = new Map();
+  private readCache: Map<string, { expiresAt: number; value: unknown }> = new Map();
+  private readCacheInflight: Map<string, Promise<unknown>> = new Map();
+
+  private invalidateCache(...prefixes: string[]): void {
+    if (prefixes.length === 0) return;
+    for (const key of Array.from(this.readCache.keys())) {
+      if (prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}:`))) {
+        this.readCache.delete(key);
+      }
+    }
+  }
+
+  private async getOrLoadCached<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
+    const cached = this.readCache.get(key);
+    const now = Date.now();
+    if (cached && cached.expiresAt > now) {
+      return cached.value as T;
+    }
+
+    const inflight = this.readCacheInflight.get(key);
+    if (inflight) {
+      return inflight as Promise<T>;
+    }
+
+    const pending = loader()
+      .then((value) => {
+        this.readCache.set(key, { expiresAt: Date.now() + ttlMs, value });
+        this.readCacheInflight.delete(key);
+        return value;
+      })
+      .catch((error) => {
+        this.readCacheInflight.delete(key);
+        throw error;
+      });
+
+    this.readCacheInflight.set(key, pending as Promise<unknown>);
+    return pending;
+  }
 
   private mapArticleReview(row: any): ArticleReview {
     const createdAtValue = row?.created_at ?? row?.createdAt ?? new Date();
@@ -832,6 +926,28 @@ export class SupabaseStorage implements IStorage {
     } as UserComposedArticle;
   }
 
+  private mapNewsItemRow(row: any): NewsItem {
+    const createdAtValue = row?.created_at ?? row?.createdAt ?? null;
+    return {
+      id: String(row?.id ?? randomUUID()),
+      title: String(row?.title ?? ""),
+      summary: String(row?.summary ?? ""),
+      content: row?.content ?? null,
+      source: String(row?.source ?? ""),
+      image: row?.image ?? null,
+      category: row?.category ?? null,
+      emotion: normalizeEmotion(row?.emotion),
+      intensity: Number(row?.intensity ?? 50),
+      views: Number(row?.views ?? 0),
+      saves: Number(row?.saves ?? 0),
+      platforms: Array.isArray(row?.platforms) ? row.platforms.map((value: unknown) => String(value || "")) : ["interactive"],
+      isPublished: Boolean(row?.is_published ?? row?.isPublished ?? true),
+      authorId: row?.author_id ?? row?.authorId ?? null,
+      authorName: row?.author_name ?? row?.authorName ?? null,
+      createdAt: createdAtValue ? new Date(createdAtValue) : null,
+    } as NewsItem;
+  }
+
   private mergeWithFallback(dbRows: NewsItem[]): NewsItem[] {
     const merged = new Map<string, NewsItem>();
     dbRows.forEach((row) => merged.set(String(row.id), row));
@@ -916,15 +1032,17 @@ export class SupabaseStorage implements IStorage {
   }
 
   async getNewsByEmotion(emotion: EmotionType): Promise<NewsItem[]> {
-    const { data } = await supabase
-      .from('news_items')
-      .select('*')
-      .eq('emotion', emotion)
-      .eq('is_published', true)
-      .order('created_at', { ascending: false });
-    const dbRows = (data || []) as NewsItem[];
-    const merged = this.mergeWithFallback(dbRows);
-    return merged.filter((row: any) => row.emotion === emotion && isPublishedVisible(row));
+    return this.getOrLoadCached(`newsByEmotion:${emotion}`, NEWS_LIST_CACHE_TTL_MS, async () => {
+      const { data } = await supabase
+        .from('news_items')
+        .select(NEWS_LIST_SELECT)
+        .eq('emotion', emotion)
+        .eq('is_published', true)
+        .order('created_at', { ascending: false });
+      const dbRows = (data || []).map((row) => this.mapNewsItemRow(row));
+      const merged = this.mergeWithFallback(dbRows);
+      return merged.filter((row: any) => row.emotion === emotion && isPublishedVisible(row));
+    });
   }
 
   async getNewsItemById(id: string): Promise<NewsItem | null> {
@@ -943,16 +1061,58 @@ export class SupabaseStorage implements IStorage {
   }
 
   async getAllNews(includeHidden: boolean = false): Promise<NewsItem[]> {
-    let query = supabase.from('news_items').select('*').order('created_at', { ascending: false });
+    return this.getOrLoadCached(`allNews:${includeHidden ? "all" : "published"}`, NEWS_LIST_CACHE_TTL_MS, async () => {
+      let query = supabase.from('news_items').select(NEWS_LIST_SELECT).order('created_at', { ascending: false });
 
-    if (!includeHidden) {
-      query = query.eq('is_published', true);
-    }
+      if (!includeHidden) {
+        query = query.eq('is_published', true);
+      }
 
-    const { data } = await query;
-    const dbRows = (data || []) as NewsItem[];
-    const merged = this.mergeWithFallback(dbRows);
-    return merged.filter((row: any) => includeHidden || isPublishedVisible(row));
+      const { data } = await query;
+      const dbRows = (data || []).map((row) => this.mapNewsItemRow(row));
+      const merged = this.mergeWithFallback(dbRows);
+      return merged.filter((row: any) => includeHidden || isPublishedVisible(row));
+    });
+  }
+
+  async getAdminArticlesPage(input: AdminArticleListQuery): Promise<AdminArticleListResult> {
+    const safePage = Math.max(1, Number(input.page || 1));
+    const safePageSize = Math.max(1, Math.min(Number(input.pageSize || 10), 100));
+    const includeHidden = input.includeHidden !== false;
+    const safeEmotion = String(input.emotion || "").trim().toLowerCase();
+    const safeSearch = String(input.search || "").trim();
+    const cacheKey = `adminArticles:${includeHidden ? "all" : "published"}:${safePage}:${safePageSize}:${safeEmotion}:${safeSearch.toLowerCase()}`;
+
+    return this.getOrLoadCached(cacheKey, NEWS_LIST_CACHE_TTL_MS, async () => {
+      let query = supabase
+        .from('news_items')
+        .select(NEWS_LIST_SELECT, { count: 'exact' })
+        .order('created_at', { ascending: false });
+
+      if (!includeHidden) {
+        query = query.eq('is_published', true);
+      }
+      if (safeEmotion) {
+        query = query.eq('emotion', safeEmotion);
+      }
+      if (safeSearch) {
+        const escaped = safeSearch.replace(/[%_,]/g, (match) => `\\${match}`);
+        query = query.or(`title.ilike.%${escaped}%,summary.ilike.%${escaped}%,source.ilike.%${escaped}%`);
+      }
+
+      const from = (safePage - 1) * safePageSize;
+      const to = from + safePageSize - 1;
+      const { data, count } = await query.range(from, to);
+      const items = (data || []).map((row) => this.mapNewsItemRow(row));
+      const merged = this.mergeWithFallback(items).filter((row: any) => includeHidden || isPublishedVisible(row));
+
+      return {
+        items: merged,
+        total: Math.max(Number(count || 0), merged.length),
+        page: safePage,
+        pageSize: safePageSize,
+      };
+    });
   }
 
   async createNewsItem(item: InsertNewsItem): Promise<NewsItem> {
@@ -984,10 +1144,12 @@ export class SupabaseStorage implements IStorage {
       if (isRls) {
         const fallback = this.toFallbackNewsItem(item);
         this.fallbackNews.set(fallback.id, fallback);
+        this.invalidateCache("allNews", `newsByEmotion:${fallback.emotion}`, "adminStats", "adminArticles");
         return fallback;
       }
       throw error;
     }
+    this.invalidateCache("allNews", `newsByEmotion:${item.emotion}`, "adminStats", "adminArticles");
     return data as NewsItem;
   }
 
@@ -996,6 +1158,7 @@ export class SupabaseStorage implements IStorage {
       const current = this.fallbackNews.get(id)!;
       const updated = { ...current, ...updates };
       this.fallbackNews.set(id, updated as NewsItem);
+      this.invalidateCache("allNews", `newsByEmotion:${String(updated.emotion || "")}`, "adminStats", "adminArticles");
       return updated as NewsItem;
     }
 
@@ -1021,7 +1184,10 @@ export class SupabaseStorage implements IStorage {
       .select()
       .single();
 
-    if (!error && data) return data as NewsItem;
+    if (!error && data) {
+      this.invalidateCache("allNews", `newsByEmotion:${String((data as any).emotion || updates.emotion || "")}`, "adminStats", "adminArticles");
+      return data as NewsItem;
+    }
 
     const { data: existing } = await supabase
       .from('news_items')
@@ -1043,12 +1209,14 @@ export class SupabaseStorage implements IStorage {
       ...(normalizedPublished !== undefined ? { isPublished: normalizedPublished, is_published: normalizedPublished } : {}),
     } as NewsItem;
     this.fallbackNews.set(id, fallbackUpdated);
+    this.invalidateCache("allNews", `newsByEmotion:${String(fallbackUpdated.emotion || updates.emotion || "")}`, "adminStats", "adminArticles");
     return fallbackUpdated;
   }
 
   async deleteNewsItem(id: string): Promise<boolean> {
     if (this.fallbackNews.has(id)) {
       this.fallbackNews.delete(id);
+      this.invalidateCache("allNews", "newsByEmotion", "adminStats", "adminArticles");
       return true;
     }
 
@@ -1056,7 +1224,10 @@ export class SupabaseStorage implements IStorage {
       .from('news_items')
       .delete()
       .eq('id', id);
-    if (!error) return true;
+    if (!error) {
+      this.invalidateCache("allNews", "newsByEmotion", "adminStats", "adminArticles");
+      return true;
+    }
 
     const message = String((error as any)?.message || "");
     if (/row-level security|violates row-level security policy/i.test(message)) {
@@ -1065,6 +1236,7 @@ export class SupabaseStorage implements IStorage {
         id,
         isPublished: false,
       } as NewsItem);
+      this.invalidateCache("allNews", "newsByEmotion", "adminStats", "adminArticles");
       return true;
     }
 
@@ -1076,6 +1248,7 @@ export class SupabaseStorage implements IStorage {
     const { data: item } = await supabase.from('news_items').select('views').eq('id', id).single();
     if (item) {
       await supabase.from('news_items').update({ views: (item.views || 0) + 1 }).eq('id', id);
+      this.invalidateCache("allNews", "newsByEmotion", "adminStats", "adminArticles");
     }
   }
 
@@ -1083,6 +1256,7 @@ export class SupabaseStorage implements IStorage {
     const { data: item } = await supabase.from('news_items').select('saves').eq('id', id).single();
     if (!item) return false;
     await supabase.from('news_items').update({ saves: (item.saves || 0) + 1 }).eq('id', id);
+    this.invalidateCache("allNews", "newsByEmotion", "adminStats", "adminArticles");
     return true;
   }
 
@@ -1182,41 +1356,42 @@ export class SupabaseStorage implements IStorage {
   }
 
   async getAdminStats(): Promise<{ stats: AdminStats, emotionStats: any[], topArticles: NewsItem[] }> {
-    const { data: allNews } = await supabase.from('news_items').select('*');
-    const { count: userCount } = await supabase.from('users').select('*', { count: 'exact', head: true });
-    const { data: reviewRows, error: reviewError } = await supabase.from('article_reviews').select('*');
+    return this.getOrLoadCached("adminStats", ADMIN_STATS_CACHE_TTL_MS, async () => {
+      const [{ data: allNews }, { count: userCount }, { data: reviewRows, error: reviewError }] = await Promise.all([
+        supabase.from('news_items').select(ADMIN_STATS_NEWS_SELECT),
+        supabase.from('users').select('*', { count: 'exact', head: true }),
+        supabase.from('article_reviews').select(ADMIN_STATS_REVIEW_SELECT),
+      ]);
 
-    const news = allNews || [];
-    let reviews: ArticleReview[] = Array.from(this.fallbackArticleReviews.values());
-    if (!reviewError && reviewRows) {
-      reviews = (reviewRows || []).map((row) => this.mapArticleReview(row));
-      for (const row of reviews) {
-        this.fallbackArticleReviews.set(row.articleId, row);
+      const news = (allNews || []).map((row) => this.mapNewsItemRow(row));
+      let reviews: ArticleReview[] = Array.from(this.fallbackArticleReviews.values());
+      if (!reviewError && reviewRows) {
+        reviews = (reviewRows || []).map((row) => this.mapArticleReview(row));
+        for (const row of reviews) {
+          this.fallbackArticleReviews.set(row.articleId, row);
+        }
+      } else if (reviewError && !this.isMissingTableError(reviewError)) {
+        throw reviewError;
       }
-    } else if (reviewError && !this.isMissingTableError(reviewError)) {
-      throw reviewError;
-    }
 
-    const stats = computeAdminStatsPayload(news, reviews, (userCount || 0) + 3240);
+      const stats = computeAdminStatsPayload(news, reviews, (userCount || 0) + 3240);
+      const emCounts: Record<string, number> = {};
+      news.forEach((item: any) => {
+        emCounts[item.emotion] = (emCounts[item.emotion] || 0) + 1;
+      });
 
-    // Emotion Stats
-    const emCounts: Record<string, number> = {};
-    news.forEach((item: any) => {
-      emCounts[item.emotion] = (emCounts[item.emotion] || 0) + 1;
+      const emotionStats = Object.keys(emCounts).map(emotion => ({
+        emotion,
+        count: emCounts[emotion],
+        percentage: news.length > 0 ? Math.round((emCounts[emotion] / news.length) * 100) : 0
+      }));
+
+      const topArticles = [...news]
+        .sort((a: any, b: any) => (b.views || 0) - (a.views || 0))
+        .slice(0, 3) as NewsItem[];
+
+      return { stats, emotionStats, topArticles };
     });
-
-    const emotionStats = Object.keys(emCounts).map(emotion => ({
-      emotion,
-      count: emCounts[emotion],
-      percentage: news.length > 0 ? Math.round((emCounts[emotion] / news.length) * 100) : 0
-    }));
-
-    // Top Articles
-    const topArticles = [...news]
-      .sort((a: any, b: any) => (b.views || 0) - (a.views || 0))
-      .slice(0, 3) as NewsItem[];
-
-    return { stats, emotionStats, topArticles };
   }
 
   async getAdminReviews(): Promise<ArticleReview[]> {
@@ -1274,6 +1449,7 @@ export class SupabaseStorage implements IStorage {
     if (!error && data) {
       const mapped = this.mapArticleReview(data);
       this.fallbackArticleReviews.set(articleId, mapped);
+      this.invalidateCache("adminStats");
       return mapped;
     }
 
@@ -1291,6 +1467,7 @@ export class SupabaseStorage implements IStorage {
       updatedAt: now,
     };
     this.fallbackArticleReviews.set(articleId, fallback);
+    this.invalidateCache("adminStats");
     return fallback;
   }
 

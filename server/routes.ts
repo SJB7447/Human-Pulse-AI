@@ -8181,6 +8181,36 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.sendStatus(204);
   });
 
+  app.get("/api/admin/articles", async (req, res) => {
+    try {
+      const page = Math.max(1, Number(req.query.page || 1));
+      const pageSize = Math.max(1, Math.min(Number(req.query.pageSize || 10), 100));
+      const emotion = String(req.query.emotion || "").trim().toLowerCase();
+      const search = String(req.query.search || "").trim();
+      const includeHidden = req.query.all !== "false";
+      const result = await storage.getAdminArticlesPage({
+        page,
+        pageSize,
+        includeHidden,
+        emotion: emotion && emotion !== "all" ? emotion : null,
+        search: search || null,
+      });
+
+      res.json({
+        ...result,
+        items: result.items.map((item) => toArticleDetailItem(item)),
+      });
+    } catch (error: any) {
+      console.error("[API] /api/admin/articles failed:", error);
+      res.status(200).json({
+        items: [],
+        total: 0,
+        page: 1,
+        pageSize: Math.max(1, Math.min(Number(req.query.pageSize || 10), 100)),
+      });
+    }
+  });
+
   app.get("/api/articles", async (req, res) => {
     try {
       const includeHidden = req.query.all === "true";

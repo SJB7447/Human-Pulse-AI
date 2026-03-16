@@ -72,6 +72,13 @@ export type UserComposedArticleRecord = {
     updatedAt: string;
 };
 
+export type AdminArticleListResponse<T = any> = {
+    items: T[];
+    total: number;
+    page: number;
+    pageSize: number;
+};
+
 export type CommunityCommentRecord = {
     id: string;
     postId: string;
@@ -444,10 +451,22 @@ export const DBService = {
         return data;
     },
 
-    async getAdminDashboardData() {
-        const response = await fetch('/api/articles?all=true&view=full');
+    async getAdminDashboardData(params?: {
+        page?: number;
+        pageSize?: number;
+        emotion?: string;
+        search?: string;
+        all?: boolean;
+    }) {
+        const searchParams = new URLSearchParams();
+        searchParams.set('page', String(Math.max(1, Number(params?.page || 1))));
+        searchParams.set('pageSize', String(Math.max(1, Math.min(Number(params?.pageSize || 10), 100))));
+        if (params?.emotion && params.emotion !== 'all') searchParams.set('emotion', params.emotion);
+        if (params?.search && params.search.trim()) searchParams.set('search', params.search.trim());
+        if (params?.all === false) searchParams.set('all', 'false');
+        const response = await fetch(`/api/admin/articles?${searchParams.toString()}`);
         if (!response.ok) throw await createApiError(response, 'Failed to fetch admin data');
-        return await response.json();
+        return await response.json() as AdminArticleListResponse;
     },
 
     async updateGeneratedContent(generatedId: number, generatedText: string, status: string) {

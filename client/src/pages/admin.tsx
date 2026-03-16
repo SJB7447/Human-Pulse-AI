@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
-import { DBService, type ApiHealthPayload, type UserComposedArticleRecord } from '@/services/DBService';
+import { DBService, type AdminArticleListResponse, type ApiHealthPayload, type UserComposedArticleRecord } from '@/services/DBService';
 import { useEmotionStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
@@ -465,6 +465,7 @@ function normalizeAdminArticle(raw: any): AdminArticle {
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTabKey>('ops');
   const [articles, setArticles] = useState<AdminArticle[]>([]);
+  const [articleTotalCount, setArticleTotalCount] = useState(0);
   const [stats, setStats] = useState<AdminStatsPayload | null>(null);
   const [reviewMap, setReviewMap] = useState<Record<string, ReviewState>>({});
   const [reports, setReports] = useState<AdminReportPayload[]>([]);
@@ -553,7 +554,13 @@ export default function AdminPage() {
           DBService.getAdminAlertSummary(),
         ])
         : await Promise.allSettled([
-          DBService.getAdminDashboardData(),
+          DBService.getAdminDashboardData({
+            page: articlePage,
+            pageSize: ARTICLES_PER_PAGE,
+            emotion: articleEmotionFilter,
+            search: articleSearchQuery,
+            all: true,
+          }),
           DBService.getAdminReviews(),
           DBService.getAdminReports(),
           DBService.getAdminReaderArticles(),
@@ -593,11 +600,13 @@ export default function AdminPage() {
         setOpsAlertSummary((opsAlertSummaryData || null) as OpsAlertSummary | null);
       } else {
         const [articlesResult, reviewsResult, reportsResult, readerArticlesResult] = tabSettled;
-        const articlesData = articlesResult.status === 'fulfilled' ? articlesResult.value : [];
+        const articlesData = articlesResult.status === 'fulfilled' ? articlesResult.value : null;
         const reviewsData = reviewsResult.status === 'fulfilled' ? reviewsResult.value : [];
         const reportsData = reportsResult.status === 'fulfilled' ? reportsResult.value : [];
         const readerArticlesData = readerArticlesResult.status === 'fulfilled' ? readerArticlesResult.value : [];
-        setArticles(((articlesData || []) as any[]).map(normalizeAdminArticle));
+        const articlePayload = (articlesData || { items: [], total: 0, page: articlePage, pageSize: ARTICLES_PER_PAGE }) as AdminArticleListResponse;
+        setArticles(((articlePayload.items || []) as any[]).map(normalizeAdminArticle));
+        setArticleTotalCount(Number(articlePayload.total || 0));
         setReviewMap(buildReviewMap((reviewsData || []) as AdminReviewPayload[]));
         setReports(((reportsData || []) as AdminReportPayload[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
         setReaderArticles(((readerArticlesData || []) as UserComposedArticleRecord[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
@@ -636,7 +645,7 @@ export default function AdminPage() {
       return;
     }
     fetchData(activeTab);
-  }, [user, activeTab]);
+  }, [user, activeTab, articlePage, articleEmotionFilter, articleSearchQuery]);
 
   useEffect(() => {
     setSelectedArticleIds((prev) => {
@@ -649,38 +658,17 @@ export default function AdminPage() {
 
   const articleEmotionOptions = useMemo(() => {
     const options = new Set<string>();
-    for (const article of articles) {
-      const emotion = (article.emotion || '').trim().toLowerCase();
+    for (const row of stats?.emotionStats || []) {
+      const emotion = String(row?.emotion || '').trim().toLowerCase();
       if (emotion) options.add(emotion);
     }
     return Array.from(options).sort((a, b) => a.localeCompare(b));
-  }, [articles]);
+  }, [stats?.emotionStats]);
 
-  const filteredArticles = useMemo(() => {
-    const keyword = articleSearchQuery.trim().toLowerCase();
-    return articles.filter((article) => {
-      const emotion = (article.emotion || '').trim().toLowerCase();
-      if (articleEmotionFilter !== 'all' && emotion !== articleEmotionFilter) return false;
-
-      if (!keyword) return true;
-      const haystack = [
-        article.title || '',
-        article.summary || '',
-        article.source || '',
-        article.id || '',
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(keyword);
-    });
-  }, [articles, articleEmotionFilter, articleSearchQuery]);
-
+  const filteredArticles = articles;
   const filteredArticleIdSet = useMemo(() => new Set(filteredArticles.map((article) => article.id)), [filteredArticles]);
-  const pagedArticles = useMemo(() => {
-    const start = (articlePage - 1) * ARTICLES_PER_PAGE;
-    return filteredArticles.slice(start, start + ARTICLES_PER_PAGE);
-  }, [filteredArticles, articlePage]);
-  const totalArticlePages = Math.max(1, Math.ceil(filteredArticles.length / ARTICLES_PER_PAGE));
+  const pagedArticles = articles;
+  const totalArticlePages = Math.max(1, Math.ceil(articleTotalCount / ARTICLES_PER_PAGE));
   const articlePageTokens = useMemo<PageToken[]>(() => {
     if (totalArticlePages <= 7) {
       return Array.from({ length: totalArticlePages }, (_, index) => index + 1);
@@ -2640,7 +2628,7 @@ export default function AdminPage() {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50/70 px-3 py-2">
             <p className="text-xs text-gray-600">
-              총 {filteredArticles.length}건 · 페이지 {articlePage}/{totalArticlePages} · 페이지당 {ARTICLES_PER_PAGE}건
+              총 {articleTotalCount}건 · 페이지 {articlePage}/{totalArticlePages} · 페이지당 {ARTICLES_PER_PAGE}건
             </p>
             <div className="flex items-center gap-1.5">
               <Button
@@ -2786,7 +2774,7 @@ export default function AdminPage() {
               </div>
             );
           })}
-          {filteredArticles.length === 0 && (
+          {articleTotalCount === 0 && (
             <div className="rounded-xl border border-dashed border-gray-200 bg-white/70 p-6 text-center text-sm text-gray-500">
               조건에 맞는 기사가 없습니다.
             </div>
@@ -2931,7 +2919,7 @@ export default function AdminPage() {
                   </tr>
                 );
               })}
-              {filteredArticles.length === 0 && (
+              {articleTotalCount === 0 && (
                 <tr>
                   <td colSpan={6} className="py-10 px-6 text-center text-sm text-gray-500">
                     조건에 맞는 기사가 없습니다.
@@ -2941,7 +2929,7 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
-        {filteredArticles.length > 0 && (
+        {articleTotalCount > 0 && (
           <div className="px-6 py-5 border-t border-gray-100 space-y-3">
             <div className="w-full overflow-x-auto flex justify-center">
               <div className="inline-flex min-w-max items-center gap-1.5 rounded-full border border-[#b7ecea] bg-[#effcfb] px-2 py-2 sm:px-3">
