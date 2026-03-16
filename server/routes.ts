@@ -4007,11 +4007,40 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     dailyCount: number;
     dayKey: string;
   }>();
+  const journalistEmailOtpFallback = new Map<string, {
+    code: string;
+    expiresAt: number;
+    cooldownUntil: number;
+    dailyCount: number;
+    dayKey: string;
+    verified: boolean;
+  }>();
+  const journalistPressCardFallback = new Map<string, {
+    verificationId: string;
+    verifiedAt: number;
+    fileName: string;
+    pressId: string;
+    holderName: string;
+    role: "journalist" | "admin";
+    documentType: "press_card" | "business_card";
+    title: string;
+  }>();
   const demoResetTokens = new Map<string, { phone: string; expiresAt: number }>();
   const demoPhoneToEmails = new Map<string, string[]>([
     ["010-0000-0000", ["demo.user@example.com"]],
     ["010-1111-2222", ["journal.user@example.com", "alt.user@example.com"]],
   ]);
+  const journalistAllowedDomains = ["donga.com", "donga.co.kr", "dongailbo.com"];
+  const verifyDongaEmployeeDirectory = async (_input: {
+    email: string;
+    role: "journalist" | "admin";
+    title?: string;
+    documentType?: "press_card" | "business_card";
+    credentialId?: string;
+  }): Promise<{ matched: boolean; employeeId?: string; source: "demo_fallback" | "directory" }> => {
+    // Placeholder hook for future employee DB integration.
+    return { matched: false, source: "demo_fallback" };
+  };
   type GuestSessionState = {
     guestId: string;
     lastMood: EmotionType;
@@ -5471,6 +5500,285 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
     phoneOtpFallback.delete(phone);
     res.json({ success: true });
+  });
+
+  app.post("/api/auth/journalist/email/send", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: "email is required." });
+
+    const [, domain = ""] = email.split("@");
+    if (!journalistAllowedDomains.includes(domain)) {
+      return res.status(400).json({
+        error: "Only Donga journalist emails are allowed in demo mode.",
+        code: "JOURNALIST_EMAIL_DOMAIN_INVALID",
+        allowedDomains: journalistAllowedDomains,
+      });
+    }
+
+    const now = Date.now();
+    const dayKey = new Date(now).toISOString().slice(0, 10);
+    const current = journalistEmailOtpFallback.get(email);
+    const normalizedCurrent = current && current.dayKey !== dayKey
+      ? { ...current, dayKey, dailyCount: 0, verified: false }
+      : current;
+
+    if (normalizedCurrent && now < normalizedCurrent.cooldownUntil) {
+      return res.status(429).json({
+        error: "Journalist email cooldown is active.",
+        code: "JOURNALIST_EMAIL_COOLDOWN",
+        retryAfterSeconds: Math.ceil((normalizedCurrent.cooldownUntil - now) / 1000),
+      });
+    }
+
+    if ((normalizedCurrent?.dailyCount || 0) >= 5) {
+      return res.status(429).json({
+        error: "Daily journalist email limit reached.",
+        code: "JOURNALIST_EMAIL_RATE_LIMIT",
+        retryAfterSeconds: 24 * 60 * 60,
+      });
+    }
+
+    const code = `${Math.floor(100000 + Math.random() * 900000)}`;
+    const payload = {
+      code,
+      expiresAt: now + 10 * 60 * 1000,
+      cooldownUntil: now + 60 * 1000,
+      dailyCount: (normalizedCurrent?.dailyCount || 0) + 1,
+      dayKey,
+      verified: false,
+    };
+    journalistEmailOtpFallback.set(email, payload);
+
+    console.log(`[JOURNALIST-EMAIL-DEMO] email=${email} code=${code}`);
+
+    res.json({
+      success: true,
+      cooldownSeconds: 60,
+      remainingAttempts: Math.max(0, 5 - payload.dailyCount),
+      previewCode: code,
+      allowedDomains: journalistAllowedDomains,
+    });
+  });
+
+  app.post("/api/auth/journalist/email/verify", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const otp = String(req.body?.otp || "").trim();
+    if (!email || !otp) return res.status(400).json({ error: "email and otp are required." });
+
+    const current = journalistEmailOtpFallback.get(email);
+    if (!current) {
+      return res.status(400).json({ error: "Journalist email OTP was not requested.", code: "JOURNALIST_EMAIL_NOT_REQUESTED" });
+    }
+    if (Date.now() > current.expiresAt) {
+      return res.status(400).json({ error: "Journalist email OTP expired.", code: "JOURNALIST_EMAIL_EXPIRED" });
+    }
+    if (current.code !== otp) {
+      return res.status(400).json({ error: "Journalist email OTP mismatch.", code: "JOURNALIST_EMAIL_MISMATCH" });
+    }
+
+    journalistEmailOtpFallback.set(email, { ...current, verified: true, cooldownUntil: Date.now() });
+    res.json({ success: true, verified: true });
+  });
+
+  app.post("/api/auth/journalist/press-card/verify", async (req, res) => {
+    const name = String(req.body?.name || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const pressId = String(req.body?.pressId || "").trim();
+    const fileName = String(req.body?.fileName || "").trim();
+    const fileType = String(req.body?.fileType || "").trim().toLowerCase();
+
+    if (!name || !email || !pressId || !fileName) {
+      return res.status(400).json({ error: "name, email, pressId and fileName are required." });
+    }
+
+    const emailState = journalistEmailOtpFallback.get(email);
+    if (!emailState?.verified) {
+      return res.status(400).json({
+        error: "Journalist email must be verified first.",
+        code: "JOURNALIST_EMAIL_REQUIRED",
+      });
+    }
+
+    const allowedFile = ["image/", "application/pdf"].some((prefix) => fileType.startsWith(prefix));
+    if (fileType && !allowedFile) {
+      return res.status(400).json({
+        error: "Only image or PDF files are allowed in demo mode.",
+        code: "PRESS_CARD_FILE_INVALID",
+      });
+    }
+
+    const verificationId = `press-demo-${randomUUID()}`;
+    journalistPressCardFallback.set(email, {
+      verificationId,
+      verifiedAt: Date.now(),
+      fileName,
+      pressId,
+      holderName: name,
+      role: "journalist",
+      documentType: "press_card",
+      title: "",
+    });
+
+    res.status(201).json({
+      success: true,
+      verificationId,
+      reviewedAs: "demo-approved",
+      verifiedAt: new Date().toISOString(),
+    });
+  });
+
+  app.post("/api/auth/employee/email/send", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const role = String(req.body?.role || "").trim().toLowerCase();
+    if (!email) return res.status(400).json({ error: "email is required." });
+    if (role !== "journalist" && role !== "admin") {
+      return res.status(400).json({ error: "role must be journalist or admin." });
+    }
+
+    const [, domain = ""] = email.split("@");
+    if (!journalistAllowedDomains.includes(domain)) {
+      return res.status(400).json({
+        error: "Only Donga employee emails are allowed in demo mode.",
+        code: "EMPLOYEE_EMAIL_DOMAIN_INVALID",
+        allowedDomains: journalistAllowedDomains,
+      });
+    }
+
+    const now = Date.now();
+    const dayKey = new Date(now).toISOString().slice(0, 10);
+    const current = journalistEmailOtpFallback.get(email);
+    const normalizedCurrent = current && current.dayKey !== dayKey
+      ? { ...current, dayKey, dailyCount: 0, verified: false }
+      : current;
+
+    if (normalizedCurrent && now < normalizedCurrent.cooldownUntil) {
+      return res.status(429).json({
+        error: "Employee email cooldown is active.",
+        code: "EMPLOYEE_EMAIL_COOLDOWN",
+        retryAfterSeconds: Math.ceil((normalizedCurrent.cooldownUntil - now) / 1000),
+      });
+    }
+
+    if ((normalizedCurrent?.dailyCount || 0) >= 5) {
+      return res.status(429).json({
+        error: "Daily employee email limit reached.",
+        code: "EMPLOYEE_EMAIL_RATE_LIMIT",
+        retryAfterSeconds: 24 * 60 * 60,
+      });
+    }
+
+    const directoryMatch = await verifyDongaEmployeeDirectory({ email, role: role as "journalist" | "admin" });
+    const code = `${Math.floor(100000 + Math.random() * 900000)}`;
+    const payload = {
+      code,
+      expiresAt: now + 10 * 60 * 1000,
+      cooldownUntil: now + 60 * 1000,
+      dailyCount: (normalizedCurrent?.dailyCount || 0) + 1,
+      dayKey,
+      verified: false,
+    };
+    journalistEmailOtpFallback.set(email, payload);
+
+    console.log(`[EMPLOYEE-EMAIL-DEMO] role=${role} email=${email} code=${code}`);
+
+    res.json({
+      success: true,
+      cooldownSeconds: 60,
+      remainingAttempts: Math.max(0, 5 - payload.dailyCount),
+      previewCode: code,
+      allowedDomains: journalistAllowedDomains,
+      autoDirectoryMatched: directoryMatch.matched,
+      directorySource: directoryMatch.source,
+    });
+  });
+
+  app.post("/api/auth/employee/email/verify", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const otp = String(req.body?.otp || "").trim();
+    if (!email || !otp) return res.status(400).json({ error: "email and otp are required." });
+
+    const current = journalistEmailOtpFallback.get(email);
+    if (!current) {
+      return res.status(400).json({ error: "Employee email OTP was not requested.", code: "EMPLOYEE_EMAIL_NOT_REQUESTED" });
+    }
+    if (Date.now() > current.expiresAt) {
+      return res.status(400).json({ error: "Employee email OTP expired.", code: "EMPLOYEE_EMAIL_EXPIRED" });
+    }
+    if (current.code !== otp) {
+      return res.status(400).json({ error: "Employee email OTP mismatch.", code: "EMPLOYEE_EMAIL_MISMATCH" });
+    }
+
+    journalistEmailOtpFallback.set(email, { ...current, verified: true, cooldownUntil: Date.now() });
+    res.json({ success: true, verified: true });
+  });
+
+  app.post("/api/auth/employee/document/verify", async (req, res) => {
+    const name = String(req.body?.name || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const credentialId = String(req.body?.credentialId || "").trim();
+    const fileName = String(req.body?.fileName || "").trim();
+    const fileType = String(req.body?.fileType || "").trim().toLowerCase();
+    const roleRaw = String(req.body?.role || "").trim().toLowerCase();
+    const title = String(req.body?.title || "").trim();
+    const documentTypeRaw = String(req.body?.documentType || "").trim().toLowerCase();
+    const role = roleRaw === "admin" ? "admin" : roleRaw === "journalist" ? "journalist" : null;
+    const documentType = documentTypeRaw === "business_card"
+      ? "business_card"
+      : documentTypeRaw === "press_card"
+        ? "press_card"
+        : null;
+
+    if (!name || !email || !credentialId || !fileName || !role || !documentType) {
+      return res.status(400).json({ error: "name, email, role, documentType, credentialId and fileName are required." });
+    }
+    if (role === "admin" && !title) {
+      return res.status(400).json({ error: "title is required for admin verification.", code: "ADMIN_TITLE_REQUIRED" });
+    }
+
+    const emailState = journalistEmailOtpFallback.get(email);
+    if (!emailState?.verified) {
+      return res.status(400).json({
+        error: "Employee email must be verified first.",
+        code: "EMPLOYEE_EMAIL_REQUIRED",
+      });
+    }
+
+    const allowedFile = ["image/", "application/pdf"].some((prefix) => fileType.startsWith(prefix));
+    if (fileType && !allowedFile) {
+      return res.status(400).json({
+        error: "Only image or PDF files are allowed in demo mode.",
+        code: "EMPLOYEE_DOCUMENT_FILE_INVALID",
+      });
+    }
+
+    const directoryMatch = await verifyDongaEmployeeDirectory({
+      email,
+      role,
+      title,
+      documentType,
+      credentialId,
+    });
+
+    const verificationId = `employee-demo-${randomUUID()}`;
+    journalistPressCardFallback.set(email, {
+      verificationId,
+      verifiedAt: Date.now(),
+      fileName,
+      pressId: credentialId,
+      holderName: name,
+      role,
+      documentType,
+      title,
+    });
+
+    res.status(201).json({
+      success: true,
+      verificationId,
+      reviewedAs: directoryMatch.matched ? "directory-approved" : "demo-approved",
+      verifiedAt: new Date().toISOString(),
+      autoDirectoryMatched: directoryMatch.matched,
+      directorySource: directoryMatch.source,
+    });
   });
 
   app.post("/api/auth/consent", async (req, res) => {

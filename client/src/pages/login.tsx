@@ -14,6 +14,15 @@ import type { AppLocale } from '@/lib/locale';
 
 type UserRole = 'general' | 'journalist' | 'admin';
 type AuthView = 'auth' | 'findId' | 'resetRequest' | 'resetConfirm';
+type AdminHeadTitle = 'editor_in_chief' | 'managing_editor' | 'department_head' | 'desk_editor';
+type EmployeeDocumentType = 'press_card' | 'business_card';
+
+const ADMIN_HEAD_TITLES: Array<{ value: AdminHeadTitle; ko: string; en: string }> = [
+  { value: 'editor_in_chief', ko: '편집장', en: 'Editor-in-Chief' },
+  { value: 'managing_editor', ko: '부장', en: 'Managing Editor' },
+  { value: 'department_head', ko: '국장', en: 'Department Head' },
+  { value: 'desk_editor', ko: '데스크', en: 'Desk Editor' },
+];
 
 const COPY = {
   ko: {
@@ -90,6 +99,57 @@ const COPY = {
     authErrorDesc: '문제가 발생했습니다.',
     demoLoginDoneTitle: '데모 로그인 성공',
     demoLoginDoneDesc: '테스트 계정으로 로그인되었습니다.',
+    journalistGuideTitle: '기자단 데모 인증',
+    journalistGuideDesc: '기자 가입은 휴대폰 인증 후 동아일보 이메일 인증과 기자증 확인을 추가로 진행합니다.',
+    dongaEmail: '동아일보 기자 이메일',
+    placeholderDongaEmail: 'name@donga.com',
+    sendEmailCode: '이메일 코드 전송',
+    journalistEmailSentTitle: '기자 이메일 코드 전송 완료',
+    journalistEmailSentDesc: '데모 코드를 입력해 동아일보 이메일 인증을 완료해 주세요.',
+    journalistEmailVerifyTitle: '기자 이메일 인증 완료',
+    journalistEmailVerifyDesc: '동아일보 기자 이메일이 확인되었습니다.',
+    journalistEmailRequiredTitle: '기자 이메일 인증 필요',
+    journalistEmailRequiredDesc: '동아일보 기자 이메일 인증을 먼저 완료해 주세요.',
+    journalistEmailInvalidDomain: '동아일보 이메일 주소만 사용할 수 있습니다.',
+    journalistEmailPreview: '데모 이메일 코드',
+    pressCardTitle: '기자증 데모 확인',
+    pressCardId: '기자증 번호',
+    pressCardFile: '기자증 파일',
+    pressCardHint: '이미지 또는 PDF 파일 한 개만 첨부하면 데모 승인됩니다.',
+    pressCardPlaceholder: 'PRESS-2026-001',
+    verifyPressCard: '기자증 확인',
+    pressCardVerifyTitle: '기자증 확인 완료',
+    pressCardVerifyDesc: '데모 기준으로 기자증이 승인되었습니다.',
+    pressCardRequiredTitle: '기자증 확인 필요',
+    pressCardRequiredDesc: '기자증 번호와 파일을 등록한 뒤 확인해 주세요.',
+    pressCardFileRequired: '기자증 파일을 첨부해 주세요.',
+    employeeGuideTitle: '동아일보 직원 데모 인증',
+    employeeGuideDesc: '기자와 관리자는 동아일보 직원 이메일 인증 후 사원 문서 확인을 완료해야 가입할 수 있습니다.',
+    employeeEmail: '동아일보 직원 이메일',
+    employeeEmailRequiredTitle: '직원 이메일 인증 필요',
+    employeeEmailRequiredDesc: '동아일보 직원 이메일 인증을 먼저 완료해 주세요.',
+    employeeEmailSentTitle: '직원 이메일 코드 전송 완료',
+    employeeEmailSentDesc: '데모 코드를 입력해 동아일보 직원 이메일 인증을 완료해 주세요.',
+    employeeEmailVerifyTitle: '직원 이메일 인증 완료',
+    employeeEmailVerifyDesc: '동아일보 직원 이메일이 확인되었습니다.',
+    employeeEmailInvalidDomain: '동아일보 직원 이메일 주소만 사용할 수 있습니다.',
+    employeeEmailPreview: '데모 직원 이메일 코드',
+    employeeDocumentTitle: '동아일보 직원 문서 확인',
+    employeeDocumentRequiredTitle: '직원 문서 확인 필요',
+    employeeDocumentRequiredDesc: '문서 종류, 사번/증번호, 파일을 등록한 뒤 확인해 주세요.',
+    employeeDocumentFileRequired: '직원 문서 파일을 첨부해 주세요.',
+    employeeDocumentVerifiedTitle: '직원 문서 확인 완료',
+    employeeDocumentVerifiedDesc: '데모 기준으로 동아일보 직원 문서가 승인되었습니다.',
+    employeeCredentialId: '사번 또는 증번호',
+    employeeCredentialPlaceholder: 'DONGA-2026-001',
+    employeeDocumentType: '문서 종류',
+    documentPressCard: '기자증',
+    documentBusinessCard: '명함',
+    verifyEmployeeDocument: '직원 문서 확인',
+    adminHeadTitle: '관리자 직급',
+    adminHeadTitleRequiredTitle: '관리자 직급 필요',
+    adminHeadTitleRequiredDesc: '편집장, 부장 등 관리자 직급을 선택해 주세요.',
+    employeeDbFutureHint: '추후 동아일보 직원 DB와 연결되면 이메일과 문서 정보로 자동 인증될 수 있도록 구조를 맞춰두었습니다.',
   },
   en: {
     back: 'Back',
@@ -165,6 +225,57 @@ const COPY = {
     authErrorDesc: 'Something went wrong.',
     demoLoginDoneTitle: 'Demo login success',
     demoLoginDoneDesc: 'Signed in with test account.',
+    journalistGuideTitle: 'Journalist demo verification',
+    journalistGuideDesc: 'Journalist signup needs phone verification plus Donga email and press card checks.',
+    dongaEmail: 'Donga journalist email',
+    placeholderDongaEmail: 'name@donga.com',
+    sendEmailCode: 'Send email code',
+    journalistEmailSentTitle: 'Journalist email code sent',
+    journalistEmailSentDesc: 'Enter the demo code to complete Donga email verification.',
+    journalistEmailVerifyTitle: 'Journalist email verified',
+    journalistEmailVerifyDesc: 'Your Donga journalist email is confirmed.',
+    journalistEmailRequiredTitle: 'Journalist email verification required',
+    journalistEmailRequiredDesc: 'Verify your Donga journalist email first.',
+    journalistEmailInvalidDomain: 'Only Donga email addresses are allowed.',
+    journalistEmailPreview: 'Demo email code',
+    pressCardTitle: 'Press card demo check',
+    pressCardId: 'Press card ID',
+    pressCardFile: 'Press card file',
+    pressCardHint: 'Attach one image or PDF file for demo approval.',
+    pressCardPlaceholder: 'PRESS-2026-001',
+    verifyPressCard: 'Verify press card',
+    pressCardVerifyTitle: 'Press card verified',
+    pressCardVerifyDesc: 'Your press card was approved in demo mode.',
+    pressCardRequiredTitle: 'Press card verification required',
+    pressCardRequiredDesc: 'Enter a press card ID and attach a file first.',
+    pressCardFileRequired: 'Attach a press card file first.',
+    employeeGuideTitle: 'Donga employee demo verification',
+    employeeGuideDesc: 'Journalists and admins must complete Donga employee email verification and document approval before signup.',
+    employeeEmail: 'Donga employee email',
+    employeeEmailRequiredTitle: 'Employee email verification required',
+    employeeEmailRequiredDesc: 'Verify your Donga employee email first.',
+    employeeEmailSentTitle: 'Employee email code sent',
+    employeeEmailSentDesc: 'Enter the demo code to complete Donga employee email verification.',
+    employeeEmailVerifyTitle: 'Employee email verified',
+    employeeEmailVerifyDesc: 'Your Donga employee email is confirmed.',
+    employeeEmailInvalidDomain: 'Only Donga employee email addresses are allowed.',
+    employeeEmailPreview: 'Demo employee email code',
+    employeeDocumentTitle: 'Donga employee document check',
+    employeeDocumentRequiredTitle: 'Employee document verification required',
+    employeeDocumentRequiredDesc: 'Choose document type, enter credential ID, and attach a file first.',
+    employeeDocumentFileRequired: 'Attach an employee document file first.',
+    employeeDocumentVerifiedTitle: 'Employee document verified',
+    employeeDocumentVerifiedDesc: 'Your Donga employee document was approved in demo mode.',
+    employeeCredentialId: 'Employee or credential ID',
+    employeeCredentialPlaceholder: 'DONGA-2026-001',
+    employeeDocumentType: 'Document type',
+    documentPressCard: 'Press card',
+    documentBusinessCard: 'Business card',
+    verifyEmployeeDocument: 'Verify employee document',
+    adminHeadTitle: 'Admin title',
+    adminHeadTitleRequiredTitle: 'Admin title required',
+    adminHeadTitleRequiredDesc: 'Choose a leadership title such as Editor-in-Chief or Managing Editor.',
+    employeeDbFutureHint: 'This flow is prepared so it can be upgraded later to auto-verify against a Donga employee directory.',
   },
 } as const;
 
@@ -184,6 +295,15 @@ export default function LoginPage() {
   const [otpPreviewCode, setOtpPreviewCode] = useState('');
   const [isPhoneVerified, setIsPhoneVerified] = useState(false);
   const [otpCooldownUntil, setOtpCooldownUntil] = useState(0);
+  const [journalistEmailCode, setJournalistEmailCode] = useState('');
+  const [journalistEmailPreviewCode, setJournalistEmailPreviewCode] = useState('');
+  const [journalistEmailVerified, setJournalistEmailVerified] = useState(false);
+  const [journalistEmailCooldownUntil, setJournalistEmailCooldownUntil] = useState(0);
+  const [pressCardId, setPressCardId] = useState('');
+  const [pressCardFile, setPressCardFile] = useState<File | null>(null);
+  const [pressCardVerified, setPressCardVerified] = useState(false);
+  const [employeeDocumentType, setEmployeeDocumentType] = useState<EmployeeDocumentType>('press_card');
+  const [adminHeadTitle, setAdminHeadTitle] = useState<AdminHeadTitle>('editor_in_chief');
 
   const [findPhone, setFindPhone] = useState('');
   const [findOtp, setFindOtp] = useState('');
@@ -203,6 +323,9 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [isCheckingOtp, setIsCheckingOtp] = useState(false);
+  const [isSendingJournalistEmail, setIsSendingJournalistEmail] = useState(false);
+  const [isCheckingJournalistEmail, setIsCheckingJournalistEmail] = useState(false);
+  const [isCheckingPressCard, setIsCheckingPressCard] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
 
   const [isSignUp, setIsSignUp] = useState(() => {
@@ -224,8 +347,16 @@ export default function LoginPage() {
   }, []);
 
   const otpCooldownSeconds = Math.max(0, Math.ceil((otpCooldownUntil - nowMs) / 1000));
+  const journalistEmailCooldownSeconds = Math.max(0, Math.ceil((journalistEmailCooldownUntil - nowMs) / 1000));
   const findCooldownSeconds = Math.max(0, Math.ceil((findCooldownUntil - nowMs) / 1000));
   const resetCooldownSeconds = Math.max(0, Math.ceil((resetCooldownUntil - nowMs) / 1000));
+  const requiresEmployeeVerification = isSignUp && (role === 'journalist' || role === 'admin');
+  const isAdminSignup = isSignUp && role === 'admin';
+  const employeeEmailLabel = t.employeeEmail;
+  const employeeGuideTitle = t.employeeGuideTitle;
+  const employeeGuideDesc = role === 'admin'
+    ? `${t.employeeGuideDesc} ${t.employeeDbFutureHint}`
+    : t.employeeGuideDesc;
 
   const mapOtpError = (code: string, retryAfter = 60) => {
     const ko: Record<string, string> = {
@@ -322,6 +453,120 @@ export default function LoginPage() {
     }
   };
 
+  const handleSendJournalistEmailCode = async () => {
+    const safeEmail = email.trim().toLowerCase();
+    if (!safeEmail) {
+      toast({ title: t.employeeEmailRequiredTitle, description: t.employeeEmailRequiredDesc, variant: 'destructive' });
+      return;
+    }
+    if (journalistEmailCooldownSeconds > 0) {
+      toast({ title: t.cooldownTitle, description: t.cooldownDesc(journalistEmailCooldownSeconds), variant: 'destructive' });
+      return;
+    }
+
+    setIsSendingJournalistEmail(true);
+    try {
+      const response = await fetch('/api/auth/employee/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: safeEmail, role }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.code === 'EMPLOYEE_EMAIL_DOMAIN_INVALID' ? t.employeeEmailInvalidDomain : (payload?.error || t.failedGeneric));
+      }
+
+      setJournalistEmailPreviewCode(String(payload?.previewCode || ''));
+      setJournalistEmailCooldownUntil(Date.now() + Number(payload?.cooldownSeconds || 60) * 1000);
+      setJournalistEmailVerified(false);
+      setPressCardVerified(false);
+      toast({ title: t.employeeEmailSentTitle, description: t.employeeEmailSentDesc });
+    } catch (error: any) {
+      toast({ title: t.otpSendFailed, description: error?.message || t.tryAgainLater, variant: 'destructive' });
+    } finally {
+      setIsSendingJournalistEmail(false);
+    }
+  };
+
+  const handleVerifyJournalistEmailCode = async () => {
+    const safeEmail = email.trim().toLowerCase();
+    const safeOtp = journalistEmailCode.trim();
+    if (!safeEmail || !safeOtp) {
+      toast({ title: t.inputRequiredTitle, description: t.journalistEmailRequiredDesc, variant: 'destructive' });
+      return;
+    }
+
+    setIsCheckingJournalistEmail(true);
+    try {
+      const response = await fetch('/api/auth/employee/email/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: safeEmail, otp: safeOtp }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || t.failedGeneric);
+      }
+
+      setJournalistEmailVerified(true);
+      toast({ title: t.employeeEmailVerifyTitle, description: t.employeeEmailVerifyDesc });
+    } catch (error: any) {
+      setJournalistEmailVerified(false);
+      toast({ title: t.otpVerifyFailed, description: error?.message || t.checkCodeRetry, variant: 'destructive' });
+    } finally {
+      setIsCheckingJournalistEmail(false);
+    }
+  };
+
+  const handleVerifyPressCard = async () => {
+    if (!journalistEmailVerified) {
+      toast({ title: t.employeeEmailRequiredTitle, description: t.employeeEmailRequiredDesc, variant: 'destructive' });
+      return;
+    }
+    if (role === 'admin' && !adminHeadTitle) {
+      toast({ title: t.adminHeadTitleRequiredTitle, description: t.adminHeadTitleRequiredDesc, variant: 'destructive' });
+      return;
+    }
+    if (!pressCardId.trim()) {
+      toast({ title: t.employeeDocumentRequiredTitle, description: t.employeeDocumentRequiredDesc, variant: 'destructive' });
+      return;
+    }
+    if (!pressCardFile) {
+      toast({ title: t.employeeDocumentRequiredTitle, description: t.employeeDocumentFileRequired, variant: 'destructive' });
+      return;
+    }
+
+    setIsCheckingPressCard(true);
+    try {
+      const response = await fetch('/api/auth/employee/document/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          credentialId: pressCardId.trim(),
+          fileName: pressCardFile.name,
+          fileType: pressCardFile.type,
+          role,
+          title: role === 'admin' ? adminHeadTitle : '',
+          documentType: role === 'admin' ? employeeDocumentType : 'press_card',
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || t.failedGeneric);
+      }
+
+      setPressCardVerified(true);
+      toast({ title: t.employeeDocumentVerifiedTitle, description: t.employeeDocumentVerifiedDesc });
+    } catch (error: any) {
+      setPressCardVerified(false);
+      toast({ title: t.employeeDocumentRequiredTitle, description: error?.message || t.failedGeneric, variant: 'destructive' });
+    } finally {
+      setIsCheckingPressCard(false);
+    }
+  };
+
   const handleFindId = async () => {
     try {
       const res = await fetch('/api/auth/find-id', {
@@ -397,6 +642,18 @@ export default function LoginPage() {
         toast({ title: t.phoneVerifyRequiredTitle, description: t.phoneVerifyRequiredDesc, variant: 'destructive' });
         return;
       }
+      if (requiresEmployeeVerification && !journalistEmailVerified) {
+        toast({ title: t.employeeEmailRequiredTitle, description: t.employeeEmailRequiredDesc, variant: 'destructive' });
+        return;
+      }
+      if (isAdminSignup && !adminHeadTitle) {
+        toast({ title: t.adminHeadTitleRequiredTitle, description: t.adminHeadTitleRequiredDesc, variant: 'destructive' });
+        return;
+      }
+      if (requiresEmployeeVerification && !pressCardVerified) {
+        toast({ title: t.employeeDocumentRequiredTitle, description: t.employeeDocumentRequiredDesc, variant: 'destructive' });
+        return;
+      }
       if (!termsAgreed) {
         toast({ title: t.termsRequiredTitle, description: t.termsRequiredDesc, variant: 'destructive' });
         return;
@@ -434,6 +691,18 @@ export default function LoginPage() {
               role,
               terms_agreed: true,
               phone_verified_demo: true,
+              employee_email_verified_demo: requiresEmployeeVerification ? journalistEmailVerified : false,
+              employee_document_verified_demo: requiresEmployeeVerification ? pressCardVerified : false,
+              journalist_email_verified_demo: role === 'journalist' ? journalistEmailVerified : false,
+              press_card_verified_demo: role === 'journalist' ? pressCardVerified : false,
+              journalist_org: requiresEmployeeVerification ? 'donga' : null,
+              employee_org: requiresEmployeeVerification ? 'donga' : null,
+              journalist_press_card_id: role === 'journalist' ? pressCardId.trim() : null,
+              employee_credential_id: requiresEmployeeVerification ? pressCardId.trim() : null,
+              employee_document_type: requiresEmployeeVerification ? (role === 'admin' ? employeeDocumentType : 'press_card') : null,
+              admin_head_title: role === 'admin' ? adminHeadTitle : null,
+              employee_verification_mode: requiresEmployeeVerification ? 'demo' : null,
+              journalist_verification_mode: role === 'journalist' ? 'demo' : null,
             },
           },
         });
@@ -533,7 +802,22 @@ export default function LoginPage() {
               {isSignUp && (
                 <div>
                   <Label className="mb-2 block text-human-main">{t.role}</Label>
-                  <Tabs value={role} onValueChange={(v) => setRole(v as UserRole)} className="w-full">
+                  <Tabs
+                    value={role}
+                    onValueChange={(v) => {
+                      const nextRole = v as UserRole;
+                      setRole(nextRole);
+                      setJournalistEmailCode('');
+                      setJournalistEmailPreviewCode('');
+                      setJournalistEmailVerified(false);
+                      setPressCardId('');
+                      setPressCardFile(null);
+                      setPressCardVerified(false);
+                      setEmployeeDocumentType('press_card');
+                      setAdminHeadTitle('editor_in_chief');
+                    }}
+                    className="w-full"
+                  >
                     <TabsList className="grid w-full grid-cols-3">
                       <TabsTrigger value="general">{t.roleGeneral}</TabsTrigger>
                       <TabsTrigger value="journalist">{t.roleJournalist}</TabsTrigger>
@@ -592,9 +876,144 @@ export default function LoginPage() {
                 <Label htmlFor="email" className="text-human-main">{t.email}</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <Input id="email" type="email" placeholder={t.placeholderEmail} value={email} onChange={(e) => setEmail(e.target.value)} className="pl-10" required data-testid="input-email" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder={requiresEmployeeVerification ? t.placeholderDongaEmail : t.placeholderEmail}
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setJournalistEmailVerified(false);
+                      setPressCardVerified(false);
+                    }}
+                    className="pl-10"
+                    required
+                    data-testid="input-email"
+                  />
                 </div>
               </div>
+
+              {requiresEmployeeVerification && (
+                <div className="space-y-4 rounded-2xl border border-sky-100 bg-sky-50/70 p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-slate-900">{employeeGuideTitle}</p>
+                    <p className="text-xs leading-5 text-slate-600">{employeeGuideDesc}</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-human-main">{employeeEmailLabel}</Label>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleSendJournalistEmailCode}
+                        disabled={isSendingJournalistEmail || journalistEmailCooldownSeconds > 0}
+                      >
+                        {isSendingJournalistEmail ? t.sending : journalistEmailCooldownSeconds > 0 ? `${t.resendOtp} ${journalistEmailCooldownSeconds}s` : t.sendEmailCode}
+                      </Button>
+                      {journalistEmailVerified && (
+                        <span className="text-xs text-green-700 inline-flex items-center gap-1">
+                          <Check className="w-3 h-3" />{t.verified}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder={t.placeholderOtp}
+                        value={journalistEmailCode}
+                        onChange={(e) => setJournalistEmailCode(e.target.value)}
+                        maxLength={6}
+                      />
+                      <Button type="button" variant="outline" onClick={handleVerifyJournalistEmailCode} disabled={isCheckingJournalistEmail}>
+                        {isCheckingJournalistEmail ? t.checking : t.verify}
+                      </Button>
+                    </div>
+                    {journalistEmailPreviewCode && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        {t.employeeEmailPreview}: {journalistEmailPreviewCode}
+                      </p>
+                    )}
+                  </div>
+
+                  {isAdminSignup && (
+                    <div className="space-y-2">
+                      <Label htmlFor="adminHeadTitle" className="text-human-main">{t.adminHeadTitle}</Label>
+                      <select
+                        id="adminHeadTitle"
+                        value={adminHeadTitle}
+                        onChange={(e) => {
+                          setAdminHeadTitle(e.target.value as AdminHeadTitle);
+                          setPressCardVerified(false);
+                        }}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        {ADMIN_HEAD_TITLES.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {locale === 'ko' ? item.ko : item.en}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pressCardId" className="text-human-main">{t.employeeCredentialId}</Label>
+                    <Input
+                      id="pressCardId"
+                      placeholder={t.employeeCredentialPlaceholder}
+                      value={pressCardId}
+                      onChange={(e) => {
+                        setPressCardId(e.target.value);
+                        setPressCardVerified(false);
+                      }}
+                    />
+                  </div>
+
+                  {isAdminSignup && (
+                    <div className="space-y-2">
+                      <Label htmlFor="employeeDocumentType" className="text-human-main">{t.employeeDocumentType}</Label>
+                      <select
+                        id="employeeDocumentType"
+                        value={employeeDocumentType}
+                        onChange={(e) => {
+                          setEmployeeDocumentType(e.target.value as EmployeeDocumentType);
+                          setPressCardVerified(false);
+                        }}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="press_card">{t.documentPressCard}</option>
+                        <option value="business_card">{t.documentBusinessCard}</option>
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="pressCardFile" className="text-human-main">{t.pressCardFile}</Label>
+                    <Input
+                      id="pressCardFile"
+                      type="file"
+                      accept="image/*,.pdf,application/pdf"
+                      onChange={(e) => {
+                        setPressCardFile(e.target.files?.[0] || null);
+                        setPressCardVerified(false);
+                      }}
+                    />
+                    <p className="text-xs leading-5 text-slate-500">
+                      {role === 'admin' ? `${t.pressCardHint} ${t.employeeDbFutureHint}` : t.pressCardHint}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" onClick={handleVerifyPressCard} disabled={isCheckingPressCard}>
+                        {isCheckingPressCard ? t.checking : t.verifyEmployeeDocument}
+                      </Button>
+                      {pressCardVerified && (
+                        <span className="text-xs text-green-700 inline-flex items-center gap-1">
+                          <Check className="w-3 h-3" />{t.verified}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-human-main">{t.password}</Label>
@@ -778,6 +1197,14 @@ export default function LoginPage() {
                     setRole('general');
                     setIsPhoneVerified(false);
                     setOtpCode('');
+                    setJournalistEmailCode('');
+                    setJournalistEmailPreviewCode('');
+                    setJournalistEmailVerified(false);
+                    setPressCardId('');
+                    setPressCardFile(null);
+                    setPressCardVerified(false);
+                    setEmployeeDocumentType('press_card');
+                    setAdminHeadTitle('editor_in_chief');
                   }}
                   className="text-sm text-human-sub hover:text-human-main transition-colors"
                   data-testid="button-toggle-mode"
