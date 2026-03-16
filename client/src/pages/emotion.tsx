@@ -36,6 +36,36 @@ const EMOTION_FILTER_COPY: Record<EmotionType, { label: string; hint: string }> 
   spectrum: { label: '스펙트럼', hint: '다양한 관점을 함께 보는 기사' },
 };
 
+function normalizeCategoryLabel(rawCategory: string | null | undefined): string {
+  const value = String(rawCategory || '').trim();
+  if (!value) return '기타';
+  const lower = value.toLowerCase();
+
+  if (/(politics|policy|government|economy|business|finance|society|social|world|international|current affairs|news|정치|정책|경제|사회|국제|시사)/i.test(lower)) {
+    return '시사';
+  }
+  if (/(entertainment|culture|arts|music|movie|drama|celebrity|fashion|연예|문화|예술|영화|드라마|패션)/i.test(lower)) {
+    return '연예';
+  }
+  if (/(tech|technology|science|ai|startup|digital|research|기술|과학|ai|스타트업|디지털)/i.test(lower)) {
+    return '기술·과학';
+  }
+  if (/(health|wellbeing|wellness|life|lifestyle|food|travel|건강|웰빙|라이프|생활|푸드|여행)/i.test(lower)) {
+    return '라이프';
+  }
+  if (/(sports|football|baseball|soccer|basketball|올림픽|스포츠|축구|야구|농구)/i.test(lower)) {
+    return '스포츠';
+  }
+  if (/(climate|environment|eco|weather|환경|기후|날씨|생태)/i.test(lower)) {
+    return '환경';
+  }
+  if (/(community|opinion|column|people|교육|커뮤니티|칼럼|오피니언|인물)/i.test(lower)) {
+    return '커뮤니티';
+  }
+
+  return value.length <= 12 ? value : `${value.slice(0, 12)}…`;
+}
+
 const MOCK_AUTHORS = [
   { name: 'Kim J.', avatar: null },
   { name: 'Lee S.', avatar: null },
@@ -180,6 +210,7 @@ export default function EmotionPage() {
   const { toast } = useToast();
   const [selectedCardBg, setSelectedCardBg] = useState<string>('rgba(255,255,255,0.96)');
   const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [sortKey, setSortKey] = useState<'latest' | 'oldest' | 'intensity_desc' | 'intensity_asc' | 'title_asc'>('latest');
   const [visibleCount, setVisibleCount] = useState(9);
@@ -468,6 +499,14 @@ export default function EmotionPage() {
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
   }, [news]);
 
+  const categoryOptions = useMemo(() => {
+    const labels = new Set<string>();
+    for (const item of news) {
+      labels.add(normalizeCategoryLabel(item.category));
+    }
+    return Array.from(labels).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko'));
+  }, [news]);
+
   const filteredNews = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
     let rows = [...news];
@@ -483,6 +522,10 @@ export default function EmotionPage() {
 
     if (sourceFilter !== 'all') {
       rows = rows.filter((item) => (item.source || '').trim() === sourceFilter);
+    }
+
+    if (categoryFilter !== 'all') {
+      rows = rows.filter((item) => normalizeCategoryLabel(item.category) === categoryFilter);
     }
 
     rows.sort((a, b) => {
@@ -509,14 +552,14 @@ export default function EmotionPage() {
     });
 
     return rows;
-  }, [news, searchTerm, sourceFilter, sortKey]);
+  }, [news, searchTerm, sourceFilter, categoryFilter, sortKey]);
 
   const hasMore = visibleCount < filteredNews.length;
   const visibleNews = useMemo(() => filteredNews.slice(0, visibleCount), [filteredNews, visibleCount]);
 
   useEffect(() => {
     setVisibleCount(9);
-  }, [type, searchTerm, sourceFilter, sortKey]);
+  }, [type, searchTerm, sourceFilter, categoryFilter, sortKey]);
 
   useEffect(() => {
     if (!hasMore) return;
@@ -589,6 +632,18 @@ export default function EmotionPage() {
               </Button>
             </Link>
           </div>
+          <div className="mb-4 max-w-2xl">
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="기사 제목, 요약, 출처를 검색해 보세요"
+                className="w-full h-12 rounded-2xl bg-white/90 pl-10 pr-4 text-sm text-gray-800 shadow-[0_10px_24px_rgba(35,34,33,0.08)] ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-black/15"
+                data-testid="input-news-search-top"
+              />
+            </div>
+          </div>
           <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold text-human-main mb-2" data-testid="text-emotion-title">
             {emotionConfig.label}
           </h1>
@@ -612,60 +667,46 @@ export default function EmotionPage() {
               </span>
             ))}
           </div>
-          <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-            <div className="relative max-w-2xl">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="기사 제목, 요약, 출처를 검색해 보세요"
-                className="w-full h-11 rounded-2xl bg-white/88 pl-10 pr-4 text-sm text-gray-800 shadow-[0_6px_18px_rgba(35,34,33,0.08)] ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-black/15"
-                data-testid="input-news-search-top"
-              />
-            </div>
+          <div className="mb-4">
             <div className="flex flex-wrap items-center gap-2">
-              {(EMOTION_CONFIG.map((entry) => entry.type) as EmotionType[]).map((emotionType) => {
-                const FilterIcon = EMOTION_ICONS[emotionType];
-                const isActive = emotionType === type;
-                const helper = EMOTION_FILTER_COPY[emotionType];
-                const color = getEmotionColor(emotionType);
-                return (
-                  <Tooltip key={emotionType}>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => handleEmotionCategorySelect(emotionType)}
-                        aria-pressed={isActive}
-                        aria-label={`${helper.label} 기사 보기`}
-                        className="group inline-flex items-center gap-2 rounded-full bg-white/86 px-3 py-2 text-sm text-gray-700 shadow-[0_6px_18px_rgba(35,34,33,0.08)] ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-white"
-                        style={{
-                          boxShadow: isActive ? `0 10px 24px ${hexToRgba(color, 0.22)}` : undefined,
-                          borderColor: isActive ? color : undefined,
-                        }}
-                        data-testid={`emotion-quick-filter-${emotionType}`}
-                      >
-                        <span
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full"
-                          style={{
-                            backgroundColor: hexToRgba(color, isActive ? 0.22 : 0.12),
-                            color,
-                          }}
-                        >
-                          <FilterIcon className="h-4 w-4" />
-                        </span>
-                        <span className="hidden sm:flex flex-col items-start leading-none">
-                          <span className="font-semibold text-gray-800">{helper.label}</span>
-                          <span className="mt-1 text-[11px] text-gray-500">{helper.hint}</span>
-                        </span>
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{helper.hint}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })}
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('all')}
+                className="inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition"
+                style={{
+                  backgroundColor: categoryFilter === 'all' ? hexToRgba(emotionConfig.color, 0.14) : 'rgba(255,255,255,0.88)',
+                  color: categoryFilter === 'all' ? emotionConfig.color : '#4b5563',
+                  boxShadow: '0 6px 18px rgba(35,34,33,0.08)',
+                }}
+                data-testid="category-filter-all"
+              >
+                전체
+              </button>
+              {categoryOptions.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setCategoryFilter(category)}
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition"
+                  style={{
+                    backgroundColor: categoryFilter === category ? hexToRgba(emotionConfig.color, 0.14) : 'rgba(255,255,255,0.88)',
+                    color: categoryFilter === category ? emotionConfig.color : '#4b5563',
+                    boxShadow: '0 6px 18px rgba(35,34,33,0.08)',
+                  }}
+                  data-testid={`category-filter-${category}`}
+                >
+                  <span
+                    className="inline-flex h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: emotionConfig.color }}
+                    aria-hidden="true"
+                  />
+                  {category}
+                </button>
+              ))}
             </div>
+            <p className="mt-2 text-xs text-human-sub">
+              기사 주제별로 바로 좁혀볼 수 있어요. 예: 시사, 연예, 기술·과학
+            </p>
           </div>
           <p className="text-human-sub text-sm">
             {filteredNews.length}/{news.length} articles
@@ -735,6 +776,7 @@ export default function EmotionPage() {
                   className="mt-3 bg-white/82 hover:bg-white/92"
                   onClick={() => {
                     setSearchTerm('');
+                    setCategoryFilter('all');
                     setSourceFilter('all');
                     setSortKey('latest');
                   }}
