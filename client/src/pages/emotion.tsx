@@ -663,30 +663,7 @@ export default function EmotionPage() {
               />
             </div>
           </div>
-          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold text-human-main mb-2" data-testid="text-emotion-title">
-            {emotionConfig.label}
-          </h1>
-          <p className="text-lg sm:text-xl text-human-main/80 font-medium mb-2">
-            {emotionConfig.labelKo}
-          </p>
-          <p className="text-human-sub text-base sm:text-lg mb-4" data-testid="text-story-count">
-            {emotionConfig.subLabel}
-          </p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {emotionConfig.recommendedNews.map((news, idx) => (
-              <span
-                key={idx}
-                className="px-2.5 sm:px-3 py-1 rounded-full text-xs sm:text-sm leading-tight"
-                style={{
-                  backgroundColor: `${emotionConfig.color}24`,
-                  color: emotionConfig.color,
-                }}
-              >
-                {news}
-              </span>
-            ))}
-          </div>
-          <div className="mb-4 flex flex-col items-center">
+          <div className="mb-5 flex flex-col items-center">
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
@@ -726,6 +703,29 @@ export default function EmotionPage() {
             <p className="mt-2 text-center text-xs text-human-sub">
               기사 주제별로 바로 좁혀볼 수 있어요. 예: 시사, 연예, 기술·과학
             </p>
+          </div>
+          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold text-human-main mb-2" data-testid="text-emotion-title">
+            {emotionConfig.label}
+          </h1>
+          <p className="text-lg sm:text-xl text-human-main/80 font-medium mb-2">
+            {emotionConfig.labelKo}
+          </p>
+          <p className="text-human-sub text-base sm:text-lg mb-4" data-testid="text-story-count">
+            {emotionConfig.subLabel}
+          </p>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {emotionConfig.recommendedNews.map((news, idx) => (
+              <span
+                key={idx}
+                className="px-2.5 sm:px-3 py-1 rounded-full text-xs sm:text-sm leading-tight"
+                style={{
+                  backgroundColor: `${emotionConfig.color}24`,
+                  color: emotionConfig.color,
+                }}
+              >
+                {news}
+              </span>
+            ))}
           </div>
           <p className="text-human-sub text-sm text-center">
             {filteredNews.length}/{news.length} articles
