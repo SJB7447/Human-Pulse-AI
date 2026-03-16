@@ -632,8 +632,8 @@ export default function EmotionPage() {
               </Button>
             </Link>
           </div>
-          <div className="mb-4 max-w-2xl">
-            <div className="relative">
+          <div className="mb-5 flex justify-center">
+            <div className="relative w-full max-w-2xl">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 value={searchTerm}
@@ -667,8 +667,8 @@ export default function EmotionPage() {
               </span>
             ))}
           </div>
-          <div className="mb-4">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="mb-4 flex flex-col items-center">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => setCategoryFilter('all')}
@@ -704,11 +704,11 @@ export default function EmotionPage() {
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-xs text-human-sub">
+            <p className="mt-2 text-center text-xs text-human-sub">
               기사 주제별로 바로 좁혀볼 수 있어요. 예: 시사, 연예, 기술·과학
             </p>
           </div>
-          <p className="text-human-sub text-sm">
+          <p className="text-human-sub text-sm text-center">
             {filteredNews.length}/{news.length} articles
           </p>
         </motion.div>
