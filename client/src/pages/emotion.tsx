@@ -27,6 +27,15 @@ const EMOTION_ICONS: Record<EmotionType, typeof Heart> = {
   spectrum: HelpCircle,
 };
 
+const EMOTION_FILTER_COPY: Record<EmotionType, { label: string; hint: string }> = {
+  vibrance: { label: '설렘', hint: '밝고 경쾌한 기사' },
+  immersion: { label: '몰입', hint: '긴장감 있는 이슈' },
+  clarity: { label: '통찰', hint: '분석과 해설 중심' },
+  gravity: { label: '무게', hint: '사회적 의미가 큰 기사' },
+  serenity: { label: '안정', hint: '회복과 일상에 가까운 기사' },
+  spectrum: { label: '스펙트럼', hint: '다양한 관점을 함께 보는 기사' },
+};
+
 const MOCK_AUTHORS = [
   { name: 'Kim J.', avatar: null },
   { name: 'Lee S.', avatar: null },
@@ -603,6 +612,61 @@ export default function EmotionPage() {
               </span>
             ))}
           </div>
+          <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="relative max-w-2xl">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="기사 제목, 요약, 출처를 검색해 보세요"
+                className="w-full h-11 rounded-2xl bg-white/88 pl-10 pr-4 text-sm text-gray-800 shadow-[0_6px_18px_rgba(35,34,33,0.08)] ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-black/15"
+                data-testid="input-news-search-top"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {(EMOTION_CONFIG.map((entry) => entry.type) as EmotionType[]).map((emotionType) => {
+                const FilterIcon = EMOTION_ICONS[emotionType];
+                const isActive = emotionType === type;
+                const helper = EMOTION_FILTER_COPY[emotionType];
+                const color = getEmotionColor(emotionType);
+                return (
+                  <Tooltip key={emotionType}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => handleEmotionCategorySelect(emotionType)}
+                        aria-pressed={isActive}
+                        aria-label={`${helper.label} 기사 보기`}
+                        className="group inline-flex items-center gap-2 rounded-full bg-white/86 px-3 py-2 text-sm text-gray-700 shadow-[0_6px_18px_rgba(35,34,33,0.08)] ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-white"
+                        style={{
+                          boxShadow: isActive ? `0 10px 24px ${hexToRgba(color, 0.22)}` : undefined,
+                          borderColor: isActive ? color : undefined,
+                        }}
+                        data-testid={`emotion-quick-filter-${emotionType}`}
+                      >
+                        <span
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full"
+                          style={{
+                            backgroundColor: hexToRgba(color, isActive ? 0.22 : 0.12),
+                            color,
+                          }}
+                        >
+                          <FilterIcon className="h-4 w-4" />
+                        </span>
+                        <span className="hidden sm:flex flex-col items-start leading-none">
+                          <span className="font-semibold text-gray-800">{helper.label}</span>
+                          <span className="mt-1 text-[11px] text-gray-500">{helper.hint}</span>
+                        </span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{helper.hint}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </div>
           <p className="text-human-sub text-sm">
             {filteredNews.length}/{news.length} articles
           </p>
@@ -632,18 +696,7 @@ export default function EmotionPage() {
         ) : (
           <div className="mt-6 sm:mt-8">
             <div className="mb-8 rounded-3xl bg-white/62 p-4 sm:p-6 shadow-[0_2px_12px_rgba(35,34,33,0.06)]">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search title, summary, source"
-                    className="w-full h-11 rounded-xl bg-white/88 pl-9 pr-3 text-sm text-gray-800 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.3)] focus:outline-none focus:ring-2 focus:ring-black/15"
-                    data-testid="input-news-search"
-                  />
-                </div>
-
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <select
                   value={sourceFilter}
                   onChange={(e) => setSourceFilter(e.target.value)}
