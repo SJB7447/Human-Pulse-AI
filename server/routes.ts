@@ -8,7 +8,7 @@ import { GoogleGenAI, type GenerateVideosOperation, type GenerateVideosSource, t
 import { storage } from "./storage.js";
 import { supabase } from "./supabase.js";
 import { runAutoNewsUpdate } from "./services/newsCron.js";
-import { emotionTypes, type EmotionType } from "../shared/schema.js";
+import { emotionTypes, type EmotionType, type NewsItem } from "../shared/schema.js";
 import { buildDraftGenerationPrompt, normalizeDraftMode, type DraftMode } from "./services/articlePrompt.js";
 import {
   type InteractiveArticle,
@@ -451,6 +451,85 @@ function parseDataUrlPayload(dataUrl: string): { mimeType: string; buffer: Buffe
 
 function buildArticleMediaProxyUrl(req: any, objectPath: string, bucket: string = ARTICLE_MEDIA_BUCKET): string {
   return `/api/media/object?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(objectPath)}`;
+}
+
+function buildArticleMediaPublicUrl(objectPath: string, bucket: string = ARTICLE_MEDIA_BUCKET): string {
+  const path = String(objectPath || "").trim();
+  if (!path) return "";
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return String(data?.publicUrl || "").trim();
+}
+
+function parseArticleMediaProxyUrl(value: unknown): { bucket: string; path: string } | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  try {
+    const parsed = raw.startsWith("/")
+      ? new URL(raw, "http://local.huebrief")
+      : new URL(raw);
+    if (parsed.pathname !== "/api/media/object") return null;
+    const objectPath = String(parsed.searchParams.get("path") || "").trim();
+    if (!objectPath) return null;
+    const bucket = String(parsed.searchParams.get("bucket") || ARTICLE_MEDIA_BUCKET).trim() || ARTICLE_MEDIA_BUCKET;
+    return { bucket, path: objectPath };
+  } catch {
+    return null;
+  }
+}
+
+function resolveArticleMediaUrl(value: unknown): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const proxyRef = parseArticleMediaProxyUrl(raw);
+  if (proxyRef) {
+    const publicUrl = buildArticleMediaPublicUrl(proxyRef.path, proxyRef.bucket);
+    return publicUrl || raw;
+  }
+
+  return raw;
+}
+
+function toArticleListItem(row: any) {
+  return {
+    id: row?.id,
+    title: row?.title ?? "",
+    summary: row?.summary ?? "",
+    source: row?.source ?? "",
+    image: resolveArticleMediaUrl(row?.image),
+    category: row?.category ?? null,
+    emotion: toEmotion(row?.emotion),
+    intensity: Number(row?.intensity ?? 50) || 50,
+    views: Number(row?.views ?? 0) || 0,
+    saves: Number(row?.saves ?? 0) || 0,
+    authorId: row?.authorId ?? row?.author_id ?? null,
+    authorName: row?.authorName ?? row?.author_name ?? null,
+    isPublished: typeof row?.isPublished === "boolean"
+      ? row.isPublished
+      : typeof row?.is_published === "boolean"
+        ? row.is_published
+        : true,
+    created_at: row?.createdAt ?? row?.created_at ?? null,
+    updated_at: row?.updatedAt ?? row?.updated_at ?? null,
+  };
+}
+
+function toArticleDetailItem(row: any) {
+  return {
+    ...toArticleListItem(row),
+    content: row?.content ?? null,
+    platforms: Array.isArray(row?.platforms) ? row.platforms : ["interactive"],
+  };
+}
+
+function buildSpectrumNewsList(rows: NewsItem[], perEmotion = 3) {
+  const orderedEmotions: EmotionType[] = ["vibrance", "immersion", "clarity", "gravity", "serenity"];
+  return orderedEmotions.flatMap((emotion) =>
+    rows
+      .filter((row) => toEmotion((row as any)?.emotion, "spectrum") === emotion)
+      .slice(0, perEmotion),
+  );
 }
 
 function createDraftOpsCounters(): DraftOpsCounters {
@@ -1175,6 +1254,23 @@ async function hydrateAiNewsSettings(): Promise<void> {
     console.info("[AI_NEWS_SETTINGS] hydrated from admin logs", { updatedAt: aiNewsSettingsUpdatedAt });
   } catch (error) {
     console.warn("[AI_NEWS_SETTINGS] failed hydration:", error);
+  }
+}
+
+async function runStartupHydration(
+  label: string,
+  task: () => Promise<void>,
+  timeoutMs = 2500,
+): Promise<void> {
+  try {
+    await Promise.race([
+      task(),
+      new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error(`${label} startup hydration timeout after ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ]);
+  } catch (error) {
+    console.warn(`[STARTUP] ${label} skipped:`, error);
   }
 }
 
@@ -3863,10 +3959,10 @@ async function generateHueBotLlmReply(input: {
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
-  await hydrateDraftOpsMetrics();
-  await hydrateAiNewsOpsMetrics();
-  await hydrateAiDraftGateSettings();
-  await hydrateAiNewsSettings();
+  await runStartupHydration("draft metrics", hydrateDraftOpsMetrics);
+  await runStartupHydration("ai news metrics", hydrateAiNewsOpsMetrics);
+  await runStartupHydration("ai draft settings", hydrateAiDraftGateSettings);
+  await runStartupHydration("ai news settings", hydrateAiNewsSettings);
   type SubscriptionPlan = "free" | "premium";
   type RoleRequestStatus = "pending" | "approved" | "rejected";
   type RoleType = "general" | "journalist" | "admin";
@@ -4255,7 +4351,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       const includeHidden = req.query.all === "true";
       const news = await storage.getAllNews(includeHidden);
-      res.json(news);
+      res.json(news.map(toArticleListItem));
     } catch (error: any) {
       console.error("[API] /api/news failed:", error);
       res.status(200).json([]);
@@ -4265,8 +4361,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/news/:emotion", async (req, res) => {
     try {
       const emotion = toEmotion(req.params.emotion);
+      if (emotion === "spectrum") {
+        const news = await storage.getAllNews(false);
+        res.json(buildSpectrumNewsList(news).map(toArticleListItem));
+        return;
+      }
+
       const news = await storage.getNewsByEmotion(emotion);
-      res.json(news);
+      res.json(news.map(toArticleListItem));
     } catch (error: any) {
       console.error("[API] /api/news/:emotion failed:", error);
       res.status(200).json([]);
@@ -7977,7 +8079,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return res.status(201).json({
       bucket: ARTICLE_MEDIA_BUCKET,
       path: objectPath,
-      url: buildArticleMediaProxyUrl(req, objectPath, ARTICLE_MEDIA_BUCKET),
+      url: buildArticleMediaPublicUrl(objectPath, ARTICLE_MEDIA_BUCKET) || buildArticleMediaProxyUrl(req, objectPath, ARTICLE_MEDIA_BUCKET),
       mimeType: parsed.mimeType,
       size: parsed.buffer.byteLength,
     });
@@ -7990,19 +8092,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       return res.status(400).json({ error: "path is required." });
     }
 
-    const { data, error } = await supabase.storage.from(bucket).download(objectPath);
-    if (error || !data) {
+    const publicUrl = buildArticleMediaPublicUrl(objectPath, bucket);
+    if (!publicUrl) {
       return res.status(404).json({
         error: "미디어를 찾을 수 없습니다.",
         code: "MEDIA_NOT_FOUND",
       });
     }
 
-    const arrayBuffer = await data.arrayBuffer();
-    const contentType = data.type || "application/octet-stream";
-    res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    return res.send(Buffer.from(arrayBuffer));
+    return res.redirect(302, publicUrl);
+  });
+
+  app.get("/api/articles/:id", async (req, res) => {
+    try {
+      const item = await storage.getNewsItemById(String(req.params.id || ""));
+      if (!item) {
+        return res.status(404).json({ error: "Article not found" });
+      }
+      return res.json(toArticleDetailItem(item));
+    } catch (error: any) {
+      console.error("[API] /api/articles/:id failed:", error);
+      return res.status(404).json({ error: "Article not found" });
+    }
   });
 
   app.post("/api/articles", async (req, res) => {
@@ -8011,7 +8123,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       source: deriveArticleSource(req.body || {}),
     };
     const newItem = await storage.createNewsItem(articleData);
-    res.status(201).json(newItem);
+    res.status(201).json(toArticleDetailItem(newItem));
   });
 
   app.put("/api/articles/:id", async (req, res) => {
@@ -8059,7 +8171,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
     }
 
-    res.json(updatedItem);
+    res.json(toArticleDetailItem(updatedItem));
   });
 
   app.delete("/api/articles/:id", async (req, res) => {
@@ -8072,8 +8184,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/articles", async (req, res) => {
     try {
       const includeHidden = req.query.all === "true";
+      const view = String(req.query.view || "list").trim().toLowerCase() === "full" ? "full" : "list";
       const news = await storage.getAllNews(includeHidden);
-      res.json(news);
+      res.json(news.map((item) => (view === "full" ? toArticleDetailItem(item) : toArticleListItem(item))));
     } catch (error: any) {
       console.error("[API] /api/articles failed:", error);
       res.status(200).json([]);

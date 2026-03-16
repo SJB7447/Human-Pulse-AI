@@ -66,23 +66,9 @@ function toNewsItem(item: any): NewsItem {
 
 async function safeFetchJson(url: string): Promise<any[]> {
     try {
-        let response = await fetch(url, {
-            cache: 'no-store',
-            headers: {
-                Accept: 'application/json',
-                'Cache-Control': 'no-cache',
-                Pragma: 'no-cache',
-            },
+        const response = await fetch(url, {
+            headers: { Accept: 'application/json' },
         });
-
-        // Some CDNs/proxies can respond 304 to conditional GET; retry once with cache-busting.
-        if (response.status === 304) {
-            const separator = url.includes('?') ? '&' : '?';
-            response = await fetch(`${url}${separator}_=${Date.now()}`, {
-                cache: 'no-store',
-                headers: { Accept: 'application/json' },
-            });
-        }
 
         const contentType = (response.headers.get('content-type') || '').toLowerCase();
         const bodyText = await response.text();
@@ -119,53 +105,9 @@ async function safeFetchJson(url: string): Promise<any[]> {
     }
 }
 
-async function fetchEmotionFromArticlesApi(emotion: EmotionType): Promise<NewsItem[]> {
-    try {
-        const rows = await safeFetchJson('/api/articles?all=true');
-        return (rows || [])
-            .filter((item: any) => {
-                const published = typeof item?.isPublished === 'boolean'
-                    ? item.isPublished
-                    : typeof item?.is_published === 'boolean'
-                        ? item.is_published
-                        : true;
-                return item?.emotion === emotion && published;
-            })
-            .map(toNewsItem);
-    } catch {
-        return [];
-    }
-}
-
-async function fetchEmotionFromNewsAllApi(emotion: EmotionType): Promise<NewsItem[]> {
-    try {
-        const rows = await safeFetchJson('/api/news?all=true');
-        return (rows || [])
-            .filter((item: any) => {
-                const published = typeof item?.isPublished === 'boolean'
-                    ? item.isPublished
-                    : typeof item?.is_published === 'boolean'
-                        ? item.is_published
-                        : true;
-                return item?.emotion === emotion && published;
-            })
-            .map(toNewsItem);
-    } catch {
-        return [];
-    }
-}
-
-async function fetchEmotionNewsResilient(emotion: EmotionType): Promise<NewsItem[]> {
-    try {
-        const data = await safeFetchJson(`/api/news/${emotion}`);
-        const direct = (data || []).map(toNewsItem);
-        if (direct.length > 0) return direct;
-    } catch {
-        // continue with fallback chain
-    }
-    const fromNewsAll = await fetchEmotionFromNewsAllApi(emotion);
-    if (fromNewsAll.length > 0) return fromNewsAll;
-    return fetchEmotionFromArticlesApi(emotion);
+async function fetchNewsByEmotion(emotion: EmotionType): Promise<NewsItem[]> {
+    const data = await safeFetchJson(`/api/news/${emotion}`);
+    return (data || []).map(toNewsItem);
 }
 
 export function useNews(emotion: EmotionType | undefined) {
@@ -176,29 +118,18 @@ export function useNews(emotion: EmotionType | undefined) {
                 return [];
             }
 
-            // Spectrum: fetch balanced visible articles per emotion via server policy
-            if (emotion === 'spectrum') {
-                const emotions: EmotionType[] = ['vibrance', 'immersion', 'clarity', 'gravity', 'serenity'];
-                const groups = await Promise.all(emotions.map((emo) => fetchEmotionNewsResilient(emo)));
-                const allNews = groups.flatMap((rows) => rows.slice(0, 3));
-
-                // Shuffle and return balanced mix
-                const shuffled = allNews.sort(() => Math.random() - 0.5);
-                return shuffled;
-            }
-
             try {
-                return await fetchEmotionNewsResilient(emotion);
+                return await fetchNewsByEmotion(emotion);
             } catch (error) {
-                console.error('[useNews] all fetch paths failed:', error);
+                console.error('[useNews] fetch failed:', error);
                 return [];
             }
         },
         enabled: !!emotion,
-        staleTime: 0,
-        gcTime: 5 * 60_000,
-        refetchOnMount: 'always',
-        refetchOnWindowFocus: true,
+        staleTime: 60_000,
+        gcTime: 10 * 60_000,
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
         refetchOnReconnect: true,
         retry: 1,
     });

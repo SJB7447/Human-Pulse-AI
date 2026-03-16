@@ -402,7 +402,7 @@ export const DBService = {
     },
 
     async getMyArticles(authorId: string, options?: { authorNames?: string[]; authorEmails?: string[] }) {
-        const response = await fetch('/api/articles?all=true');
+        const response = await fetch('/api/articles?all=true&view=full');
         if (!response.ok) throw await createApiError(response, 'Failed to fetch articles');
         const allArticles = await response.json();
 
@@ -445,7 +445,7 @@ export const DBService = {
     },
 
     async getAdminDashboardData() {
-        const response = await fetch('/api/articles?all=true');
+        const response = await fetch('/api/articles?all=true&view=full');
         if (!response.ok) throw await createApiError(response, 'Failed to fetch admin data');
         return await response.json();
     },

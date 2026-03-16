@@ -704,7 +704,7 @@ function resolveRecommendationObserverThreshold(): number {
   return Math.max(min, Math.min(max, resolved));
 }
 
-export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration, cardBackground, layoutId, relatedArticles = [], onSelectArticle, onConsumeEvidence }: NewsDetailModalProps) {
+export function NewsDetailModal({ article: initialArticle, emotionType, onClose, onSaveCuration, cardBackground, layoutId, relatedArticles = [], onSelectArticle, onConsumeEvidence }: NewsDetailModalProps) {
   const { toast } = useToast();
   const { user } = useEmotionStore();
   const [, setLocation] = useLocation();
@@ -765,6 +765,50 @@ export function NewsDetailModal({ article, emotionType, onClose, onSaveCuration,
   const consumeEvidenceSentRef = useRef(false);
   const modalOpenedAtRef = useRef<number>(0);
   const recommendationObserverThreshold = useMemo(() => resolveRecommendationObserverThreshold(), []);
+  const [hydratedArticle, setHydratedArticle] = useState<NewsItem | null>(initialArticle);
+  const [isHydratingArticle, setIsHydratingArticle] = useState(false);
+
+  useEffect(() => {
+    setHydratedArticle(initialArticle);
+  }, [initialArticle]);
+
+  useEffect(() => {
+    const articleId = String(initialArticle?.id || '').trim();
+    const hasFullContent = Boolean(String(initialArticle?.content || '').trim());
+    if (!articleId || hasFullContent) {
+      return;
+    }
+
+    let cancelled = false;
+    setIsHydratingArticle(true);
+
+    fetch(`/api/articles/${encodeURIComponent(articleId)}`, {
+      headers: { Accept: 'application/json' },
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled || !payload || String(payload.id || '') !== articleId) return;
+        setHydratedArticle(payload as NewsItem);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('[NewsDetailModal] failed to hydrate article detail:', error);
+      })
+      .finally(() => {
+        if (!cancelled) setIsHydratingArticle(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialArticle?.id, initialArticle?.content]);
+
+  const article = hydratedArticle;
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
   const articleEmotionConfig = EMOTION_CONFIG.find((entry) => entry.type === article?.emotion) || emotionConfig;
