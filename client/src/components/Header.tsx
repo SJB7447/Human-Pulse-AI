@@ -6,6 +6,7 @@ import { EMOTION_NEWS_LINKS } from '@/lib/emotionNewsLinks';
 import { useToast } from '@/hooks/use-toast';
 import { getSupabase } from '@/services/supabaseClient';
 import { getInitialLocale, type AppLocale } from '@/lib/locale';
+import { NotificationDropdown } from '@/components/NotificationDropdown';
 import { LogIn, UserPlus, LogOut, User, Shield, Users, MessageSquare, CreditCard, Newspaper, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -187,6 +188,7 @@ export function Header({ transparent = false }: HeaderProps) {
               <span className="text-sm text-gray-600 hidden md:inline font-medium">
                 {user.email?.split('@')[0]}{t.userSuffix}
               </span>
+              <NotificationDropdown />
               <Link href="/mypage">
                 <GlassButton variant="outline" size="sm" className="bg-white/50 px-2 sm:px-3 hover:bg-white/80">
                   <User className="w-4 h-4" />

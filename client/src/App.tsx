@@ -8,6 +8,7 @@ import { GlobalScrollTop } from "@/components/GlobalScrollTop";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useEmotionStore, type User } from "@/lib/store";
 import { getSupabase } from "@/services/supabaseClient";
+import { PWAInstallBanner } from "@/components/PWAInstallBanner";
 
 const HueBot = lazy(() => import("@/components/HueBot").then((module) => ({ default: module.HueBot })));
 const Home = lazy(() => import("@/pages/home"));
@@ -174,6 +175,7 @@ function App() {
             <HueBot />
           </Suspense>
         ) : null}
+        <PWAInstallBanner />
       </TooltipProvider>
     </QueryClientProvider>
   );

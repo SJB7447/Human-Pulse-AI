@@ -4,6 +4,7 @@ import { DBService } from '@/services/DBService';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { PushNotificationToggle } from '@/components/PushNotificationToggle';
 
 type RoleRequest = {
   id: string;
@@ -172,6 +173,9 @@ export default function SettingsPage() {
               <p>사용자: {auth.email || auth.username}</p>
               <p>역할: {auth.role || 'general'}</p>
               <p>구독: {subscription?.plan || 'free'} ({subscription?.status || 'inactive'})</p>
+              <div className="mt-4">
+                <PushNotificationToggle userId={auth?.userId ?? null} />
+              </div>
             </div>
           ) : (
             <p className="mt-4 text-sm text-gray-600">로그인 상태가 아닙니다.</p>

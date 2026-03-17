@@ -7,6 +7,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleGenAI, type GenerateVideosOperation, type GenerateVideosSource, type Image } from "@google/genai";
 import { storage } from "./storage.js";
 import { supabase } from "./supabase.js";
+import { sendPushToUser, broadcastPush } from "./services/pushService.js";
 import { runAutoNewsUpdate } from "./services/newsCron.js";
 import { emotionTypes, type EmotionType, type NewsItem } from "../shared/schema.js";
 import { buildDraftGenerationPrompt, normalizeDraftMode, type DraftMode } from "./services/articlePrompt.js";
@@ -4629,6 +4630,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       targetId,
       detail: detail || null,
     });
+
+    const ADMIN_NOTIFY_ACTIONS = ["publish", "hide", "delete", "review_complete"];
+    if (ADMIN_NOTIFY_ACTIONS.includes(action)) {
+      try {
+        const targetArticle = await storage.getNewsItemById(targetId || "").catch(() => null);
+        const authorId = (targetArticle as any)?.authorId || (targetArticle as any)?.author_id;
+        if (authorId) {
+          const actionLabel: Record<string, string> = {
+            publish: "기사가 발행됐어요",
+            hide: "기사가 비공개 처리됐어요",
+            delete: "기사가 삭제됐어요",
+            review_complete: "기사 검수가 완료됐어요",
+          };
+          sendPushToUser(authorId, {
+            type: "admin_action",
+            title: "관리자 알림",
+            body: actionLabel[action] || `관리자 조치: ${action}`,
+            url: "/journalist",
+            icon: "/favicon.png",
+          }).catch(() => {});
+        }
+      } catch {}
+    }
   };
 
   const pushOpsAlert = async (alert: Omit<OpsAlert, "id" | "createdAt">) => {
@@ -5124,6 +5148,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         updatedAt: new Date(now).toISOString(),
       };
       communityCommentsFallback.push(row);
+
+      try {
+        const communityPost = communityFallback.find((post) => post.id === postId) || null;
+        const articleId = String(communityPost?.articleId || "").trim();
+        const post = articleId ? await storage.getNewsItemById(articleId).catch(() => null) : null;
+        const authorId = (post as any)?.authorId || (post as any)?.author_id;
+        if (authorId && authorId !== userId) {
+          sendPushToUser(authorId, {
+            type: "new_comment",
+            title: "내 기사에 댓글이 달렸어요",
+            body: `${username}: ${content.slice(0, 60)}`,
+            url: `/community/${postId}`,
+            icon: "/favicon.png",
+          }).catch(() => {});
+        }
+      } catch {}
+
       return res.status(201).json(mapCommunityCommentForViewer(row, userId));
     } catch (error) {
       console.error("[API] /api/community/:id/comments create failed:", error);
@@ -8755,6 +8796,74 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.post("/api/push/subscribe", async (req, res) => {
+    const { userId, endpoint, p256dh, auth } = req.body || {};
+    if (!userId || !endpoint || !p256dh || !auth) {
+      return res.status(400).json({ error: "필수 필드 누락" });
+    }
+    const supabaseModule = await import("./supabase.js");
+    const supabaseClient = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
+    if (!supabaseClient) return res.status(500).json({ error: "DB 연결 실패" });
+    const { error } = await supabaseClient
+      .from("push_subscriptions")
+      .upsert({ user_id: userId, endpoint, p256dh, auth }, { onConflict: "endpoint" });
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ success: true });
+  });
+
+  app.delete("/api/push/subscribe", async (req, res) => {
+    const { endpoint } = req.body || {};
+    if (!endpoint) return res.status(400).json({ error: "endpoint 필수" });
+    const supabaseModule = await import("./supabase.js");
+    const supabaseClient = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
+    if (!supabaseClient) return res.status(500).json({ error: "DB 연결 실패" });
+    await supabaseClient.from("push_subscriptions").delete().eq("endpoint", endpoint);
+    return res.json({ success: true });
+  });
+
+  app.get("/api/push/vapid-public-key", (_req, res) => {
+    res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || "" });
+  });
+
+  app.get("/api/notifications", async (req, res) => {
+    const userId = String(req.headers["x-actor-id"] || req.query.userId || "").trim();
+    if (!userId) return res.status(400).json({ error: "userId 필요" });
+    const supabaseModule = await import("./supabase.js");
+    const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
+    if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
+    const { data, error } = await supabaseAdmin
+      .from("notification_inbox")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json(data || []);
+  });
+
+  app.patch("/api/notifications/:id/read", async (req, res) => {
+    const { id } = req.params;
+    const supabaseModule = await import("./supabase.js");
+    const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
+    if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
+    await supabaseAdmin.from("notification_inbox").update({ is_read: true }).eq("id", id);
+    return res.json({ success: true });
+  });
+
+  app.patch("/api/notifications/read-all", async (req, res) => {
+    const userId = String(req.headers["x-actor-id"] || req.body?.userId || "").trim();
+    if (!userId) return res.status(400).json({ error: "userId 필요" });
+    const supabaseModule = await import("./supabase.js");
+    const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
+    if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
+    await supabaseAdmin
+      .from("notification_inbox")
+      .update({ is_read: true })
+      .eq("user_id", userId)
+      .eq("is_read", false);
+    return res.json({ success: true });
+  });
+
   app.post("/api/admin/news/process", async (req, res) => {
     const actor = resolveActor(req);
     if (!["admin", "journalist"].includes(actor.actorRole)) {
@@ -8792,6 +8901,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         authorId: actor.actorId || null,
         authorName: actor.actorName || "Donga RSS Import",
       } as any);
+
+      broadcastPush({
+        type: "new_news",
+        title: "새 뉴스가 도착했어요",
+        body: created.title,
+        url: "/",
+        icon: "/favicon.png",
+      }).catch(() => {});
 
       return res.json({ success: true, article: { id: created.id, title: created.title, emotion: rewrite.emotion } });
     } catch (error: any) {
