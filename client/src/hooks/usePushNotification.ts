@@ -4,9 +4,15 @@ export function usePushNotification(userId: string | null) {
   const [isSupported, setIsSupported] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [permission, setPermission] = useState<NotificationPermission>(() =>
+    typeof Notification !== "undefined" ? Notification.permission : "default",
+  );
 
   useEffect(() => {
     setIsSupported("serviceWorker" in navigator && "PushManager" in window);
+    if (typeof Notification !== "undefined") {
+      setPermission(Notification.permission);
+    }
     if (!userId) return;
     checkSubscription();
   }, [userId]);
@@ -44,6 +50,7 @@ export function usePushNotification(userId: string | null) {
         }),
       });
 
+      setPermission(typeof Notification !== "undefined" ? Notification.permission : "granted");
       setIsSubscribed(true);
       return true;
     } catch (err) {
@@ -69,6 +76,7 @@ export function usePushNotification(userId: string | null) {
         body: JSON.stringify({ endpoint: sub.endpoint }),
       });
       await sub.unsubscribe();
+      setPermission(typeof Notification !== "undefined" ? Notification.permission : "default");
       setIsSubscribed(false);
       return true;
     } catch {
@@ -78,7 +86,7 @@ export function usePushNotification(userId: string | null) {
     }
   };
 
-  return { isSupported, isSubscribed, loading, subscribe, unsubscribe };
+  return { isSupported, isSubscribed, loading, permission, subscribe, unsubscribe };
 }
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {

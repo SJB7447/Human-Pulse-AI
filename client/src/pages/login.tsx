@@ -1,7 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { useLocation, Link } from 'wouter';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Loader2, ArrowLeft, Eye, EyeOff, User, FlaskConical, Check } from 'lucide-react';
+import { Mail, Lock, Loader2, ArrowLeft, Eye, EyeOff, User, FlaskConical, Check, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getSupabase } from '@/services/supabaseClient';
 import { useEmotionStore } from '@/lib/store';
 import { useToast } from '@/hooks/use-toast';
+import { usePushNotification } from '@/hooks/usePushNotification';
 import type { AppLocale } from '@/lib/locale';
 
 type UserRole = 'general' | 'journalist' | 'admin';
@@ -327,6 +328,8 @@ export default function LoginPage() {
   const [isCheckingJournalistEmail, setIsCheckingJournalistEmail] = useState(false);
   const [isCheckingPressCard, setIsCheckingPressCard] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
+  const [signupPushUserId, setSignupPushUserId] = useState<string | null>(null);
+  const [showSignupPushPrompt, setShowSignupPushPrompt] = useState(false);
 
   const [isSignUp, setIsSignUp] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -335,6 +338,7 @@ export default function LoginPage() {
   const [authView, setAuthView] = useState<AuthView>('auth');
   const locale: AppLocale = 'ko';
   const t = COPY[locale];
+  const { isSupported: isPushSupported, loading: pushLoading, subscribe: subscribePush } = usePushNotification(signupPushUserId);
   const redirectPath = (() => {
     const params = new URLSearchParams(window.location.search);
     const raw = params.get('redirect') || '/';
@@ -681,7 +685,7 @@ export default function LoginPage() {
           throw new Error(consentPayload?.error || 'Failed to save consent');
         }
 
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -709,6 +713,10 @@ export default function LoginPage() {
         if (error) throw error;
 
         toast({ title: t.signUpDoneTitle, description: t.signUpDoneDesc });
+        if (data?.user?.id && isPushSupported) {
+          setSignupPushUserId(data.user.id);
+          setShowSignupPushPrompt(true);
+        }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
@@ -1216,6 +1224,56 @@ export default function LoginPage() {
           )}
         </div>
       </motion.div>
+
+      {showSignupPushPrompt && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/35 px-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">
+              <Bell className="h-5 w-5" />
+            </div>
+            <h3 className="mt-4 text-center text-lg font-semibold text-slate-900">알림을 받아볼까요?</h3>
+            <p className="mt-2 text-center text-sm leading-6 text-slate-600">
+              새 뉴스 등록, 내 기사 댓글, 관리자 검수 결과를 바로 알려드릴 수 있어요. 원하지 않으면 나중에 마이페이지에서 다시 설정할 수 있습니다.
+            </p>
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowSignupPushPrompt(false)}
+              >
+                나중에 할게요
+              </Button>
+              <Button
+                type="button"
+                disabled={pushLoading}
+                onClick={async () => {
+                  const permission = await Notification.requestPermission();
+                  if (permission !== 'granted') {
+                    toast({
+                      title: '알림 권한 필요',
+                      description: '나중에 마이페이지 설정에서 다시 요청할 수 있어요.',
+                      variant: 'destructive',
+                    });
+                    setShowSignupPushPrompt(false);
+                    return;
+                  }
+
+                  const ok = await subscribePush();
+                  if (ok) {
+                    toast({
+                      title: '알림 설정 완료',
+                      description: '가입 직후부터 중요한 소식을 받아볼 수 있어요.',
+                    });
+                  }
+                  setShowSignupPushPrompt(false);
+                }}
+              >
+                {pushLoading ? '설정 중...' : '네, 알림 받을게요'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
