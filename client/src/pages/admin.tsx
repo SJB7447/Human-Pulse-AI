@@ -1056,7 +1056,22 @@ export default function AdminPage() {
   const handleManualUpdateConfirmed = async () => {
     setCrawling(true);
     try {
-      const res = await fetch('/api/admin/news/fetch', { method: 'POST' });
+      const actorRoleRaw = String(user?.role || '').trim().toLowerCase();
+      const actorRole =
+        actorRoleRaw === 'admin' || actorRoleRaw === 'administrator' || actorRoleRaw.includes('관리자')
+          ? 'admin'
+          : actorRoleRaw === 'journalist' || actorRoleRaw === 'reporter' || actorRoleRaw.includes('기자')
+            ? 'journalist'
+            : 'general';
+      const res = await fetch('/api/admin/news/fetch', {
+        method: 'POST',
+        headers: {
+          ...(user?.id ? { 'x-actor-id': String(user.id).slice(0, 128) } : {}),
+          'x-actor-role': String(actorRole).slice(0, 32),
+          ...(user?.name ? { 'x-actor-name': String(user.name).slice(0, 160) } : {}),
+          ...(user?.email ? { 'x-actor-email': String(user.email).slice(0, 160) } : {}),
+        },
+      });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error || '뉴스 수집 실패');
       const importedPreview = Array.isArray(result?.imported) && result.imported.length > 0
