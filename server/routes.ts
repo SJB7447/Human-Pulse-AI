@@ -3802,9 +3802,33 @@ function detectHueBotTopicEmotionHint(message: string): { emotion: EmotionType; 
   };
 }
 
+function detectHueBotSearchCategory(message: string): string | null {
+  const text = normalizeHueBotText(message);
+  if (!text) return null;
+
+  const categoryMap: Array<{ category: string; keywords: string[] }> = [
+    { category: "스포츠", keywords: ["스포츠", "sport", "sports", "축구", "야구", "농구", "배구", "올림픽", "football", "baseball", "soccer", "basketball"] },
+    { category: "연예", keywords: ["연예", "문화", "스타일", "celebrity", "entertainment", "drama", "movie", "actor", "singer", "fashion"] },
+    { category: "시사", keywords: ["시사", "정치", "정책", "정부", "국회", "선거", "politics", "policy", "government", "election"] },
+    { category: "경제", keywords: ["경제", "금융", "산업", "증시", "시장", "economy", "finance", "business", "market", "stocks"] },
+    { category: "환경", keywords: ["환경", "기후", "생태", "climate", "environment", "eco"] },
+    { category: "라이프", keywords: ["웰빙", "건강", "라이프", "생활", "여행", "wellbeing", "health", "lifestyle", "travel"] },
+    { category: "커뮤니티", keywords: ["커뮤니티", "교육", "사람", "동네", "community", "people", "education"] },
+  ];
+
+  for (const row of categoryMap) {
+    if (row.keywords.some((keyword) => text.includes(normalizeHueBotText(keyword)))) {
+      return row.category;
+    }
+  }
+
+  return null;
+}
+
 function extractHueBotSearchSignal(message: string): {
   query: string;
   emotion: EmotionType;
+  category?: string;
   matchedKeywords: string[];
   reason: string;
 } | null {
@@ -3837,6 +3861,7 @@ function extractHueBotSearchSignal(message: string): {
   return {
     query: safeQuery,
     emotion: topicHint?.emotion || "spectrum",
+    category: detectHueBotSearchCategory(raw) || undefined,
     matchedKeywords: topicHint?.matchedKeywords || [],
     reason: topicHint?.reason || "search_request",
   };
@@ -3884,6 +3909,7 @@ function classifyHueBotMessage(message: string, recentRecommendations: EmotionTy
   fallbackUsed: boolean;
   searchQuery?: string;
   searchEmotion?: EmotionType;
+  searchCategory?: string;
 } {
   const lower = String(message || "").toLowerCase();
   const trimmed = lower.trim();
@@ -4099,6 +4125,7 @@ function classifyHueBotMessage(message: string, recentRecommendations: EmotionTy
       fallbackUsed: false,
       searchQuery: searchSignal.query,
       searchEmotion: searchSignal.emotion,
+      searchCategory: searchSignal.category,
     };
   }
   const intent: ChatIntent = directIntent || matchedGroup?.intent || hintedIntent || "balance_general";

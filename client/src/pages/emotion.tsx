@@ -335,7 +335,9 @@ export default function EmotionPage() {
     if (!type || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const searchFromQuery = params.get('search');
+    const categoryFromQuery = params.get('category');
     setSearchTerm(searchFromQuery ? searchFromQuery.trim() : '');
+    setCategoryFilter(categoryFromQuery ? categoryFromQuery.trim() : 'all');
     if (params.get('nudge') === '1') {
       triggeredPeripheralNudgeRef.current = true;
       setSuppressPeripheralNudge(false);
@@ -447,20 +449,25 @@ export default function EmotionPage() {
 
   useEffect(() => {
     const onNavigateEmotion = (event: Event) => {
-      const custom = event as CustomEvent<{ emotion?: string; searchQuery?: string }>;
+      const custom = event as CustomEvent<{ emotion?: string; searchQuery?: string; searchCategory?: string }>;
       const nextEmotion = String(custom?.detail?.emotion || '').trim().toLowerCase();
       const nextSearchQuery = String(custom?.detail?.searchQuery || '').trim();
+      const nextSearchCategory = String(custom?.detail?.searchCategory || '').trim();
       setSelectedArticle(null);
       setShowPeripheralNudge(false);
       if (nextEmotion && nextEmotion !== type) {
-        const nextPath = nextSearchQuery
-          ? `/emotion/${nextEmotion}?search=${encodeURIComponent(nextSearchQuery)}`
-          : `/emotion/${nextEmotion}`;
+        const params = new URLSearchParams();
+        if (nextSearchQuery) params.set('search', nextSearchQuery);
+        if (nextSearchCategory) params.set('category', nextSearchCategory);
+        const nextPath = `/emotion/${nextEmotion}${params.toString() ? `?${params.toString()}` : ''}`;
         setLocation(nextPath);
         return;
       }
       if (nextSearchQuery) {
         setSearchTerm(nextSearchQuery);
+      }
+      if (nextSearchCategory) {
+        setCategoryFilter(nextSearchCategory);
       }
     };
 

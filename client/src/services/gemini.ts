@@ -328,6 +328,7 @@ export const GeminiService = {
         quickRecommendations?: string[];
         searchQuery?: string;
         searchEmotion?: string;
+        searchCategory?: string;
         intent?: string;
         confidence?: number;
         followUp?: string;
@@ -360,6 +361,7 @@ export const GeminiService = {
                 quickRecommendations: language === 'ko' ? ["clarity", "serenity", "spectrum"] : ["spectrum", "clarity", "serenity"],
                 searchQuery: undefined,
                 searchEmotion: undefined,
+                searchCategory: undefined,
                 intent: "balance_general",
                 confidence: 0.3,
                 followUp: language === 'ko'

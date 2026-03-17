@@ -14,6 +14,7 @@ interface ChatMessage {
   quickRecommendations?: string[];
   searchQuery?: string;
   searchEmotion?: string;
+  searchCategory?: string;
   warning?: string;
   timestamp: Date;
 }
@@ -305,6 +306,7 @@ export function HueBot() {
         recommendation: responseCtx.recommendation,
         searchQuery: responseCtx.searchQuery,
         searchEmotion: responseCtx.searchEmotion,
+        searchCategory: responseCtx.searchCategory,
         quickRecommendations: Array.isArray(responseCtx.quickRecommendations)
           ? responseCtx.quickRecommendations
           : (responseCtx.recommendation ? [responseCtx.recommendation] : undefined),
@@ -437,11 +439,15 @@ export function HueBot() {
                           className="mt-3 w-full flex items-center justify-between p-2 rounded-xl bg-sky-50 hover:bg-sky-100 transition-colors group"
                           onClick={() => {
                             const targetEmotion = (msg.searchEmotion || msg.recommendation || 'spectrum').toLowerCase();
-                            const nextPath = `/emotion/${targetEmotion}?search=${encodeURIComponent(msg.searchQuery || '')}`;
+                            const params = new URLSearchParams();
+                            if (msg.searchQuery) params.set('search', msg.searchQuery);
+                            if (msg.searchCategory) params.set('category', msg.searchCategory);
+                            const nextPath = `/emotion/${targetEmotion}${params.toString() ? `?${params.toString()}` : ''}`;
                             window.dispatchEvent(new CustomEvent('huebrief:navigate-emotion', {
                               detail: {
                                 emotion: targetEmotion,
                                 searchQuery: msg.searchQuery,
+                                searchCategory: msg.searchCategory,
                               },
                             }));
                             setIsOpen(false);
