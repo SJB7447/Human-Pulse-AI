@@ -403,18 +403,6 @@ function mapAdminCategoryToPreset(emotion: string | undefined, category: string 
   return getCategoryPresetForEmotion(emotionKey)[0] || '분야 미지정';
 }
 
-function parseAdminCategoryFilterValue(value: string): { emotion: AdminEmotionKey | 'all'; preset: string | 'all' } {
-  const raw = String(value || '').trim();
-  if (!raw || raw === 'all' || !raw.includes('::')) {
-    return { emotion: 'all', preset: 'all' };
-  }
-  const [emotion, preset] = raw.split('::');
-  return {
-    emotion: normalizeAdminEmotion(emotion),
-    preset: String(preset || '').trim() || 'all',
-  };
-}
-
 function isAiGeneratedCategory(value: string | undefined): boolean {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return false;
@@ -605,7 +593,6 @@ export default function AdminPage() {
 
   const fetchData = async (targetTab: AdminTabKey = activeTab) => {
     try {
-      const selectedCategoryFilter = parseAdminCategoryFilterValue(articleCategoryFilter);
       setStatsLoading(true);
       if (targetTab === 'ops') {
         setOpsLoading(true);
@@ -631,8 +618,8 @@ export default function AdminPage() {
           DBService.getAdminDashboardData({
             page: articlePage,
             pageSize: ARTICLES_PER_PAGE,
-            emotion: selectedCategoryFilter.emotion !== 'all' ? selectedCategoryFilter.emotion : articleEmotionFilter,
-            category: selectedCategoryFilter.preset !== 'all' ? selectedCategoryFilter.preset : undefined,
+            emotion: articleEmotionFilter,
+            category: articleCategoryFilter !== 'all' ? articleCategoryFilter : undefined,
             search: articleSearchQuery,
             all: true,
           }),
@@ -735,14 +722,21 @@ export default function AdminPage() {
   }, [articles]);
 
   const filteredArticles = articles;
-  const articleCategoryOptions = useMemo(() => (
-    ADMIN_EMOTION_OPTIONS.flatMap((emotion) =>
-      getCategoryPresetForEmotion(emotion).map((preset) => ({
-        value: `${emotion}::${preset}`,
-        label: `${emotion.toUpperCase()} · ${preset}`,
-      })),
-    )
-  ), []);
+  const articleCategoryOptions = useMemo(() => {
+    if (articleEmotionFilter !== 'all') {
+      return getCategoryPresetForEmotion(articleEmotionFilter).map((preset) => ({
+        value: preset,
+        label: preset,
+      }));
+    }
+
+    return Array.from(new Set(
+      ADMIN_EMOTION_OPTIONS.flatMap((emotion) => getCategoryPresetForEmotion(emotion)),
+    )).map((preset) => ({
+      value: preset,
+      label: preset,
+    }));
+  }, [articleEmotionFilter]);
   const filteredArticleIdSet = useMemo(() => new Set(filteredArticles.map((article) => article.id)), [filteredArticles]);
   const pagedArticles = articles;
   const totalArticlePages = Math.max(1, Math.ceil(articleTotalCount / ARTICLES_PER_PAGE));
@@ -2781,16 +2775,26 @@ export default function AdminPage() {
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <select
-              value={articleCategoryFilter}
+              value={articleEmotionFilter}
               onChange={(e) => {
-                const nextValue = e.target.value;
-                const parsed = parseAdminCategoryFilterValue(nextValue);
-                setArticleCategoryFilter(nextValue);
-                setArticleEmotionFilter(parsed.emotion === 'all' ? 'all' : parsed.emotion);
+                setArticleEmotionFilter(e.target.value);
+                setArticleCategoryFilter('all');
               }}
               className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
             >
-              <option value="all">전체 카테고리</option>
+              <option value="all">전체 감정</option>
+              {ADMIN_EMOTION_OPTIONS.map((emotion) => (
+                <option key={`filter-emotion-${emotion}`} value={emotion}>
+                  {emotion.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <select
+              value={articleCategoryFilter}
+              onChange={(e) => setArticleCategoryFilter(e.target.value)}
+              className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            >
+              <option value="all">전체 중분류</option>
               {articleCategoryOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
