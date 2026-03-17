@@ -3888,8 +3888,8 @@ export default function JournalistPage() {
                   <div className="space-y-5">
                     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_280px]">
                       <div className="rounded-2xl border border-orange-200 bg-white/80 p-4">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div>
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0 flex-1">
                             <p className="text-sm font-semibold text-gray-800">고급 배포 설정</p>
                             <p className="mt-1 text-xs leading-5 text-gray-500">제목 후보 확인, 플랫폼 선택 현황, 상세 가이드를 한 번에 보고 바로 발행 단계로 이어갈 수 있습니다.</p>
                           </div>
@@ -3897,7 +3897,7 @@ export default function JournalistPage() {
                             variant="primary"
                             onClick={handleOptimizeTitles}
                             disabled={isOptimizingTitles}
-                            className="sm:min-w-[180px]"
+                            className="w-full lg:w-auto lg:min-w-[180px] shrink-0"
                             data-testid="button-optimize-titles"
                           >
                             {isOptimizingTitles ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
@@ -3945,7 +3945,7 @@ export default function JournalistPage() {
                     )}
 
                     <div className="space-y-4 border-t border-orange-200 pt-4">
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:justify-between">
                         <p className="text-sm font-medium text-gray-700">플랫폼별 상세 설정</p>
                         <p className="text-xs text-gray-500">가이드는 플랫폼별 카드로 나눠 확인할 수 있습니다.</p>
                       </div>
@@ -3957,7 +3957,7 @@ export default function JournalistPage() {
 
                           return (
                             <div key={platformId} className="bg-white rounded-xl p-4 border border-orange-100">
-                              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                              <div className="mb-4 flex flex-col items-start gap-3 border-b border-gray-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
                                 <div className="flex items-center gap-2">
                                   <platform.Icon className="w-5 h-5 text-orange-500" />
                                   <span className="font-medium text-gray-800">{platform.label}</span>
