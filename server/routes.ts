@@ -1830,9 +1830,12 @@ function isSixteenByNineLike(dataUrl: string, tolerance: number = 0.06): boolean
 function isRetryableImageError(error: unknown): boolean {
   const message = String((error as any)?.message || "").toLowerCase();
   return (
+    message.includes("502") ||
     message.includes("429") ||
     message.includes("503") ||
     message.includes("504") ||
+    message.includes("bad gateway") ||
+    message.includes("gateway timeout") ||
     message.includes("overloaded") ||
     message.includes("high demand") ||
     message.includes("try again later") ||
@@ -1997,12 +2000,12 @@ async function waitForGenerateVideosOperationDone(
 
 async function generateGeminiImageWithRetry(
   prompt: string,
-  maxAttempts: number = 3,
+  maxAttempts: number = 4,
 ): Promise<{ dataUrl: string; model: string }> {
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      const timeoutMs = attempt === 1 ? 28000 : 42000;
+      const timeoutMs = attempt === 1 ? 36000 : attempt === 2 ? 48000 : 60000;
       let modelError: unknown = null;
       for (const model of GEMINI_IMAGE_MODEL_FALLBACKS) {
         try {
@@ -4433,6 +4436,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           author: String(row.userId || "reader"),
           ownerId: String(row.userId || ""),
           sourceType: "reader_article",
+          sourceArticleId: String(row.sourceArticleId || ""),
+          sourceTitle: String(row.sourceTitle || ""),
+          sourceUrl: String(row.sourceUrl || ""),
           createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
           updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : (row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString()),
         }));
@@ -4862,6 +4868,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         author: String((updated as any).userId || "reader"),
         ownerId: String((updated as any).userId || ""),
         sourceType: "reader_article",
+        sourceArticleId: String((updated as any).sourceArticleId || ""),
+        sourceTitle: String((updated as any).sourceTitle || ""),
+        sourceUrl: String((updated as any).sourceUrl || ""),
         createdAt: (updated as any).createdAt ? new Date((updated as any).createdAt).toISOString() : new Date().toISOString(),
         updatedAt: (updated as any).updatedAt ? new Date((updated as any).updatedAt).toISOString() : ((updated as any).createdAt ? new Date((updated as any).createdAt).toISOString() : new Date().toISOString()),
       });
@@ -7588,7 +7597,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         lowerDetail.includes("try again later") ||
         lowerDetail.includes("resource exhausted") ||
         lowerDetail.includes("429") ||
-        lowerDetail.includes("503");
+        lowerDetail.includes("502") ||
+        lowerDetail.includes("503") ||
+        lowerDetail.includes("504") ||
+        lowerDetail.includes("bad gateway") ||
+        lowerDetail.includes("gateway timeout");
       const isTemporaryFailure =
         isOverloaded ||
         lowerDetail.includes("abort") ||

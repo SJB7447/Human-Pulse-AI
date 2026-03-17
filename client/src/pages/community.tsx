@@ -2,7 +2,7 @@
 import { Link, useLocation } from 'wouter';
 import { Header } from '@/components/Header';
 import { EMOTION_CONFIG, type EmotionType, useEmotionStore } from '@/lib/store';
-import { Heart, Loader2, Pencil, Send } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronUp, ExternalLink, Heart, Loader2, Pencil, Send } from 'lucide-react';
 import { DBService, type CommunityCommentRecord } from '@/services/DBService';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -18,8 +18,20 @@ interface CommunityItem {
   author: string;
   ownerId?: string;
   sourceType?: 'community_post' | 'reader_article';
+  sourceArticleId?: string;
+  sourceTitle?: string;
+  sourceUrl?: string;
   createdAt: string | null;
   updatedAt?: string | null;
+}
+
+interface OriginalArticlePreview {
+  id: string;
+  title: string;
+  summary?: string | null;
+  content?: string | null;
+  source?: string | null;
+  category?: string | null;
 }
 
 interface InsightDraft {
@@ -75,6 +87,9 @@ export default function CommunityPage() {
   const [editContent, setEditContent] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [lastPublishedLink, setLastPublishedLink] = useState('');
+  const [originalArticle, setOriginalArticle] = useState<OriginalArticlePreview | null>(null);
+  const [originalArticleLoading, setOriginalArticleLoading] = useState(false);
+  const [showOriginalArticleFull, setShowOriginalArticleFull] = useState(false);
   const canPublish = Boolean(user);
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin';
 
@@ -148,6 +163,43 @@ export default function CommunityPage() {
     if (!element) return;
     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [items]);
+
+  useEffect(() => {
+    setOriginalArticle(null);
+    setOriginalArticleLoading(false);
+    setShowOriginalArticleFull(false);
+
+    if (!selectedPost || selectedPost.sourceType !== 'reader_article' || !selectedPost.sourceArticleId) {
+      return;
+    }
+
+    let cancelled = false;
+    setOriginalArticleLoading(true);
+
+    fetch(`/api/articles/${encodeURIComponent(String(selectedPost.sourceArticleId || '').trim())}`, {
+      headers: { Accept: 'application/json' },
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        setOriginalArticle(payload as OriginalArticlePreview);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('[Community] failed to load original article:', error);
+        setOriginalArticle(null);
+      })
+      .finally(() => {
+        if (!cancelled) setOriginalArticleLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPost]);
 
   const handleSaveDraft = async () => {
     if (!opinion.trim()) {
@@ -660,6 +712,73 @@ export default function CommunityPage() {
               ) : null}
             </div>
             <div className="mt-3 space-y-4 overflow-y-auto pr-1 max-h-[calc(88vh-11rem)]">
+              {selectedPost?.sourceType === 'reader_article' ? (
+                <div className="rounded-lg border border-[#ebe3d3] bg-[#fffaf1] p-4">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-[#7c6a50]" />
+                      <h3 className="text-sm font-semibold text-gray-800">원문 기사 보기</h3>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {selectedPost.sourceUrl ? (
+                        <a
+                          href={selectedPost.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border border-[#ded3bf] bg-white px-2.5 py-1 text-[11px] text-[#5b4c37] hover:bg-[#faf4ea]"
+                        >
+                          원문 링크
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => setShowOriginalArticleFull((prev) => !prev)}
+                        className="inline-flex items-center gap-1 rounded-md border border-[#ded3bf] bg-white px-2.5 py-1 text-[11px] text-[#5b4c37] hover:bg-[#faf4ea]"
+                      >
+                        {showOriginalArticleFull ? '원문 전체보기 접기' : '원문 전체보기'}
+                        {showOriginalArticleFull ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-lg border border-[#ece4d4] bg-white/95 p-3">
+                    <p className="text-xs text-[#8a7a63]">이 영역은 원문 참고용이며 수정할 수 없습니다.</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-900">
+                      {originalArticle?.title || selectedPost.sourceTitle || '원문 기사'}
+                    </p>
+                    {originalArticleLoading ? (
+                      <div className="mt-3 inline-flex items-center gap-2 text-xs text-gray-500">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        원문 기사를 불러오는 중...
+                      </div>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        <div className="inline-flex items-center rounded-md border border-[#e5dccb] bg-[#faf6ef] p-0.5 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setShowOriginalArticleFull(false)}
+                            className={`rounded px-2.5 py-1 ${!showOriginalArticleFull ? 'bg-white text-[#3d3428] shadow-sm' : 'text-[#7a6c58]'}`}
+                          >
+                            원문 요약보기
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowOriginalArticleFull(true)}
+                            className={`rounded px-2.5 py-1 ${showOriginalArticleFull ? 'bg-white text-[#3d3428] shadow-sm' : 'text-[#7a6c58]'}`}
+                          >
+                            전체보기
+                          </button>
+                        </div>
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
+                          {showOriginalArticleFull
+                            ? String(originalArticle?.content || originalArticle?.summary || '원문 본문을 불러오지 못했습니다.')
+                            : String(originalArticle?.summary || '원문 요약을 불러오지 못했습니다.')}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
               <div className="rounded-lg border border-[#ebe3d3] bg-white/90 p-4">
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
                   {String(selectedPost?.content || selectedPost?.excerpt || '')}

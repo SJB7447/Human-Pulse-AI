@@ -251,6 +251,24 @@ const getEmotionVisual = (emotionRaw: unknown): { key: string; label: string; co
   };
 };
 
+const isRetryableImageGenerationFailure = (error: any): boolean => {
+  const status = Number(error?.status || 0);
+  const detail = String(error?.detail || error?.message || '').toLowerCase();
+  return Boolean(
+    error?.retryable ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    detail.includes('502') ||
+    detail.includes('503') ||
+    detail.includes('504') ||
+    detail.includes('bad gateway') ||
+    detail.includes('gateway timeout') ||
+    detail.includes('timeout') ||
+    detail.includes('overloaded'),
+  );
+};
+
 type WizardSnapshot = {
   searchKeyword: string;
   searchResults: { topics: string[]; context: string } | null;
@@ -2337,7 +2355,14 @@ export default function JournalistPage() {
         loadGeminiModule(),
         loadImageCropModule(),
       ]);
-      const result = await GeminiService.generateImage(articleContent, 4, effectiveDirective);
+      let result;
+      try {
+        result = await GeminiService.generateImage(articleContent, 4, effectiveDirective);
+      } catch (error: any) {
+        if (!isRetryableImageGenerationFailure(error)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1800));
+        result = await GeminiService.generateImage(articleContent, 4, effectiveDirective);
+      }
 
       const newImages = await Promise.all((result.images || []).map(async (img, idx) => {
         const cropped = await centerCropToAspectRatioDataUrl(String(img.url || ''), 16, 9);
@@ -2518,7 +2543,14 @@ export default function JournalistPage() {
         loadGeminiModule(),
         loadImageCropModule(),
       ]);
-      const result = await GeminiService.generateImage(articleContent, 1, effectiveDirective);
+      let result;
+      try {
+        result = await GeminiService.generateImage(articleContent, 1, effectiveDirective);
+      } catch (error: any) {
+        if (!isRetryableImageGenerationFailure(error)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1800));
+        result = await GeminiService.generateImage(articleContent, 1, effectiveDirective);
+      }
       const nextImage = result.images?.[0];
       if (!nextImage) {
         throw new Error('재생성 결과가 비어 있습니다.');
