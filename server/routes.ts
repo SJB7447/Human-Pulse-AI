@@ -8837,7 +8837,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(30);
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      console.warn("[API] /api/notifications fallback:", error.message);
+      return res.status(200).json([]);
+    }
     return res.json(data || []);
   });
 
@@ -8846,7 +8849,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const supabaseModule = await import("./supabase.js");
     const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
     if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
-    await supabaseAdmin.from("notification_inbox").update({ is_read: true }).eq("id", id);
+    await supabaseAdmin.from("notification_inbox").update({ is_read: true }).eq("id", id).then(() => {}).catch(() => {});
     return res.json({ success: true });
   });
 
@@ -8860,7 +8863,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       .from("notification_inbox")
       .update({ is_read: true })
       .eq("user_id", userId)
-      .eq("is_read", false);
+      .eq("is_read", false)
+      .then(() => {})
+      .catch(() => {});
     return res.json({ success: true });
   });
 

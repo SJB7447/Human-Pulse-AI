@@ -137,6 +137,31 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    if (method === "POST" && normalizedPath === "/api/guest/start") {
+      const body = await parseJsonBody(req);
+      const requestedGuestId = String(body?.guestId || "").trim();
+      const guestId = requestedGuestId || `guest-lightweight-${Date.now()}`;
+      const nowIso = new Date().toISOString();
+      return sendJson(res, 201, {
+        success: true,
+        guestId,
+        session: {
+          moodKey: "spectrum",
+          moodScore: 0,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      });
+    }
+
+    if (method === "GET" && normalizedPath === "/api/notifications") {
+      return sendJson(res, 200, []);
+    }
+
+    if (method === "PATCH" && (normalizedPath === "/api/notifications/read-all" || normalizedPath.startsWith("/api/notifications/"))) {
+      return sendJson(res, 200, { success: true, mode: "lightweight" as ApiMode });
+    }
+
     if (method !== "GET") {
       return sendJson(res, 503, {
         message: "API is running in lightweight mode. This route is unavailable.",

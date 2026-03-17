@@ -551,7 +551,7 @@ export default function EmotionPage() {
     for (const item of news) {
       extractCategoryLabels(item.category).forEach((label) => labels.add(label));
     }
-    return Array.from(labels).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko'));
+    return Array.from(labels).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko')).slice(0, 10);
   }, [news]);
 
   const emotionQuickLinks = useMemo(() => {
