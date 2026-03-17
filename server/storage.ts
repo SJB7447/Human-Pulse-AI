@@ -124,6 +124,58 @@ export interface AdminArticleListResult {
   availableCategories?: string[];
 }
 
+const ADMIN_CATEGORY_PRESET_KEYWORDS: Record<string, Array<{ preset: string; keywords: string[] }>> = {
+  vibrance: [
+    { preset: '연예·미담', keywords: ['연예', '아이돌', '드라마', '영화', '배우', '가수', '미담', '선행', 'kpop', 'k-pop', 'celebrity'] },
+    { preset: '문화·콘텐츠', keywords: ['문화', '콘텐츠', '전시', '공연', '예술', '애니', '웹툰'] },
+    { preset: '축제·행사', keywords: ['축제', '행사', '이벤트', '페스티벌', '박람회'] },
+    { preset: '스포츠 하이라이트', keywords: ['스포츠', '축구', '야구', '농구', '배구', '올림픽'] },
+  ],
+  immersion: [
+    { preset: '정치·속보', keywords: ['정치', '속보', '국회', '정부', '선거', '외교'] },
+    { preset: '공적 논쟁', keywords: ['논쟁', '공방', '여론', '시위', '토론'] },
+    { preset: '사회 갈등', keywords: ['사회', '갈등', '충돌', '분쟁', '노사'] },
+    { preset: '정책 충돌', keywords: ['정책', '규제', '개혁', '법안'] },
+  ],
+  clarity: [
+    { preset: '경제·분석', keywords: ['경제', '금융', '증시', '시장', '부동산', '분석'] },
+    { preset: '산업·기술', keywords: ['산업', '기술', 'it', 'ai', '과학', '반도체', '스타트업'] },
+    { preset: '정책 해설', keywords: ['정책', '해설', '브리핑', '행정'] },
+    { preset: '데이터 리포트', keywords: ['데이터', '리포트', '통계', '지표', '보고서'] },
+  ],
+  gravity: [
+    { preset: '사건·재난', keywords: ['사건', '재난', '사고'] },
+    { preset: '범죄·수사', keywords: ['범죄', '수사', '경찰', '검찰', '법원'] },
+    { preset: '사회 안전', keywords: ['안전', '보안', '산업안전', '의료', '보건'] },
+    { preset: '리스크 분석', keywords: ['위기', '리스크', '경고', '위험', '안보'] },
+  ],
+  serenity: [
+    { preset: '웰빙·커뮤니티', keywords: ['웰빙', '커뮤니티', '휴식', '명상', '동네'] },
+    { preset: '환경·기후', keywords: ['환경', '기후', '생태'] },
+    { preset: '건강·생활', keywords: ['건강', '생활', '라이프', '여행', '푸드'] },
+    { preset: '회복·돌봄', keywords: ['회복', '돌봄', '치유', '상담', '수면'] },
+  ],
+  spectrum: [
+    { preset: '균형·다양성', keywords: ['균형', '다양성', '중립', '모아보기'] },
+    { preset: '정책·산업·사회', keywords: ['정책', '산업', '사회', '교육', '기술', '환경'] },
+    { preset: '균형 브리핑', keywords: ['브리핑', '종합', '비교', '해설'] },
+  ],
+};
+
+function mapAdminCategoryPreset(emotion: unknown, category: unknown): string {
+  const emotionKey = String(emotion || '').trim().toLowerCase() || 'spectrum';
+  const raw = String(category || '').trim().toLowerCase();
+  const rows = ADMIN_CATEGORY_PRESET_KEYWORDS[emotionKey] || ADMIN_CATEGORY_PRESET_KEYWORDS.spectrum;
+  if (raw) {
+    for (const row of rows) {
+      if (row.keywords.some((keyword) => raw.includes(String(keyword).toLowerCase()))) {
+        return row.preset;
+      }
+    }
+  }
+  return rows[0]?.preset || '분야 미지정';
+}
+
 export interface AdminReviewUpdateInput {
   completed?: boolean;
   memo?: string;
@@ -458,13 +510,13 @@ export class MemStorage implements IStorage {
     const availableCategories = Array.from(
       new Set(
         pooled
-          .map((item) => String(item.category || "").trim())
+          .map((item) => mapAdminCategoryPreset(item.emotion, item.category))
           .filter(Boolean),
       ),
     ).sort((a, b) => a.localeCompare(b, "ko"));
 
     const filtered = pooled
-      .filter((item) => !safeCategory || String(item.category || "").trim().toLowerCase() === safeCategory)
+      .filter((item) => !safeCategory || mapAdminCategoryPreset(item.emotion, item.category).toLowerCase() === safeCategory)
       .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
 
     const start = (safePage - 1) * safePageSize;
@@ -1124,7 +1176,7 @@ export class SupabaseStorage implements IStorage {
               const haystack = [item.title, item.summary, item.source, item.id, item.category].join(" ").toLowerCase();
               return haystack.includes(safeSearch.toLowerCase());
             })
-            .map((item) => String(item.category || "").trim())
+            .map((item) => mapAdminCategoryPreset(item.emotion, item.category))
             .filter(Boolean),
         ),
       ).sort((a, b) => a.localeCompare(b, "ko"));
@@ -1140,9 +1192,6 @@ export class SupabaseStorage implements IStorage {
       if (safeEmotion) {
         query = query.eq('emotion', safeEmotion);
       }
-      if (safeCategory && safeCategory !== 'all') {
-        query = query.eq('category', safeCategory);
-      }
       if (safeSearch) {
         const escaped = safeSearch.replace(/[%_,]/g, (match) => `\\${match}`);
         query = query.or(`title.ilike.%${escaped}%,summary.ilike.%${escaped}%,source.ilike.%${escaped}%,category.ilike.%${escaped}%`);
@@ -1152,7 +1201,9 @@ export class SupabaseStorage implements IStorage {
       const to = from + safePageSize - 1;
       const { data, count } = await query.range(from, to);
       const items = (data || []).map((row) => this.mapNewsItemRow(row));
-      const merged = this.mergeWithFallback(items).filter((row: any) => includeHidden || isPublishedVisible(row));
+      const merged = this.mergeWithFallback(items)
+        .filter((row: any) => includeHidden || isPublishedVisible(row))
+        .filter((row: any) => !safeCategory || mapAdminCategoryPreset(row.emotion, row.category).toLowerCase() === safeCategory);
 
       return {
         items: merged,

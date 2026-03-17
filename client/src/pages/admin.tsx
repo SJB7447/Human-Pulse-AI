@@ -95,6 +95,43 @@ const ADMIN_CATEGORY_PRESETS: Record<AdminEmotionKey, string[]> = {
   serenity: ['웰빙·커뮤니티', '환경·기후', '건강·생활', '회복·돌봄'],
   spectrum: ['균형·다양성', '정책·산업·사회', '균형 브리핑'],
 };
+const ADMIN_CATEGORY_PRESET_KEYWORDS: Record<AdminEmotionKey, Array<{ preset: string; keywords: string[] }>> = {
+  vibrance: [
+    { preset: '연예·미담', keywords: ['연예', '아이돌', '드라마', '영화', '배우', '가수', '미담', '선행', 'kpop', 'k-pop', 'celebrity'] },
+    { preset: '문화·콘텐츠', keywords: ['문화', '콘텐츠', '전시', '공연', '예술', '애니', '웹툰'] },
+    { preset: '축제·행사', keywords: ['축제', '행사', '이벤트', '페스티벌', '박람회'] },
+    { preset: '스포츠 하이라이트', keywords: ['스포츠', '축구', '야구', '농구', '배구', '올림픽'] },
+  ],
+  immersion: [
+    { preset: '정치·속보', keywords: ['정치', '속보', '국회', '정부', '선거', '외교'] },
+    { preset: '공적 논쟁', keywords: ['논쟁', '공방', '여론', '시위', '토론'] },
+    { preset: '사회 갈등', keywords: ['사회', '갈등', '충돌', '분쟁', '노사'] },
+    { preset: '정책 충돌', keywords: ['정책', '규제', '개혁', '법안'] },
+  ],
+  clarity: [
+    { preset: '경제·분석', keywords: ['경제', '금융', '증시', '시장', '부동산', '분석'] },
+    { preset: '산업·기술', keywords: ['산업', '기술', 'it', 'ai', '과학', '반도체', '스타트업'] },
+    { preset: '정책 해설', keywords: ['정책', '해설', '브리핑', '행정'] },
+    { preset: '데이터 리포트', keywords: ['데이터', '리포트', '통계', '지표', '보고서'] },
+  ],
+  gravity: [
+    { preset: '사건·재난', keywords: ['사건', '재난', '사고'] },
+    { preset: '범죄·수사', keywords: ['범죄', '수사', '경찰', '검찰', '법원'] },
+    { preset: '사회 안전', keywords: ['안전', '보안', '산업안전', '의료', '보건'] },
+    { preset: '리스크 분석', keywords: ['위기', '리스크', '경고', '위험', '안보'] },
+  ],
+  serenity: [
+    { preset: '웰빙·커뮤니티', keywords: ['웰빙', '커뮤니티', '휴식', '명상', '동네'] },
+    { preset: '환경·기후', keywords: ['환경', '기후', '생태'] },
+    { preset: '건강·생활', keywords: ['건강', '생활', '라이프', '여행', '푸드'] },
+    { preset: '회복·돌봄', keywords: ['회복', '돌봄', '치유', '상담', '수면'] },
+  ],
+  spectrum: [
+    { preset: '균형·다양성', keywords: ['균형', '다양성', '중립', '모아보기'] },
+    { preset: '정책·산업·사회', keywords: ['정책', '산업', '사회', '교육', '기술', '환경'] },
+    { preset: '균형 브리핑', keywords: ['브리핑', '종합', '비교', '해설'] },
+  ],
+};
 const ARTICLES_PER_PAGE = 10;
 const PAGE_ELLIPSIS = 'ellipsis';
 type PageToken = number | typeof PAGE_ELLIPSIS;
@@ -352,6 +389,32 @@ function getCategoryPresetForEmotion(emotion: string | undefined): string[] {
   return ADMIN_CATEGORY_PRESETS[normalizeAdminEmotion(emotion)];
 }
 
+function mapAdminCategoryToPreset(emotion: string | undefined, category: string | undefined): string {
+  const emotionKey = normalizeAdminEmotion(emotion);
+  const raw = String(category || '').trim().toLowerCase();
+  const presets = ADMIN_CATEGORY_PRESET_KEYWORDS[emotionKey] || [];
+  if (raw) {
+    for (const row of presets) {
+      if (row.keywords.some((keyword) => raw.includes(String(keyword).toLowerCase()))) {
+        return row.preset;
+      }
+    }
+  }
+  return getCategoryPresetForEmotion(emotionKey)[0] || '분야 미지정';
+}
+
+function parseAdminCategoryFilterValue(value: string): { emotion: AdminEmotionKey | 'all'; preset: string | 'all' } {
+  const raw = String(value || '').trim();
+  if (!raw || raw === 'all' || !raw.includes('::')) {
+    return { emotion: 'all', preset: 'all' };
+  }
+  const [emotion, preset] = raw.split('::');
+  return {
+    emotion: normalizeAdminEmotion(emotion),
+    preset: String(preset || '').trim() || 'all',
+  };
+}
+
 function isAiGeneratedCategory(value: string | undefined): boolean {
   const normalized = String(value || '').trim().toLowerCase();
   if (!normalized) return false;
@@ -363,7 +426,7 @@ function isAiGeneratedCategory(value: string | undefined): boolean {
 }
 
 function getCategoryFieldLabel(emotion: string | undefined, category: string | undefined): string {
-  const preset = getCategoryPresetForEmotion(emotion)[0];
+  const preset = mapAdminCategoryToPreset(emotion, category);
   if (preset) return preset;
   const label = String(category || '').trim();
   if (label && !isAiGeneratedCategory(label)) return label;
@@ -509,7 +572,6 @@ export default function AdminPage() {
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(new Set());
   const [articleEmotionFilter, setArticleEmotionFilter] = useState<string>('all');
   const [articleCategoryFilter, setArticleCategoryFilter] = useState<string>('all');
-  const [articleCategoryOptions, setArticleCategoryOptions] = useState<string[]>([]);
   const [articleSearchQuery, setArticleSearchQuery] = useState('');
   const [articlePage, setArticlePage] = useState(1);
   const [headerHeightPx, setHeaderHeightPx] = useState(87);
@@ -543,6 +605,7 @@ export default function AdminPage() {
 
   const fetchData = async (targetTab: AdminTabKey = activeTab) => {
     try {
+      const selectedCategoryFilter = parseAdminCategoryFilterValue(articleCategoryFilter);
       setStatsLoading(true);
       if (targetTab === 'ops') {
         setOpsLoading(true);
@@ -568,8 +631,8 @@ export default function AdminPage() {
           DBService.getAdminDashboardData({
             page: articlePage,
             pageSize: ARTICLES_PER_PAGE,
-            emotion: articleEmotionFilter,
-            category: articleCategoryFilter,
+            emotion: selectedCategoryFilter.emotion !== 'all' ? selectedCategoryFilter.emotion : articleEmotionFilter,
+            category: selectedCategoryFilter.preset !== 'all' ? selectedCategoryFilter.preset : undefined,
             search: articleSearchQuery,
             all: true,
           }),
@@ -619,7 +682,6 @@ export default function AdminPage() {
         const articlePayload = (articlesData || { items: [], total: 0, page: articlePage, pageSize: ARTICLES_PER_PAGE }) as AdminArticleListResponse;
         setArticles(((articlePayload.items || []) as any[]).map(normalizeAdminArticle));
         setArticleTotalCount(Number(articlePayload.total || 0));
-        setArticleCategoryOptions(Array.isArray(articlePayload.availableCategories) ? articlePayload.availableCategories : []);
         setReviewMap(buildReviewMap((reviewsData || []) as AdminReviewPayload[]));
         setReports(((reportsData || []) as AdminReportPayload[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
         setReaderArticles(((readerArticlesData || []) as UserComposedArticleRecord[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
@@ -673,6 +735,14 @@ export default function AdminPage() {
   }, [articles]);
 
   const filteredArticles = articles;
+  const articleCategoryOptions = useMemo(() => (
+    ADMIN_EMOTION_OPTIONS.flatMap((emotion) =>
+      getCategoryPresetForEmotion(emotion).map((preset) => ({
+        value: `${emotion}::${preset}`,
+        label: `${emotion.toUpperCase()} · ${preset}`,
+      })),
+    )
+  ), []);
   const filteredArticleIdSet = useMemo(() => new Set(filteredArticles.map((article) => article.id)), [filteredArticles]);
   const pagedArticles = articles;
   const totalArticlePages = Math.max(1, Math.ceil(articleTotalCount / ARTICLES_PER_PAGE));
@@ -2712,13 +2782,18 @@ export default function AdminPage() {
           <div className="flex flex-col sm:flex-row gap-2">
             <select
               value={articleCategoryFilter}
-              onChange={(e) => setArticleCategoryFilter(e.target.value)}
+              onChange={(e) => {
+                const nextValue = e.target.value;
+                const parsed = parseAdminCategoryFilterValue(nextValue);
+                setArticleCategoryFilter(nextValue);
+                setArticleEmotionFilter(parsed.emotion === 'all' ? 'all' : parsed.emotion);
+              }}
               className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
             >
               <option value="all">전체 카테고리</option>
-              {articleCategoryOptions.map((category) => (
-                <option key={category} value={category}>
-                  {category}
+              {articleCategoryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
