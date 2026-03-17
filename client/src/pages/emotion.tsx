@@ -550,16 +550,21 @@ export default function EmotionPage() {
       const copy = EMOTION_FILTER_COPY[emotion.type];
       const tone = EMOTION_NEWS_TONE_COPY[emotion.type];
       const { h, s } = hexToHsl(emotion.color);
+      const isGravity = emotion.type === 'gravity';
 
       return {
         ...emotion,
         copy,
         tone,
-        baseBackground: `linear-gradient(135deg, hsla(${h}, ${Math.max(42, s - 12)}%, 97%, 0.98) 0%, hsla(${h}, ${Math.max(48, s - 6)}%, 92%, 0.94) 100%)`,
-        activeBackground: `linear-gradient(135deg, hsla(${h}, ${Math.min(94, s)}%, 94%, 0.98) 0%, hsla(${h}, ${Math.min(96, s + 4)}%, 84%, 0.96) 100%)`,
-        activeRing: emotion.gradientColor
-          ? `linear-gradient(135deg, ${hexToRgba(emotion.color, 0.96)} 0%, ${hexToRgba(emotion.gradientColor, 0.92)} 100%)`
-          : `linear-gradient(135deg, ${hexToRgba(emotion.color, 0.94)} 0%, rgba(255,255,255,0.98) 100%)`,
+        chipColor: isGravity ? '#999898' : emotion.color,
+        labelColor: isGravity ? '#5f5d5c' : emotion.color,
+        hintColor: isGravity ? '#787674' : undefined,
+        baseBackground: isGravity
+          ? 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(243,243,243,0.98) 42%, rgba(229,229,229,0.96) 100%)'
+          : `linear-gradient(135deg, hsla(${h}, ${Math.max(42, s - 12)}%, 97%, 0.98) 0%, hsla(${h}, ${Math.max(48, s - 6)}%, 92%, 0.94) 100%)`,
+        activeBackground: isGravity
+          ? 'linear-gradient(135deg, rgba(250,250,250,0.99) 0%, rgba(229,229,229,0.98) 55%, rgba(209,209,209,0.96) 100%)'
+          : `linear-gradient(135deg, hsla(${h}, ${Math.min(94, s)}%, 94%, 0.98) 0%, hsla(${h}, ${Math.min(96, s + 4)}%, 84%, 0.96) 100%)`,
       };
     });
   }, []);
@@ -713,39 +718,31 @@ export default function EmotionPage() {
                     key={emotion.type}
                     type="button"
                     onClick={() => handleEmotionCategorySelect(emotion.type)}
-                    className="group relative min-w-[112px] rounded-2xl border px-3.5 py-3 text-left transition-all duration-200 sm:min-w-[132px]"
+                    className="group min-w-[112px] rounded-2xl px-3.5 py-3 text-left transition-all duration-200 sm:min-w-[132px]"
                     style={{
-                      background: isActive
-                        ? `${emotion.activeBackground} padding-box, ${emotion.activeRing} border-box`
-                        : emotion.baseBackground,
-                      borderColor: isActive ? 'transparent' : 'rgba(255,255,255,0.55)',
-                      color: emotion.color,
+                      background: isActive ? emotion.activeBackground : emotion.baseBackground,
+                      color: emotion.labelColor,
                       boxShadow: isActive
-                        ? `0 0 0 1px ${hexToRgba(emotion.color, 0.18)}, 0 0 18px ${hexToRgba(emotion.color, 0.18)}, 0 0 34px ${hexToRgba(emotion.color, 0.14)}, 0 10px 26px ${hexToRgba(emotion.color, 0.18)}`
+                        ? `0 10px 28px ${hexToRgba(emotion.chipColor, 0.18)}, 0 0 18px ${hexToRgba(emotion.chipColor, 0.12)}`
                         : '0 8px 20px rgba(35,34,33,0.08)',
                     }}
                     data-testid={`button-emotion-quick-${emotion.type}`}
                   >
-                    {isActive && (
-                      <span className="absolute -top-2 left-3 inline-flex items-center rounded-full bg-white/92 px-2.5 py-1 text-[10px] font-semibold tracking-[0.02em] text-slate-700 shadow-[0_4px_10px_rgba(35,34,33,0.08)]">
-                        현재 위치
-                      </span>
-                    )}
                     <span className="mb-2 inline-flex items-center gap-2">
                       <span
                         className="inline-flex h-7 w-7 items-center justify-center rounded-full"
-                        style={{ backgroundColor: hexToRgba(emotion.color, isActive ? 0.2 : 0.12) }}
+                        style={{ backgroundColor: hexToRgba(emotion.chipColor, isActive ? 0.2 : 0.12) }}
                       >
-                        <EmotionIcon className="h-3.5 w-3.5" />
+                        <EmotionIcon className="h-3.5 w-3.5" style={{ color: emotion.chipColor }} />
                       </span>
                       <span className="text-xs font-semibold tracking-[-0.01em]">
                         {emotion.copy.label}
                       </span>
                     </span>
-                    <p className="text-[11px] font-semibold leading-tight opacity-95">
+                    <p className="text-[11px] font-semibold leading-tight opacity-95" style={{ color: emotion.labelColor }}>
                       {emotion.tone}
                     </p>
-                    <p className="mt-1 line-clamp-1 text-[10px] leading-tight opacity-75">
+                    <p className="mt-1 line-clamp-1 text-[10px] leading-tight opacity-75" style={{ color: emotion.hintColor || emotion.labelColor }}>
                       {emotion.copy.hint}
                     </p>
                   </button>

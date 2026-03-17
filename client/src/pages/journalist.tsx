@@ -2990,7 +2990,7 @@ export default function JournalistPage() {
 
         {view === 'write' ? (
           <div className={activeComposeStage === 'publish' ? 'grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.28fr)_minmax(320px,0.88fr)] 2xl:grid-cols-[minmax(0,1.34fr)_minmax(360px,0.82fr)] xl:items-start' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
-            <div className={activeComposeStage === 'publish' ? 'order-2 space-y-6 xl:order-1' : 'lg:col-span-2 space-y-6'}>
+            <div className={activeComposeStage === 'publish' ? 'order-1 space-y-6' : 'lg:col-span-2 space-y-6'}>
               {activeComposeStage === 'author' && (
               <>
               <motion.div
@@ -3927,7 +3927,7 @@ export default function JournalistPage() {
               )}
             </div>
 
-            <div className={activeComposeStage === 'publish' ? 'order-1 flex flex-col gap-4 self-start xl:order-2 xl:sticky xl:top-24' : 'space-y-6'}>
+            <div className={activeComposeStage === 'publish' ? 'order-2 flex flex-col gap-4 self-start xl:sticky xl:top-24' : 'space-y-6'}>
               {activeComposeStage === 'author' && (
               <motion.div
                 ref={draftVersionRef}
@@ -4023,7 +4023,7 @@ export default function JournalistPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.24 }}
-                className="order-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm xl:order-1"
+                className="order-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -4079,7 +4079,7 @@ export default function JournalistPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="order-1 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm xl:order-2"
+                className="order-1 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
               >
                 <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                   <Send className="w-5 h-5 text-orange-500" />
@@ -4293,7 +4293,7 @@ export default function JournalistPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
-                className="order-2 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm xl:order-3"
+                className="order-2 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm"
               >
                 <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                   <Hash className="w-5 h-5 text-cyan-500" />
@@ -4328,7 +4328,7 @@ export default function JournalistPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
-                className={`order-3 rounded-2xl border p-6 shadow-sm xl:order-4 ${hasAngerWarning
+                className={`order-3 rounded-2xl border p-6 shadow-sm ${hasAngerWarning
                   ? 'bg-red-50 border-red-200'
                   : 'bg-white border-gray-100'
                   }`}
