@@ -4073,6 +4073,80 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const communityCommentLikes = new Map<string, Set<string>>();
   const communityCommentRate = new Map<string, { windowStartedAt: number; count: number; lastPostedAt: number }>();
 
+  const seedCommunityFallbackContent = () => {
+    if (communityFallback.length > 0 || communityCommentsFallback.length > 0) return;
+
+    const demoAuthors = [
+      "민지", "현우", "서연", "지후", "도윤", "소은", "지민", "하준", "유나", "은호",
+      "Ari", "Noah", "Jisoo", "Mina", "Daniel",
+    ];
+    const postTemplates: Array<{ emotion: EmotionType; title: string; body: string }> = [
+      { emotion: "vibrance", title: "야간 러닝 축제 기사 보고 기분이 확 살아났어요", body: "퇴근 후엔 늘 지쳐 있었는데 이런 지역 축제 기사를 보니 도시도 아직은 즐길 구석이 많다는 생각이 들었어요. 단순한 행사 소개보다 사람들의 표정과 분위기가 전해져서 오랜만에 주말 계획을 세워보고 싶어졌습니다." },
+      { emotion: "clarity", title: "반도체 투자 기사, 숫자보다 흐름 설명이 좋아서 저장했습니다", body: "요즘 경제 기사 읽다 보면 수치만 많고 맥락은 놓치는 경우가 많은데, 이번 글은 왜 지금 장비 발주가 중요한지 설명해줘서 이해가 쉬웠어요. 산업 기사도 이렇게 차분하게 풀어주면 훨씬 읽기 좋네요." },
+      { emotion: "immersion", title: "정치 기사 읽고 나니 찬반보다 구조를 봐야겠다는 생각", body: "처음에는 그냥 또 싸우는 뉴스라고 생각했는데, 공천 갈등 배경을 정리한 부분을 보면서 권력 재편과 지지층 메시지가 동시에 걸려 있다는 걸 알게 됐어요. 자극적인 제목보다 맥락 정리가 더 중요하다는 느낌이었습니다." },
+      { emotion: "serenity", title: "수면 상담 기사 덕분에 생활 루틴을 다시 보게 됐어요", body: "무작정 일찍 자야 한다는 말보다 생활 리듬 자체를 조정해야 한다는 설명이 더 와닿았어요. 뉴스인데도 읽고 나서 조급함보다 안정감이 남아서 좋았습니다." },
+      { emotion: "gravity", title: "재난 기사 볼 때 필요한 건 속보보다 반복 원인 추적 같아요", body: "비슷한 사고가 계속 이어질 때마다 한 번의 사건으로 소비되는 게 아쉽습니다. 이번 기사처럼 구조적 원인과 대응 허점을 짚어주는 내용이 많아졌으면 좋겠어요." },
+      { emotion: "spectrum", title: "한쪽 감정에 치우치지 않은 큐레이션이 확실히 편하네요", body: "요즘은 알고리즘이 자극적인 것만 밀어주는 느낌이 강했는데, 스펙트럼 쪽 기사 묶음은 숨이 좀 트였어요. 밝은 기사와 무거운 기사가 적절히 섞여 있으니 오래 봐도 덜 피곤합니다." },
+      { emotion: "vibrance", title: "스포츠 끝내기 기사, 현장감이 살아 있어서 재밌었어요", body: "점수 결과만 적힌 기사가 아니라 경기장 분위기와 팬 반응이 같이 보여서 읽는 맛이 있었어요. 이런 기사들은 하루를 조금 가볍게 시작하게 해주는 것 같아요." },
+      { emotion: "clarity", title: "전세 시장 기사에서 실제 선택지가 왜 줄어드는지 이해됐습니다", body: "단순히 가격이 오른다 내린다가 아니라 계약 가능한 물량과 지역 편차를 같이 설명해줘서 현실적으로 느껴졌어요. 실수요자 입장에서 읽을 포인트가 분명한 기사였습니다." },
+      { emotion: "serenity", title: "동네 식물 모임 기사 읽고 작은 취미의 힘을 다시 느꼈어요", body: "거창한 변화보다 부담 없이 지속되는 연결이 더 오래간다는 대목이 좋았어요. 자극적이지 않은데도 이상하게 오래 남는 기사네요." },
+      { emotion: "gravity", title: "응급의료 공백 기사, 지역 격차 얘기가 더 많아졌으면 합니다", body: "병상 숫자만이 아니라 실제 이송 체계와 야간 공백을 같이 다룬 부분이 인상적이었어요. 숫자 뒤의 생활 불안을 보여주는 기사라 더 무겁게 읽혔습니다." },
+    ];
+    const commentTemplates = [
+      "저도 같은 부분이 인상 깊었어요.",
+      "한 줄 요약보다 본문 설명이 좋아서 끝까지 읽었습니다.",
+      "이 주제는 반대 시각도 같이 보면 더 좋을 것 같아요.",
+      "감정적으로만 읽지 않게 도와주는 기사였네요.",
+      "공감합니다. 비슷한 경험이 떠올랐어요.",
+      "요약만 봤는데도 다시 본문 열어보게 되네요.",
+      "이런 글은 저장해두고 나중에 다시 읽고 싶어요.",
+      "생각보다 차분하게 정리돼 있어서 좋았습니다.",
+      "댓글보다 기사 자체 토론거리가 많은 편이네요.",
+      "조금 더 후속 기사도 이어서 보고 싶습니다.",
+    ];
+
+    for (let index = 0; index < 20; index += 1) {
+      const template = postTemplates[index % postTemplates.length];
+      const author = demoAuthors[index % demoAuthors.length];
+      const createdAt = new Date(Date.now() - index * 1000 * 60 * 47).toISOString();
+      const postId = randomUUID();
+      communityFallback.push({
+        id: postId,
+        userId: `demo-community-user-${index + 1}`,
+        username: author,
+        emotion: template.emotion,
+        userOpinion: `${template.title}\n\n${template.body}`,
+        articleId: null,
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      const commentCount = 2 + (index % 3);
+      for (let commentIndex = 0; commentIndex < commentCount; commentIndex += 1) {
+        const commentId = randomUUID();
+        const commentCreatedAt = new Date(Date.now() - index * 1000 * 60 * 41 - commentIndex * 1000 * 60 * 9).toISOString();
+        communityCommentsFallback.push({
+          id: commentId,
+          postId,
+          userId: `demo-comment-user-${index + 1}-${commentIndex + 1}`,
+          username: demoAuthors[(index + commentIndex + 3) % demoAuthors.length],
+          content: commentTemplates[(index + commentIndex) % commentTemplates.length],
+          createdAt: commentCreatedAt,
+          updatedAt: commentCreatedAt,
+        });
+
+        const likeSeed = (index + commentIndex) % 4;
+        if (likeSeed > 0) {
+          communityCommentLikes.set(
+            commentId,
+            new Set(Array.from({ length: likeSeed }).map((_, likeIndex) => `demo-like-user-${index + 1}-${commentIndex + 1}-${likeIndex + 1}`)),
+          );
+        }
+      }
+    }
+  };
+  seedCommunityFallbackContent();
+
   // Demo-only OTP store (no SMS provider)
   const phoneOtpFallback = new Map<string, {
     code: string;
