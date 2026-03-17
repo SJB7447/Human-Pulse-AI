@@ -487,7 +487,10 @@ export default function AdminPage() {
   const [aiNewsTimeoutMs, setAiNewsTimeoutMs] = useState<number>(24000);
   const [savingAiNewsSettings, setSavingAiNewsSettings] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [bootstrapping, setBootstrapping] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [opsLoading, setOpsLoading] = useState(false);
+  const [articlesLoading, setArticlesLoading] = useState(false);
   const [crawling, setCrawling] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<AdminArticle | null>(null);
   const [editingEmotion, setEditingEmotion] = useState<AdminEmotionKey>('spectrum');
@@ -537,7 +540,12 @@ export default function AdminPage() {
 
   const fetchData = async (targetTab: AdminTabKey = activeTab) => {
     try {
-      setLoading(true);
+      setStatsLoading(true);
+      if (targetTab === 'ops') {
+        setOpsLoading(true);
+      } else {
+        setArticlesLoading(true);
+      }
       const baseHealth = await DBService.getApiHealth().catch(() => null);
       setApiHealth((baseHealth || null) as ApiHealthPayload | null);
 
@@ -634,13 +642,16 @@ export default function AdminPage() {
         variant: 'destructive',
       });
     } finally {
-      setLoading(false);
+      setStatsLoading(false);
+      setOpsLoading(false);
+      setArticlesLoading(false);
+      setBootstrapping(false);
     }
   };
 
   useEffect(() => {
     if (!user) {
-      setLoading(false);
+      setBootstrapping(false);
       setLocation(`/login?redirect=${encodeURIComponent('/admin')}`);
       return;
     }
@@ -742,7 +753,7 @@ export default function AdminPage() {
       observer?.disconnect();
       window.removeEventListener('resize', updateHeaderHeight);
     };
-  }, [loading]);
+  }, [bootstrapping]);
 
   useEffect(() => {
     const anchorElement = opsAnchorBarRef.current;
@@ -1667,16 +1678,10 @@ export default function AdminPage() {
   const apiBootstrapError = String(apiHealth?.routeBootstrapError || '').trim();
   const apiBootstrapErrorPreview = apiBootstrapError ? apiBootstrapError.slice(0, 220) : '';
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-lg font-semibold text-gray-600 animate-pulse">관리자 데이터 로딩 중...</div>
-      </div>
-    );
-  }
-
   const selectedAnalysis = selectedArticle ? analyzeArticle(selectedArticle) : null;
   const selectedReview = selectedArticle ? reviewMap[selectedArticle.id] : null;
+  const showOpsSkeleton = showOpsTab && bootstrapping && !stats;
+  const showArticlesSkeleton = showArticlesTab && bootstrapping && articles.length === 0;
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -1751,6 +1756,11 @@ export default function AdminPage() {
           <p className="text-gray-500 mt-2">
             {showOpsTab ? '운영 체계와 통계 지표를 관리합니다.' : '기사 상태, 분류, 검수, 이슈를 관리합니다.'}
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {statsLoading ? <AdminSectionLoading label="상단 지표 업데이트 중" /> : null}
+            {showOpsTab && opsLoading ? <AdminSectionLoading label="운영 통계 불러오는 중" /> : null}
+            {showArticlesTab && articlesLoading ? <AdminSectionLoading label="기사 관리 데이터 불러오는 중" /> : null}
+          </div>
           <div className={`mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${apiModeBadgeClass}`}>
             <span>API {apiModeLabel}</span>
             <span className="text-[11px] font-medium opacity-80">{apiHealthCheckedAt}</span>
@@ -1834,10 +1844,36 @@ export default function AdminPage() {
       {showOpsTab ? (
       <div className="rounded-2xl border border-indigo-100 bg-white shadow-sm">
         <div className="px-5 py-4 border-b border-indigo-100 bg-indigo-50/50">
-          <p className="text-sm font-semibold text-indigo-800">운영 체계/통계 탭</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-indigo-800">운영 체계/통계 탭</p>
+            {opsLoading ? <AdminSectionLoading label="섹션별 데이터 업데이트 중" /> : null}
+          </div>
           <p className="text-xs text-indigo-600 mt-1">핵심 지표는 상단에서 빠르게 보고, 상세 데이터는 2단 아코디언에서 확인합니다.</p>
         </div>
-        <div className="p-4 sm:p-5 space-y-4">
+        <div className={`p-4 sm:p-5 space-y-4 transition-opacity ${opsLoading && !showOpsSkeleton ? 'opacity-80' : 'opacity-100'}`}>
+          {showOpsSkeleton ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <AdminSkeletonCard key={`ops-kpi-skeleton-${index}`} className="h-28" />
+                ))}
+              </div>
+              <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <AdminSkeletonCard key={`ops-quick-skeleton-${index}`} className="h-20" />
+                ))}
+              </div>
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <AdminSkeletonCard className="h-72" />
+                <AdminSkeletonCard className="h-72" />
+              </div>
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <AdminSkeletonCard className="h-64" />
+                <AdminSkeletonCard className="h-64" />
+              </div>
+            </div>
+          ) : (
+          <>
           <div ref={opsKpiRef} className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             <StatCard
               title="게시 기사"
@@ -1943,7 +1979,10 @@ export default function AdminPage() {
               </div>
             </div>
           </div>
+          </>
+          )}
 
+          {!showOpsSkeleton && (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div ref={opsOpsRef} className="rounded-xl border border-gray-200 bg-gray-50/40 px-4">
               <Accordion type="multiple" defaultValue={['ops-export', 'ops-alert']} className="w-full">
@@ -2141,6 +2180,7 @@ export default function AdminPage() {
               </Accordion>
             </div>
           </div>
+          )}
         </div>
       </div>
       ) : null}
@@ -2451,11 +2491,18 @@ export default function AdminPage() {
       {showArticlesTab ? (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
         <div className="px-5 py-4 border-b border-amber-100 bg-amber-50/50">
-          <p className="text-sm font-semibold text-amber-900">독자 기사 검증 대기열</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-amber-900">독자 기사 검증 대기열</p>
+            {articlesLoading ? <AdminSectionLoading label="대기열 업데이트 중" /> : null}
+          </div>
           <p className="text-xs text-amber-700 mt-1">내 의견으로 생성된 기사의 커뮤니티 노출 승인/반려를 처리합니다.</p>
         </div>
         <div className="p-4 sm:p-5 space-y-3">
-          {pendingReaderArticles.length === 0 ? (
+          {showArticlesSkeleton ? (
+            Array.from({ length: 3 }).map((_, index) => (
+              <AdminSkeletonCard key={`reader-pending-skeleton-${index}`} className="h-40" />
+            ))
+          ) : pendingReaderArticles.length === 0 ? (
             <p className="text-sm text-gray-500">검증 대기 중인 독자 기사가 없습니다.</p>
           ) : pendingReaderArticles.slice(0, 20).map((item) => (
             <div key={`reader-article-${item.id}`} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-2">
@@ -2523,11 +2570,18 @@ export default function AdminPage() {
       {showArticlesTab ? (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
         <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/70">
-          <p className="text-sm font-semibold text-slate-900">이전 기록 보기 (최근 7일)</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-slate-900">이전 기록 보기 (최근 7일)</p>
+            {articlesLoading ? <AdminSectionLoading label="이력 불러오는 중" /> : null}
+          </div>
           <p className="text-xs text-slate-600 mt-1">승인/반려 처리된 독자 기사 이력을 확인합니다.</p>
         </div>
         <div className="p-4 sm:p-5 space-y-3">
-          {recentReaderArticleHistory.length === 0 ? (
+          {showArticlesSkeleton ? (
+            Array.from({ length: 2 }).map((_, index) => (
+              <AdminSkeletonCard key={`reader-history-skeleton-${index}`} className="h-32" />
+            ))
+          ) : recentReaderArticleHistory.length === 0 ? (
             <p className="text-sm text-gray-500">최근 7일 처리 이력이 없습니다.</p>
           ) : recentReaderArticleHistory.map((item) => (
             <div key={`reader-article-history-${item.id}`} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 space-y-2">
@@ -2589,10 +2643,13 @@ export default function AdminPage() {
       {showArticlesTab ? (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-5 py-4 border-b border-indigo-100 bg-indigo-50/45">
-          <p className="text-sm font-semibold text-indigo-800">기사 관리 탭</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-indigo-800">기사 관리 탭</p>
+            {articlesLoading ? <AdminSectionLoading label="기사 목록 업데이트 중" /> : null}
+          </div>
           <p className="text-xs text-indigo-600 mt-1">기사 상태, 감정/카테고리 분류, 검수와 이슈를 이 탭에서 관리합니다.</p>
         </div>
-        <div className="px-6 py-5 border-b border-gray-100 space-y-3">
+        <div className={`px-6 py-5 border-b border-gray-100 space-y-3 transition-opacity ${articlesLoading && !showArticlesSkeleton ? 'opacity-80' : 'opacity-100'}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-lg font-bold text-gray-800">기사 관리</h3>
             <label className="inline-flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap">
@@ -2670,6 +2727,21 @@ export default function AdminPage() {
             </div>
           )}
         </div>
+        {showArticlesSkeleton ? (
+          <div className="p-4 sm:p-6 space-y-4">
+            <div className="grid grid-cols-1 gap-4 xl:hidden">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <AdminSkeletonCard key={`article-mobile-skeleton-${index}`} className="h-48" />
+              ))}
+            </div>
+            <div className="hidden xl:block space-y-3">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <AdminSkeletonCard key={`article-table-skeleton-${index}`} className="h-20" />
+              ))}
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="xl:hidden p-4 sm:p-6 space-y-4">
           {pagedArticles.map((item) => {
             const isPublished = getArticlePublished(item);
@@ -2929,6 +3001,8 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
+        </>
+        )}
         {articleTotalCount > 0 && (
           <div className="px-6 py-5 border-t border-gray-100 space-y-3">
             <div className="w-full overflow-x-auto flex justify-center">
@@ -3480,5 +3554,21 @@ function QuickInfo({ label, value, tone }: { label: string; value: string; tone:
       <p className="text-xs font-medium">{label}</p>
       <p className="text-lg font-bold">{value}</p>
     </div>
+  );
+}
+
+function AdminSkeletonCard({ className = '' }: { className?: string }) {
+  return (
+    <div className={`animate-pulse rounded-2xl border border-gray-200 bg-white/90 ${className}`}>
+      <div className="h-full rounded-2xl bg-gradient-to-r from-gray-100 via-gray-50 to-gray-100" />
+    </div>
+  );
+}
+
+function AdminSectionLoading({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 animate-pulse">
+      {label}
+    </span>
   );
 }
