@@ -508,6 +508,8 @@ export default function AdminPage() {
   const [savingArticleContent, setSavingArticleContent] = useState(false);
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(new Set());
   const [articleEmotionFilter, setArticleEmotionFilter] = useState<string>('all');
+  const [articleCategoryFilter, setArticleCategoryFilter] = useState<string>('all');
+  const [articleCategoryOptions, setArticleCategoryOptions] = useState<string[]>([]);
   const [articleSearchQuery, setArticleSearchQuery] = useState('');
   const [articlePage, setArticlePage] = useState(1);
   const [headerHeightPx, setHeaderHeightPx] = useState(87);
@@ -567,6 +569,7 @@ export default function AdminPage() {
             page: articlePage,
             pageSize: ARTICLES_PER_PAGE,
             emotion: articleEmotionFilter,
+            category: articleCategoryFilter,
             search: articleSearchQuery,
             all: true,
           }),
@@ -616,6 +619,7 @@ export default function AdminPage() {
         const articlePayload = (articlesData || { items: [], total: 0, page: articlePage, pageSize: ARTICLES_PER_PAGE }) as AdminArticleListResponse;
         setArticles(((articlePayload.items || []) as any[]).map(normalizeAdminArticle));
         setArticleTotalCount(Number(articlePayload.total || 0));
+        setArticleCategoryOptions(Array.isArray(articlePayload.availableCategories) ? articlePayload.availableCategories : []);
         setReviewMap(buildReviewMap((reviewsData || []) as AdminReviewPayload[]));
         setReports(((reportsData || []) as AdminReportPayload[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
         setReaderArticles(((readerArticlesData || []) as UserComposedArticleRecord[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
@@ -657,7 +661,7 @@ export default function AdminPage() {
       return;
     }
     fetchData(activeTab);
-  }, [user, activeTab, articlePage, articleEmotionFilter, articleSearchQuery]);
+  }, [user, activeTab, articlePage, articleEmotionFilter, articleCategoryFilter, articleSearchQuery]);
 
   useEffect(() => {
     setSelectedArticleIds((prev) => {
@@ -667,15 +671,6 @@ export default function AdminPage() {
       return next.size === prev.size ? prev : next;
     });
   }, [articles]);
-
-  const articleEmotionOptions = useMemo(() => {
-    const options = new Set<string>();
-    for (const row of stats?.emotionStats || []) {
-      const emotion = String(row?.emotion || '').trim().toLowerCase();
-      if (emotion) options.add(emotion);
-    }
-    return Array.from(options).sort((a, b) => a.localeCompare(b));
-  }, [stats?.emotionStats]);
 
   const filteredArticles = articles;
   const filteredArticleIdSet = useMemo(() => new Set(filteredArticles.map((article) => article.id)), [filteredArticles]);
@@ -712,7 +707,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     setArticlePage(1);
-  }, [articleEmotionFilter, articleSearchQuery]);
+  }, [articleEmotionFilter, articleCategoryFilter, articleSearchQuery]);
 
   useEffect(() => {
     if (articlePage <= totalArticlePages) return;
@@ -2716,14 +2711,14 @@ export default function AdminPage() {
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <select
-              value={articleEmotionFilter}
-              onChange={(e) => setArticleEmotionFilter(e.target.value)}
+              value={articleCategoryFilter}
+              onChange={(e) => setArticleCategoryFilter(e.target.value)}
               className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
             >
               <option value="all">전체 카테고리</option>
-              {articleEmotionOptions.map((emotion) => (
-                <option key={emotion} value={emotion}>
-                  {emotion.toUpperCase()}
+              {articleCategoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
                 </option>
               ))}
             </select>

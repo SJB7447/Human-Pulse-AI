@@ -9009,6 +9009,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const page = Math.max(1, Number(req.query.page || 1));
       const pageSize = Math.max(1, Math.min(Number(req.query.pageSize || 10), 100));
       const emotion = String(req.query.emotion || "").trim().toLowerCase();
+      const category = String(req.query.category || "").trim();
       const search = String(req.query.search || "").trim();
       const includeHidden = req.query.all !== "false";
       const result = await storage.getAdminArticlesPage({
@@ -9016,6 +9017,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         pageSize,
         includeHidden,
         emotion: emotion && emotion !== "all" ? emotion : null,
+        category: category && category !== "all" ? category : null,
         search: search || null,
       });
 

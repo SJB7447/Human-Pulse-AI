@@ -112,6 +112,7 @@ export interface AdminArticleListQuery {
   pageSize: number;
   includeHidden?: boolean;
   emotion?: string | null;
+  category?: string | null;
   search?: string | null;
 }
 
@@ -120,6 +121,7 @@ export interface AdminArticleListResult {
   total: number;
   page: number;
   pageSize: number;
+  availableCategories?: string[];
 }
 
 export interface AdminReviewUpdateInput {
@@ -440,17 +442,29 @@ export class MemStorage implements IStorage {
     const safePage = Math.max(1, Number(input.page || 1));
     const safePageSize = Math.max(1, Math.min(Number(input.pageSize || 10), 100));
     const safeEmotion = String(input.emotion || "").trim().toLowerCase();
+    const safeCategory = String(input.category || "").trim().toLowerCase();
     const safeSearch = String(input.search || "").trim().toLowerCase();
     const includeHidden = input.includeHidden !== false;
 
-    const filtered = Array.from(this.newsItems.values())
+    const pooled = Array.from(this.newsItems.values())
       .filter((item) => includeHidden || isPublishedVisible(item))
       .filter((item) => !safeEmotion || String(item.emotion || "").trim().toLowerCase() === safeEmotion)
       .filter((item) => {
         if (!safeSearch) return true;
-        const haystack = [item.title, item.summary, item.source, item.id].join(" ").toLowerCase();
+        const haystack = [item.title, item.summary, item.source, item.id, item.category].join(" ").toLowerCase();
         return haystack.includes(safeSearch);
-      })
+      });
+
+    const availableCategories = Array.from(
+      new Set(
+        pooled
+          .map((item) => String(item.category || "").trim())
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b, "ko"));
+
+    const filtered = pooled
+      .filter((item) => !safeCategory || String(item.category || "").trim().toLowerCase() === safeCategory)
       .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0));
 
     const start = (safePage - 1) * safePageSize;
@@ -459,6 +473,7 @@ export class MemStorage implements IStorage {
       total: filtered.length,
       page: safePage,
       pageSize: safePageSize,
+      availableCategories,
     };
   }
 
@@ -1095,10 +1110,25 @@ export class SupabaseStorage implements IStorage {
     const safePageSize = Math.max(1, Math.min(Number(input.pageSize || 10), 100));
     const includeHidden = input.includeHidden !== false;
     const safeEmotion = String(input.emotion || "").trim().toLowerCase();
+    const safeCategory = String(input.category || "").trim();
     const safeSearch = String(input.search || "").trim();
-    const cacheKey = `adminArticles:${includeHidden ? "all" : "published"}:${safePage}:${safePageSize}:${safeEmotion}:${safeSearch.toLowerCase()}`;
+    const cacheKey = `adminArticles:${includeHidden ? "all" : "published"}:${safePage}:${safePageSize}:${safeEmotion}:${safeCategory.toLowerCase()}:${safeSearch.toLowerCase()}`;
 
     return this.getOrLoadCached(cacheKey, NEWS_LIST_CACHE_TTL_MS, async () => {
+      const availableCategories = Array.from(
+        new Set(
+          (await this.getAllNews(includeHidden))
+            .filter((item) => !safeEmotion || String(item.emotion || "").trim().toLowerCase() === safeEmotion)
+            .filter((item) => {
+              if (!safeSearch) return true;
+              const haystack = [item.title, item.summary, item.source, item.id, item.category].join(" ").toLowerCase();
+              return haystack.includes(safeSearch.toLowerCase());
+            })
+            .map((item) => String(item.category || "").trim())
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b, "ko"));
+
       let query = supabase
         .from('news_items')
         .select(NEWS_LIST_SELECT, { count: 'exact' })
@@ -1110,9 +1140,12 @@ export class SupabaseStorage implements IStorage {
       if (safeEmotion) {
         query = query.eq('emotion', safeEmotion);
       }
+      if (safeCategory && safeCategory !== 'all') {
+        query = query.eq('category', safeCategory);
+      }
       if (safeSearch) {
         const escaped = safeSearch.replace(/[%_,]/g, (match) => `\\${match}`);
-        query = query.or(`title.ilike.%${escaped}%,summary.ilike.%${escaped}%,source.ilike.%${escaped}%`);
+        query = query.or(`title.ilike.%${escaped}%,summary.ilike.%${escaped}%,source.ilike.%${escaped}%,category.ilike.%${escaped}%`);
       }
 
       const from = (safePage - 1) * safePageSize;
@@ -1126,6 +1159,7 @@ export class SupabaseStorage implements IStorage {
         total: Math.max(Number(count || 0), merged.length),
         page: safePage,
         pageSize: safePageSize,
+        availableCategories,
       };
     });
   }

@@ -28,27 +28,28 @@ const EMOTION_ICONS: Record<EmotionType, typeof Heart> = {
 };
 
 const EMOTION_FILTER_COPY: Record<EmotionType, { label: string; hint: string }> = {
-  vibrance: { label: '설렘', hint: '밝고 경쾌한 기사' },
-  immersion: { label: '몰입', hint: '긴장감 있는 이슈' },
-  clarity: { label: '통찰', hint: '분석과 해설 중심' },
-  gravity: { label: '무게', hint: '사회적 의미가 큰 기사' },
-  serenity: { label: '안정', hint: '회복과 일상에 가까운 기사' },
-  spectrum: { label: '스펙트럼', hint: '다양한 관점을 함께 보는 기사' },
+  vibrance: { label: '설렘', hint: '연예·문화·스타일' },
+  immersion: { label: '몰입', hint: '정치·속보' },
+  clarity: { label: '통찰', hint: '시사·경제·분석' },
+  gravity: { label: '무게', hint: '사회·재난' },
+  serenity: { label: '안정', hint: '환경·회복·웰빙' },
+  spectrum: { label: '스펙트럼', hint: '모아보기' },
 };
 
 const EMOTION_NEWS_TONE_COPY: Record<EmotionType, string> = {
-  vibrance: '연예·문화',
+  vibrance: '연예·문화·스타일',
   immersion: '정치·속보',
-  clarity: '시사·분석',
+  clarity: '시사·경제·분석',
   gravity: '사회·재난',
-  serenity: '라이프·회복',
-  spectrum: '균형 큐레이션',
+  serenity: '환경·회복·웰빙',
+  spectrum: '모아보기',
 };
 
 function normalizeCategoryLabel(rawCategory: string | null | undefined): string {
   const value = String(rawCategory || '').trim();
-  if (!value) return '기타';
-  const lower = value.toLowerCase();
+  const cleaned = value.replace(/^[\s\-–—_.,/|·•]+|[\s\-–—_.,/|·•]+$/g, '').trim();
+  if (!cleaned || !/[A-Za-z0-9가-힣]/.test(cleaned)) return '';
+  const lower = cleaned.toLowerCase();
 
   if (/(politics|policy|government|economy|business|finance|society|social|world|international|current affairs|news|정치|정책|경제|사회|국제|시사)/i.test(lower)) {
     return '시사';
@@ -72,7 +73,7 @@ function normalizeCategoryLabel(rawCategory: string | null | undefined): string 
     return '커뮤니티';
   }
 
-  return value.length <= 12 ? value : `${value.slice(0, 12)}…`;
+  return cleaned.length <= 12 ? cleaned : `${cleaned.slice(0, 12)}…`;
 }
 
 function extractCategoryLabels(rawCategory: string | null | undefined): string[] {
@@ -88,10 +89,12 @@ function extractCategoryLabels(rawCategory: string | null | undefined): string[]
     .map((token) => String(token || '').trim())
     .filter(Boolean)
     .map((token) => token.replace(/^#+/, '').trim())
-    .filter(Boolean)
+    .filter((token) => Boolean(token) && /[A-Za-z0-9가-힣]/.test(token))
     .map((token) => normalizeCategoryLabel(token));
 
-  return Array.from(new Set(labels.length > 0 ? labels : [normalizeCategoryLabel(value)]));
+  const uniqueLabels = Array.from(new Set(labels.filter(Boolean)));
+  const fallbackLabel = normalizeCategoryLabel(value);
+  return uniqueLabels.length > 0 ? uniqueLabels : [fallbackLabel || '기타'];
 }
 
 const MOCK_AUTHORS = [
@@ -695,18 +698,6 @@ export default function EmotionPage() {
               </Button>
             </Link>
           </div>
-          <div className="mb-5 flex justify-center">
-            <div className="relative w-full max-w-2xl">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="기사 제목, 요약, 출처를 검색해 보세요"
-                className="w-full h-12 rounded-2xl bg-white/90 pl-10 pr-4 text-sm text-gray-800 shadow-[0_10px_24px_rgba(35,34,33,0.08)] ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-black/15"
-                data-testid="input-news-search-top"
-              />
-            </div>
-          </div>
           <div className="mb-6 flex flex-col items-center">
             <div className="flex w-full max-w-4xl flex-wrap items-stretch justify-center gap-2.5 sm:gap-3">
               {emotionQuickLinks.map((emotion) => {
@@ -742,16 +733,10 @@ export default function EmotionPage() {
                     <p className="text-[11px] font-semibold leading-tight opacity-95" style={{ color: emotion.labelColor }}>
                       {emotion.tone}
                     </p>
-                    <p className="mt-1 line-clamp-1 text-[10px] leading-tight opacity-75" style={{ color: emotion.hintColor || emotion.labelColor }}>
-                      {emotion.copy.hint}
-                    </p>
                   </button>
                 );
               })}
             </div>
-            <p className="mt-2 text-center text-xs text-human-sub">
-              검색 후에도 감정별 큐레이션으로 바로 이동할 수 있어요.
-            </p>
           </div>
           <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold text-human-main mb-2" data-testid="text-emotion-title">
             {emotionConfig.label}
@@ -776,9 +761,21 @@ export default function EmotionPage() {
               </span>
             ))}
           </div>
+          <div className="mb-6 flex justify-center">
+            <div className="relative w-full max-w-2xl">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="기사 제목, 요약, 출처를 검색해 보세요"
+                className="w-full h-12 rounded-2xl bg-white/90 pl-10 pr-4 text-sm text-gray-800 shadow-[0_10px_24px_rgba(35,34,33,0.08)] ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-black/15"
+                data-testid="input-news-search-top"
+              />
+            </div>
+          </div>
           <div className="mb-6 space-y-4 rounded-3xl bg-white/64 p-4 sm:p-5 shadow-[0_2px_12px_rgba(35,34,33,0.06)]">
             <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex max-h-[92px] flex-wrap items-center gap-2 overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setCategoryFilter('all')}

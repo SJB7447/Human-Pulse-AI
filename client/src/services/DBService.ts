@@ -77,6 +77,7 @@ export type AdminArticleListResponse<T = any> = {
     total: number;
     page: number;
     pageSize: number;
+    availableCategories?: string[];
 };
 
 export type CommunityCommentRecord = {
@@ -455,6 +456,7 @@ export const DBService = {
         page?: number;
         pageSize?: number;
         emotion?: string;
+        category?: string;
         search?: string;
         all?: boolean;
     }) {
@@ -462,6 +464,7 @@ export const DBService = {
         searchParams.set('page', String(Math.max(1, Number(params?.page || 1))));
         searchParams.set('pageSize', String(Math.max(1, Math.min(Number(params?.pageSize || 10), 100))));
         if (params?.emotion && params.emotion !== 'all') searchParams.set('emotion', params.emotion);
+        if (params?.category && params.category !== 'all') searchParams.set('category', params.category);
         if (params?.search && params.search.trim()) searchParams.set('search', params.search.trim());
         if (params?.all === false) searchParams.set('all', 'false');
         const response = await fetch(`/api/admin/articles?${searchParams.toString()}`);
