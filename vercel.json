@@ -11,11 +11,11 @@
     ],
     "functions": {
         "api/index.ts": {
-            "maxDuration": 30,
+            "maxDuration": 60,
             "includeFiles": "server/**|shared/**|schemas/**"
         },
         "api/**/*": {
-            "maxDuration": 30
+            "maxDuration": 60
         }
     },
     "crons": [

@@ -8680,109 +8680,95 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/admin/news/fetch", async (req, res) => {
     const actor = resolveActor(req);
     if (!["admin", "journalist"].includes(actor.actorRole)) {
-      return res.status(403).json({
-        success: false,
-        error: "권한이 없습니다.",
-        code: "NEWS_FETCH_FORBIDDEN",
-      });
+      return res.status(403).json({ success: false, error: "권한이 없습니다.", code: "NEWS_FETCH_FORBIDDEN" });
     }
 
     try {
       const fetched = await Promise.race<DongaRssArticle[]>([
         fetchDongaRssArticles(5),
-        new Promise<DongaRssArticle[]>((_, reject) => setTimeout(() => reject(new Error("donga rss pipeline timeout")), 45000)),
+        new Promise<DongaRssArticle[]>((_, reject) =>
+          setTimeout(() => reject(new Error("rss timeout")), 20000),
+        ),
       ]);
+
       if (!Array.isArray(fetched) || fetched.length === 0) {
-        return res.status(502).json({
-          success: false,
-          error: "동아일보 RSS 기사 수집에 실패했습니다.",
-          code: "DONGA_RSS_FETCH_EMPTY",
-        });
+        return res.status(502).json({ success: false, error: "동아일보 RSS 수집 실패", code: "DONGA_RSS_FETCH_EMPTY" });
       }
 
       const existing = await storage.getAllNews(true);
       const existingSources = new Set(
-        existing
-          .map((item) => normalizeReferenceUrl(String((item as any)?.source || "")))
-          .filter(Boolean),
+        existing.map((item) => normalizeReferenceUrl(String((item as any)?.source || ""))).filter(Boolean),
       );
 
-      const imported: Array<{ id: string; title: string; emotion: EmotionType; category: string; fallbackUsed: boolean }> = [];
-      let saved = 0;
-      let skipped = 0;
-      let failed = 0;
-
-      for (const article of fetched) {
-        try {
-          const resolvedUrl = await resolveReferenceUrl(String(article.url || ""));
-          const normalizedUrl = normalizeReferenceUrl(resolvedUrl || article.url);
-          if (!normalizedUrl || existingSources.has(normalizedUrl)) {
-            skipped += 1;
-            continue;
-          }
-
-          const snapshot = await fetchArticlePageSnapshot(normalizedUrl).catch(() => ({
-            title: article.title,
-            summary: article.originalSummary || article.summary,
-            content: article.originalSummary || article.summary,
-            image: article.image || "",
-          }));
-          const rewrite = await rewriteDongaArticleForEmotion({
-            title: snapshot.title || article.title,
-            summary: snapshot.summary || article.summary,
-            content: snapshot.content || article.originalSummary || article.summary,
-            sourceUrl: normalizedUrl,
-            sourceName: "동아일보",
-          });
-
-          const created = await storage.createNewsItem({
-            title: rewrite.title,
-            summary: rewrite.summary,
-            content: rewrite.content,
-            source: normalizedUrl,
-            image: snapshot.image || article.image || "",
-            category: rewrite.category,
-            emotion: rewrite.emotion,
-            intensity: rewrite.intensity,
-            authorId: actor.actorId || null,
-            authorName: actor.actorName || "Donga RSS Import",
-          } as any);
-          existingSources.add(normalizedUrl);
-          saved += 1;
-          imported.push({
-            id: created.id,
-            title: created.title,
-            emotion: rewrite.emotion,
-            category: rewrite.category,
-            fallbackUsed: rewrite.fallbackUsed,
-          });
-        } catch (error) {
-          failed += 1;
-        }
-      }
+      const pending = fetched
+        .map((a) => ({ ...a, resolvedUrl: normalizeReferenceUrl(a.url) || a.url }))
+        .filter((a) => a.resolvedUrl && !existingSources.has(a.resolvedUrl));
 
       await writeAdminActionLog(
         req,
         "donga_rss_import_run",
         "donga_rss_pipeline",
-        `saved=${saved},skipped=${skipped},failed=${failed}`,
+        `fetched=${fetched.length},pending=${pending.length}`,
         "news",
       );
+
       return res.json({
         success: true,
-        stats: { saved, skipped, failed, total: fetched.length },
-        mode: "donga-rss",
-        status: "completed",
-        imported,
+        stats: { fetched: fetched.length, pending: pending.length },
+        articles: pending.map((a) => ({
+          url: a.resolvedUrl,
+          title: a.title,
+          summary: a.summary,
+          image: a.image || "",
+          publishedAt: a.publishedAt,
+        })),
       });
     } catch (error: any) {
-      console.error("[NEWS_FETCH] manual trigger failed:", error);
-      return res.status(502).json({
-        success: false,
-        error: "동아일보 RSS 원클릭 파이프라인 실행에 실패했습니다.",
-        code: "DONGA_RSS_PIPELINE_FAILED",
-        detail: String(error?.message || "unknown"),
+      return res.status(502).json({ success: false, error: "RSS 수집 실패", detail: String(error?.message || "") });
+    }
+  });
+
+  app.post("/api/admin/news/process", async (req, res) => {
+    const actor = resolveActor(req);
+    if (!["admin", "journalist"].includes(actor.actorRole)) {
+      return res.status(403).json({ success: false, error: "권한이 없습니다." });
+    }
+
+    const { url, title, summary, image } = req.body || {};
+    if (!url) return res.status(400).json({ success: false, error: "url 필수" });
+
+    try {
+      const snapshot = await fetchArticlePageSnapshot(url).catch(() => ({
+        title: title || "",
+        summary: summary || "",
+        content: summary || "",
+        image: image || "",
+      }));
+
+      const rewrite = await rewriteDongaArticleForEmotion({
+        title: snapshot.title || title,
+        summary: snapshot.summary || summary,
+        content: snapshot.content || summary,
+        sourceUrl: url,
+        sourceName: "동아일보",
       });
+
+      const created = await storage.createNewsItem({
+        title: rewrite.title,
+        summary: rewrite.summary,
+        content: rewrite.content,
+        source: url,
+        image: snapshot.image || image || "",
+        category: rewrite.category,
+        emotion: rewrite.emotion,
+        intensity: rewrite.intensity,
+        authorId: actor.actorId || null,
+        authorName: actor.actorName || "Donga RSS Import",
+      } as any);
+
+      return res.json({ success: true, article: { id: created.id, title: created.title, emotion: rewrite.emotion } });
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: String(error?.message || "처리 실패") });
     }
   });
 

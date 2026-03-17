@@ -492,6 +492,7 @@ export default function AdminPage() {
   const [opsLoading, setOpsLoading] = useState(false);
   const [articlesLoading, setArticlesLoading] = useState(false);
   const [crawling, setCrawling] = useState(false);
+  const [status, setStatus] = useState('');
   const [selectedArticle, setSelectedArticle] = useState<AdminArticle | null>(null);
   const [editingEmotion, setEditingEmotion] = useState<AdminEmotionKey>('spectrum');
   const [editingCategory, setEditingCategory] = useState<string>('');
@@ -1053,7 +1054,7 @@ export default function AdminPage() {
     }
   };
 
-  const handleManualUpdateConfirmed = async () => {
+  async function handleFetchNews() {
     setCrawling(true);
     try {
       const actorRoleRaw = String(user?.role || '').trim().toLowerCase();
@@ -1063,6 +1064,7 @@ export default function AdminPage() {
           : actorRoleRaw === 'journalist' || actorRoleRaw === 'reporter' || actorRoleRaw.includes('기자')
             ? 'journalist'
             : 'general';
+      setStatus('RSS 수집 중...');
       const res = await fetch('/api/admin/news/fetch', {
         method: 'POST',
         headers: {
@@ -1074,16 +1076,45 @@ export default function AdminPage() {
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error || '뉴스 수집 실패');
-      const importedPreview = Array.isArray(result?.imported) && result.imported.length > 0
-        ? ` · 등록: ${result.imported.map((item: any) => `${String(item.title || '').slice(0, 18)}(${String(item.emotion || '').toUpperCase()})`).slice(0, 2).join(', ')}`
-        : '';
+      const pendingArticles = Array.isArray(result?.articles) ? result.articles : [];
+      if (!pendingArticles.length) {
+        setStatus('새 기사 없음');
+        return;
+      }
 
+      setStatus(`${pendingArticles.length}건 처리 시작...`);
+      let saved = 0;
+
+      for (let i = 0; i < pendingArticles.length; i += 1) {
+        const article = pendingArticles[i];
+        setStatus(`처리 중 ${i + 1}/${pendingArticles.length}: ${article.title}`);
+        try {
+          await fetch('/api/admin/news/process', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(user?.id ? { 'x-actor-id': String(user.id).slice(0, 128) } : {}),
+              'x-actor-role': String(actorRole).slice(0, 32),
+              ...(user?.name ? { 'x-actor-name': String(user.name).slice(0, 160) } : {}),
+              ...(user?.email ? { 'x-actor-email': String(user.email).slice(0, 160) } : {}),
+            },
+            body: JSON.stringify(article),
+          });
+          saved += 1;
+        } catch {
+          // no-op
+        }
+        await new Promise((r) => setTimeout(r, 300));
+      }
+
+      setStatus(`완료! ${saved}/${pendingArticles.length}건 저장`);
       toast({
         title: '수집 완료',
-        description: `동아일보 RSS 저장 ${result?.stats?.saved ?? 0}건 / 중복 ${result?.stats?.skipped ?? 0}건 / 실패 ${result?.stats?.failed ?? 0}건${importedPreview}`,
+        description: `완료! ${saved}/${pendingArticles.length}건 저장`,
       });
       fetchData();
     } catch (error: any) {
+      setStatus(error?.message || '동아일보 RSS 수집 중 오류가 발생했습니다.');
       toast({
         title: '수집 실패',
         description: error?.message || '동아일보 RSS 수집 중 오류가 발생했습니다.',
@@ -1092,7 +1123,7 @@ export default function AdminPage() {
     } finally {
       setCrawling(false);
     }
-  };
+  }
 
   const mergeReviewState = (articleId: string, payload: AdminReviewPayload) => {
     setReviewMap((prev) => ({
@@ -1805,7 +1836,7 @@ export default function AdminPage() {
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>취소</AlertDialogCancel>
-                <AlertDialogAction onClick={handleManualUpdateConfirmed}>실행</AlertDialogAction>
+                <AlertDialogAction onClick={handleFetchNews}>실행</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -1830,6 +1861,9 @@ export default function AdminPage() {
             통계+PDF
           </Button>
         </div>
+        {status ? (
+          <p className="mt-2 text-xs text-slate-500 md:text-right">{status}</p>
+        ) : null}
       </div>
 
       <div className="border-b-2 border-indigo-100">
