@@ -765,6 +765,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
   const isAiBusy = isTransforming || isSummarizing;
   const consumeEvidenceSentRef = useRef(false);
   const modalOpenedAtRef = useRef<number>(0);
+  const autoSummaryRequestRef = useRef<string | null>(null);
   const recommendationObserverThreshold = useMemo(() => resolveRecommendationObserverThreshold(), []);
   const [hydratedArticle, setHydratedArticle] = useState<NewsItem | null>(initialArticle);
   const [isHydratingArticle, setIsHydratingArticle] = useState(false);
@@ -857,6 +858,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
     setBgTransitionProgress(0);
     setRevealedParagraphCount(1);
     setHasStartedScrollReveal(false);
+    autoSummaryRequestRef.current = null;
     modalOpenedAtRef.current = article ? Date.now() : 0;
   }, [article?.id]);
 
@@ -1182,10 +1184,12 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
     }
   };
 
-  const handleSummarizeArticle = async () => {
+  const handleSummarizeArticle = useCallback(async (options?: { silent?: boolean }) => {
     if (!article) return;
     if (isAiBusy && !isSummarizing) {
-      toast({ title: "AI 작업 진행 중", description: "현재 작업 완료 후 다시 시도해주세요." });
+      if (!options?.silent) {
+        toast({ title: "AI 작업 진행 중", description: "현재 작업 완료 후 다시 시도해주세요." });
+      }
       return;
     }
     setAiActionError(null);
@@ -1194,15 +1198,40 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
       const plainContent = stripArticleMeta(article.content);
       const result = await GeminiService.summarizeArticle(article.title, plainContent || article.summary || "");
       setAiSummary(result.summary);
-      toast({ title: "AI 요약 완료" });
+      if (!options?.silent) {
+        toast({ title: "AI 요약 완료" });
+      }
     } catch (error: any) {
       const message = error?.message || "요약 생성 실패";
       setAiActionError(message);
-      toast({ title: "요약 실패", description: message, variant: "destructive" });
+      if (!options?.silent) {
+        toast({ title: "요약 실패", description: message, variant: "destructive" });
+      }
     } finally {
       setIsSummarizing(false);
     }
-  };
+  }, [article, isAiBusy, isSummarizing, toast]);
+
+  useEffect(() => {
+    if (!article || isHydratingArticle || aiSummary || isSummarizing || isTransforming) return;
+
+    const plainContent = stripArticleMeta(article.content);
+    const summarySource = String(plainContent || article.summary || '').trim();
+    if (!summarySource) return;
+
+    const requestKey = `${article.id}:${summarySource.length}`;
+    if (autoSummaryRequestRef.current === requestKey) return;
+
+    autoSummaryRequestRef.current = requestKey;
+    void handleSummarizeArticle({ silent: true });
+  }, [
+    article,
+    aiSummary,
+    handleSummarizeArticle,
+    isHydratingArticle,
+    isSummarizing,
+    isTransforming,
+  ]);
   const handleSaveInsight = async () => {
     const trimmedInsight = insightText.trim();
     const hasSelectedTags = selectedInsightTags.length > 0;
@@ -1735,18 +1764,27 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                   </motion.h2>
 
                   <div className="mb-6 rounded-2xl border border-black/10 bg-white/55 p-4">
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        onClick={handleSummarizeArticle}
-                        disabled={isAiBusy && !isSummarizing}
-                        className="h-8 text-xs border-0 bg-gradient-to-r from-[#a773f9] to-[#8b5cf6] hover:from-[#9564ed] hover:to-[#7c4deb] text-white"
-                      >
-                        {isSummarizing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-[#a773f9] to-[#8b5cf6] px-3 py-1.5 text-xs font-semibold text-white shadow-sm">
+                        {isSummarizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
                         AI 요약
-                      </Button>
+                      </div>
+                      {aiActionError && (
+                        <Button
+                          onClick={() => void handleSummarizeArticle()}
+                          disabled={isAiBusy && !isSummarizing}
+                          variant="ghost"
+                          className="h-8 px-3 text-xs text-slate-600 hover:bg-white/70"
+                        >
+                          다시 요약
+                        </Button>
+                      )}
                     </div>
                     {aiActionError && (
                       <p className="mt-2 text-xs text-red-600">{aiActionError}</p>
+                    )}
+                    {isSummarizing && !aiSummary && !aiActionError && (
+                      <p className="mt-2 text-xs text-slate-600">기사를 여는 순간 자동으로 핵심 요약을 정리하고 있습니다.</p>
                     )}
                     {aiSummary && (
                       <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 p-2">
