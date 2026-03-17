@@ -163,17 +163,17 @@ export function NeutralSphere() {
                     <div
                         className="px-4 py-3 rounded-xl text-center whitespace-nowrap"
                         style={{
-                            backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                            backdropFilter: 'blur(16px)',
-                            WebkitBackdropFilter: 'blur(16px)',
-                            border: '1px solid rgba(255, 255, 255, 0.3)',
-                            boxShadow: `0 4px 20px ${config.color}40, 0 8px 32px rgba(0, 0, 0, 0.15)`,
+                            backgroundColor: 'rgba(255, 255, 255, 0.94)',
+                            backdropFilter: 'blur(20px) saturate(145%)',
+                            WebkitBackdropFilter: 'blur(20px) saturate(145%)',
+                            border: '1px solid rgba(148, 163, 184, 0.26)',
+                            boxShadow: `0 14px 34px rgba(15, 23, 42, 0.18), 0 6px 20px ${config.color}24, inset 0 1px 0 rgba(255,255,255,0.86)`,
                         }}
                     >
-                        <div className="text-base font-semibold text-white" style={{ textShadow: '0 1px 4px rgba(0,0,0,0.3)' }}>
+                        <div className="text-base font-semibold tracking-tight" style={{ color: '#0f172a', textShadow: '0 1px 0 rgba(255,255,255,0.32)' }}>
                             {config.label}
                         </div>
-                        <div className="text-xs text-white/80 mt-0.5">
+                        <div className="mt-0.5 text-xs font-semibold" style={{ color: 'rgba(15, 23, 42, 0.86)' }}>
                             {config.labelKo}
                         </div>
                     </div>

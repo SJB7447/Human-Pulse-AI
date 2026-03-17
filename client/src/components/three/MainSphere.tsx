@@ -129,12 +129,12 @@ export function MainSphere() {
           <div
             className="px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap"
             style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.15)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              color: '#374151',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)',
+              backgroundColor: 'rgba(255, 255, 255, 0.92)',
+              backdropFilter: 'blur(16px) saturate(140%)',
+              WebkitBackdropFilter: 'blur(16px) saturate(140%)',
+              border: '1px solid rgba(148, 163, 184, 0.28)',
+              color: '#1f2937',
+              boxShadow: '0 12px 30px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255,255,255,0.82)',
             }}
           >
             Click to explore emotions

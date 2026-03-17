@@ -1,5 +1,6 @@
 ﻿import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { useCallback } from 'react';
 import { X, Bookmark, Share2, Sparkles, Loader2, Clock, Lightbulb, Check, RefreshCcw, AlertCircle, Link2, Copy, Globe, Instagram, MessageCircle, Youtube, ExternalLink } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { useToast } from '@/hooks/use-toast';
@@ -772,6 +773,15 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
     setHydratedArticle(initialArticle);
   }, [initialArticle]);
 
+  const handleRequestClose = useCallback(() => {
+    setShowInsightReward(false);
+    setShowInsightEditor(false);
+    setShowOpinionComposer(false);
+    setShowShareSheet(false);
+    setHydratedArticle(null);
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
     const articleId = String(initialArticle?.id || '').trim();
     const hasFullContent = Boolean(String(initialArticle?.content || '').trim());
@@ -891,7 +901,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
         } else if (showShareSheet) {
           setShowShareSheet(false);
         } else {
-          onClose();
+          handleRequestClose();
         }
         return;
       }
@@ -931,7 +941,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [article, onClose, showInsightEditor, showOpinionComposer, showShareSheet, showInsightReward]);
+  }, [article, handleRequestClose, showInsightEditor, showOpinionComposer, showShareSheet, showInsightReward]);
 
   const recommendationGroups = useMemo(
     () => selectRecommendationMix<NewsItem>(article, relatedArticles),
@@ -1598,7 +1608,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
           className="fixed inset-0 z-50"
-          onClick={onClose}
+          onClick={handleRequestClose}
           role="presentation"
         >
           <motion.div
@@ -1684,7 +1694,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                     ref={closeButtonRef}
                     variant="ghost"
                     size="icon"
-                    onClick={onClose}
+                    onClick={handleRequestClose}
                     className="bg-white/72 text-gray-700 hover:bg-white border border-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-700 focus-visible:ring-offset-2"
                     aria-label="Close detail modal"
                     data-testid="button-close-modal"
@@ -1888,7 +1898,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                 >
                   <button
                     type="button"
-                    onClick={onClose}
+                    onClick={handleRequestClose}
                     className="text-lg md:text-2xl font-semibold tracking-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-700 focus-visible:ring-offset-2 rounded-md"
                     style={{
                       color: isBackdropDark ? '#ffffff' : '#1f2937',
@@ -2638,7 +2648,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                         className="bg-[#2f2a24] text-white hover:bg-[#221e1a]"
                         onClick={() => {
                           setShowInsightReward(false);
-                          onClose();
+                          handleRequestClose();
                           setLocation('/mypage?tab=curated');
                         }}
                         data-testid="button-go-mypage-insight"
