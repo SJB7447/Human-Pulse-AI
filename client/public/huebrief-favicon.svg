@@ -1,0 +1,24 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="hb_bg" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF1BD"/>
+      <stop offset="0.45" stop-color="#8DE05B"/>
+      <stop offset="1" stop-color="#00ABAF"/>
+    </linearGradient>
+    <linearGradient id="hb_bar" x1="18" y1="18" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFB938"/>
+      <stop offset="0.5" stop-color="#F4606B"/>
+      <stop offset="1" stop-color="#3F65EF"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="6" y="6" width="52" height="52" rx="18" fill="url(#hb_bg)"/>
+  <rect x="6" y="6" width="52" height="52" rx="18" stroke="rgba(35,34,33,0.08)"/>
+
+  <rect x="18" y="18" width="8" height="28" rx="4" fill="url(#hb_bar)"/>
+  <rect x="38" y="18" width="8" height="28" rx="4" fill="url(#hb_bar)"/>
+  <rect x="22" y="28" width="20" height="8" rx="4" fill="url(#hb_bar)"/>
+
+  <circle cx="47" cy="19" r="5" fill="#ffffff" fill-opacity="0.85"/>
+  <circle cx="47" cy="19" r="2.5" fill="#00ABAF"/>
+</svg>
