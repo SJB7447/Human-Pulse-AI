@@ -685,7 +685,7 @@ export default function EmotionPage() {
           transition={{ duration: 0.6 }}
           className="mb-8 sm:mb-12"
         >
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center gap-3">
             <Link href="/">
               <Button variant="ghost" size="sm" data-testid="button-back">
                 <ArrowLeft className="w-4 h-4" />
@@ -693,7 +693,7 @@ export default function EmotionPage() {
               </Button>
             </Link>
           </div>
-          <div className="mb-6 flex flex-col items-center">
+          <div className="mt-5 mb-12 flex flex-col items-center">
             <div className="flex w-full max-w-4xl flex-wrap items-stretch justify-center gap-2.5 sm:gap-3">
               {emotionQuickLinks.map((emotion) => {
                 const isActive = emotion.type === type;
@@ -704,7 +704,7 @@ export default function EmotionPage() {
                     key={emotion.type}
                     type="button"
                     onClick={() => handleEmotionCategorySelect(emotion.type)}
-                    className="group min-w-[112px] rounded-2xl px-3.5 py-3 text-left transition-all duration-200 sm:min-w-[132px]"
+                    className="group min-w-[112px] rounded-2xl px-3.5 py-3.5 text-left transition-all duration-200 sm:min-w-[132px]"
                     style={{
                       background: isActive ? emotion.activeBackground : emotion.baseBackground,
                       color: emotion.labelColor,
@@ -721,11 +721,11 @@ export default function EmotionPage() {
                       >
                         <EmotionIcon className="h-3.5 w-3.5" style={{ color: emotion.chipColor }} />
                       </span>
-                      <span className="text-xs font-semibold tracking-[-0.01em]">
+                      <span className="text-[13px] font-semibold tracking-[-0.01em] sm:text-[14px]">
                         {emotion.copy.label}
                       </span>
                     </span>
-                    <p className="text-[11px] font-semibold leading-tight opacity-95" style={{ color: emotion.labelColor }}>
+                    <p className="text-[14px] font-semibold leading-tight opacity-95 sm:text-[16px]" style={{ color: emotion.labelColor }}>
                       {emotion.tone}
                     </p>
                   </button>
@@ -733,13 +733,13 @@ export default function EmotionPage() {
               })}
             </div>
           </div>
-          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold text-human-main mb-2" data-testid="text-emotion-title">
+          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold text-human-main mb-3" data-testid="text-emotion-title">
             {emotionConfig.label}
           </h1>
-          <p className="text-lg sm:text-xl text-human-main/80 font-medium mb-2">
+          <p className="text-lg sm:text-xl text-human-main/80 font-medium mb-3">
             {emotionConfig.labelKo}
           </p>
-          <p className="text-human-sub text-base sm:text-lg mb-4" data-testid="text-story-count">
+          <p className="text-human-sub text-base sm:text-lg mb-5" data-testid="text-story-count">
             {emotionConfig.subLabel}
           </p>
           <div className="flex flex-wrap gap-2 mb-4">
@@ -770,7 +770,7 @@ export default function EmotionPage() {
           </div>
           <div className="mb-6 space-y-4 rounded-3xl bg-white/64 p-4 sm:p-5 shadow-[0_2px_12px_rgba(35,34,33,0.06)]">
             <div className="flex flex-col gap-3">
-              <div className="flex max-h-[92px] flex-wrap items-center gap-2 overflow-hidden">
+              <div className="flex max-h-[108px] flex-wrap items-start gap-2 overflow-hidden py-1">
                 <button
                   type="button"
                   onClick={() => setCategoryFilter('all')}
