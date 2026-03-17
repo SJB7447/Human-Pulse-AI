@@ -1059,16 +1059,19 @@ export default function AdminPage() {
       const res = await fetch('/api/admin/news/fetch', { method: 'POST' });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error || '뉴스 수집 실패');
+      const importedPreview = Array.isArray(result?.imported) && result.imported.length > 0
+        ? ` · 등록: ${result.imported.map((item: any) => `${String(item.title || '').slice(0, 18)}(${String(item.emotion || '').toUpperCase()})`).slice(0, 2).join(', ')}`
+        : '';
 
       toast({
         title: '수집 완료',
-        description: `저장 ${result?.stats?.saved ?? 0}건 / 중복 ${result?.stats?.skipped ?? 0}건 / 실패 ${result?.stats?.failed ?? 0}건`,
+        description: `동아일보 RSS 저장 ${result?.stats?.saved ?? 0}건 / 중복 ${result?.stats?.skipped ?? 0}건 / 실패 ${result?.stats?.failed ?? 0}건${importedPreview}`,
       });
       fetchData();
     } catch (error: any) {
       toast({
         title: '수집 실패',
-        description: error?.message || '뉴스 수집 중 오류가 발생했습니다.',
+        description: error?.message || '동아일보 RSS 수집 중 오류가 발생했습니다.',
         variant: 'destructive',
       });
     } finally {
@@ -1777,13 +1780,13 @@ export default function AdminPage() {
             <AlertDialogTrigger asChild>
               <Button disabled={crawling} className="bg-green-600 hover:bg-green-700 justify-center w-full">
                 {crawling ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                최신 뉴스 수집
+                동아일보 5건 수집
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>뉴스 수집 실행</AlertDialogTitle>
-                <AlertDialogDescription>지금 최신 뉴스를 수집하시겠습니까?</AlertDialogDescription>
+                <AlertDialogTitle>동아일보 RSS 원클릭 수집</AlertDialogTitle>
+                <AlertDialogDescription>동아일보 RSS에서 무작위 5건을 가져와 감정 분류, 본문 재작성, DB 저장/노출까지 한 번에 실행하시겠습니까?</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>취소</AlertDialogCancel>

@@ -272,8 +272,22 @@ const isRetryableImageGenerationFailure = (error: any): boolean => {
 type WizardSnapshot = {
   searchKeyword: string;
   searchResults: { topics: string[]; context: string } | null;
+  recommendedArticles: KeywordNewsArticle[];
+  selectedRecommendedArticleId: string | null;
   articleOutline: string;
   articleContent: string;
+  draftMode: 'draft' | 'interactive-longform';
+  draftSections: { core?: string; deepDive?: string; conclusion?: string } | null;
+  draftSourceCitation: DraftSourceCitation | null;
+  generatedImages: { imageUrl: string; description: string; prompt?: string; sourceUrl?: string }[];
+  selectedImageIndices: number[];
+  suggestedMediaSlots: MediaSlot[];
+  selectedPlatforms: string[];
+  generatedHashtags: string[];
+  optimizedTitles: { platform: string; title: string }[];
+  selectedTitleIndex: number | null;
+  showDistributionSettings: boolean;
+  activeComposeStage: 'author' | 'publish';
   wizardStep: WizardStep;
   updatedAt: number;
 };
@@ -284,6 +298,8 @@ const hasRestorableWizardSnapshot = (snapshot: WizardSnapshot) =>
     snapshot.articleOutline?.trim() ||
     snapshot.articleContent?.trim() ||
     snapshot.searchResults ||
+    snapshot.recommendedArticles?.length ||
+    snapshot.generatedImages?.length ||
     (snapshot.wizardStep && snapshot.wizardStep > 1),
   );
 
@@ -416,7 +432,7 @@ export default function JournalistPage() {
   const [regeneratingImageIndex, setRegeneratingImageIndex] = useState<number | null>(null);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [regeneratingVideoIndex, setRegeneratingVideoIndex] = useState<number | null>(null);
-  const [generatedImages, setGeneratedImages] = useState<{ imageUrl: string; description: string; prompt?: string }[]>([]);
+  const [generatedImages, setGeneratedImages] = useState<{ imageUrl: string; description: string; prompt?: string; sourceUrl?: string }[]>([]);
   const [selectedImageIndices, setSelectedImageIndices] = useState<number[]>([0]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [generatedVideos, setGeneratedVideos] = useState<Array<{
@@ -751,8 +767,27 @@ export default function JournalistPage() {
     const snapshot: WizardSnapshot = {
       searchKeyword,
       searchResults,
+      recommendedArticles,
+      selectedRecommendedArticleId,
       articleOutline,
       articleContent,
+      draftMode,
+      draftSections,
+      draftSourceCitation,
+      generatedImages: generatedImages.map((image) => ({
+        imageUrl: toPersistableMediaUrl(image.sourceUrl || image.imageUrl) || image.imageUrl,
+        description: image.description,
+        prompt: image.prompt,
+        sourceUrl: toPersistableMediaUrl(image.sourceUrl || image.imageUrl) || undefined,
+      })),
+      selectedImageIndices,
+      suggestedMediaSlots,
+      selectedPlatforms,
+      generatedHashtags,
+      optimizedTitles,
+      selectedTitleIndex,
+      showDistributionSettings,
+      activeComposeStage,
       wizardStep,
       updatedAt: Date.now(),
     };
@@ -763,15 +798,69 @@ export default function JournalistPage() {
     } catch (error) {
       console.warn('Failed to save wizard snapshot', error);
     }
-  }, [view, showRestoreDraftBanner, searchKeyword, searchResults, articleOutline, articleContent, wizardStep]);
+  }, [
+    view,
+    showRestoreDraftBanner,
+    searchKeyword,
+    searchResults,
+    recommendedArticles,
+    selectedRecommendedArticleId,
+    articleOutline,
+    articleContent,
+    draftMode,
+    draftSections,
+    draftSourceCitation,
+    generatedImages,
+    selectedImageIndices,
+    suggestedMediaSlots,
+    selectedPlatforms,
+    generatedHashtags,
+    optimizedTitles,
+    selectedTitleIndex,
+    showDistributionSettings,
+    activeComposeStage,
+    wizardStep,
+  ]);
 
   const handleRestoreDraftSnapshot = () => {
     if (!pendingWizardSnapshot) return;
     const snapshot = pendingWizardSnapshot;
+    const restoredImages = Array.isArray(snapshot.generatedImages)
+      ? snapshot.generatedImages
+        .map((image) => ({
+          imageUrl: String(image?.sourceUrl || image?.imageUrl || '').trim(),
+          description: String(image?.description || '').trim(),
+          prompt: String(image?.prompt || '').trim() || undefined,
+          sourceUrl: String(image?.sourceUrl || image?.imageUrl || '').trim() || undefined,
+        }))
+        .filter((image) => Boolean(image.imageUrl))
+      : [];
+    const restoredSelectedImageIndices =
+      Array.isArray(snapshot.selectedImageIndices) && snapshot.selectedImageIndices.length > 0
+        ? snapshot.selectedImageIndices.filter((index) => Number.isInteger(index) && index >= 0 && index < restoredImages.length)
+        : [];
     setSearchKeyword(snapshot.searchKeyword || '');
     setSearchResults(snapshot.searchResults || null);
+    setRecommendedArticles(Array.isArray(snapshot.recommendedArticles) ? snapshot.recommendedArticles : []);
+    setSelectedRecommendedArticleId(snapshot.selectedRecommendedArticleId || null);
     setArticleOutline(snapshot.articleOutline || '');
     setArticleContent(snapshot.articleContent || '');
+    setDraftMode(snapshot.draftMode === 'interactive-longform' ? 'interactive-longform' : 'draft');
+    setDraftSections(snapshot.draftSections || null);
+    setDraftSourceCitation(snapshot.draftSourceCitation || null);
+    setGeneratedImages(restoredImages);
+    setSelectedImageIndices(restoredSelectedImageIndices.length > 0 ? restoredSelectedImageIndices : (restoredImages.length > 0 ? [0] : []));
+    setImagePromptInput(restoredImages[0]?.prompt || '');
+    setGeneratedVideos([]);
+    setUploadedImages([]);
+    setUploadedVideos([]);
+    setSuggestedMediaSlots(Array.isArray(snapshot.suggestedMediaSlots) ? snapshot.suggestedMediaSlots : []);
+    setSelectedPlatforms(Array.isArray(snapshot.selectedPlatforms) && snapshot.selectedPlatforms.length > 0 ? snapshot.selectedPlatforms : ['interactive']);
+    setGeneratedHashtags(Array.isArray(snapshot.generatedHashtags) ? snapshot.generatedHashtags : []);
+    setOptimizedTitles(Array.isArray(snapshot.optimizedTitles) ? snapshot.optimizedTitles : []);
+    setSelectedTitleIndex(typeof snapshot.selectedTitleIndex === 'number' ? snapshot.selectedTitleIndex : null);
+    setShowDistributionSettings(Boolean(snapshot.showDistributionSettings));
+    setActiveComposeStage(snapshot.activeComposeStage === 'publish' ? 'publish' : 'author');
     setWizardStep(snapshot.wizardStep || 1);
     setLastSavedAt(snapshot.updatedAt || Date.now());
     setPendingWizardSnapshot(null);
@@ -1595,12 +1684,40 @@ export default function JournalistPage() {
     setShowRestoreDraftBanner(false);
     setEditingArticleId(article.id);
     setPreviewArticle(null);
-    setSearchKeyword(article.title);
-    setArticleOutline('');
     const parsed = parseArticleMeta(article.content || '');
+    const restoredReferenceUrl = String(parsed.sourceCitation?.url || '').trim();
+    const restoredReferenceSource = String(parsed.sourceCitation?.source || article.source || '').trim();
+    const restoredReferenceTitle = String(parsed.sourceCitation?.title || article.title || '').trim();
+    const restoredReferenceSummary = normalizeArticleSummary(
+      String(article.summary || '').trim(),
+      restoredReferenceTitle,
+      restoredReferenceSource,
+    );
+    const restoredRecommendedArticleId = restoredReferenceUrl ? `restored-${String(article.id || Date.now())}` : null;
+    const restoredRecommendedArticles = restoredRecommendedArticleId
+      ? [{
+        id: restoredRecommendedArticleId,
+        title: restoredReferenceTitle,
+        summary: restoredReferenceSummary,
+        url: restoredReferenceUrl,
+        source: restoredReferenceSource || '출처 확인 필요',
+      }]
+      : [];
+    setSearchKeyword(restoredReferenceTitle || article.title || '');
+    setArticleOutline('');
+    setSearchResults(
+      restoredRecommendedArticles.length > 0
+        ? {
+          topics: extractCategoryTokens(article.category).slice(0, 4),
+          context: '이전에 선택한 추천 기사와 본문, 미디어를 그대로 복원했습니다.',
+        }
+        : null,
+    );
+    setRecommendedArticles(restoredRecommendedArticles);
+    setSelectedRecommendedArticleId(restoredRecommendedArticleId);
     const restoredCoverImageUrl = toPersistableMediaUrl(article.image);
     const restoredImageUrls = new Map<string, number>();
-    const restoredImageCards: { imageUrl: string; description: string; prompt?: string }[] = [];
+    const restoredImageCards: { imageUrl: string; description: string; prompt?: string; sourceUrl?: string }[] = [];
     const restoredVideos: { name: string; url: string; size: number }[] = [];
     const registerRestoredImage = (url: string, description: string) => {
       const normalizedUrl = toPersistableMediaUrl(url);
@@ -1611,6 +1728,7 @@ export default function JournalistPage() {
         imageUrl: normalizedUrl,
         description,
         prompt: description,
+        sourceUrl: normalizedUrl,
       }) - 1;
       restoredImageUrls.set(normalizedUrl, nextIndex);
       return nextIndex;
@@ -1665,9 +1783,9 @@ export default function JournalistPage() {
     setSuggestedMediaSlots(restoredMediaSlots);
     setDraftSourceCitation(
       parsed.sourceCitation || {
-        title: String(article.title || '').trim(),
-        source: String(article.source || '').trim(),
-        url: '',
+        title: restoredReferenceTitle,
+        source: restoredReferenceSource,
+        url: restoredReferenceUrl,
       },
     );
     setSentimentData(buildSentimentSnapshotFromArticle(article));
@@ -1683,6 +1801,7 @@ export default function JournalistPage() {
     if (article.category) {
       setGeneratedHashtags(article.category.split(' '));
     }
+    setSelectedPlatforms(Array.isArray(article.platforms) && article.platforms.length > 0 ? article.platforms : ['interactive']);
     setActiveComposeStage('author');
     setView('write');
     updateJournalistViewHistory('write', { editId: String(article.id || '') });
@@ -2378,6 +2497,7 @@ export default function JournalistPage() {
           imageUrl: cropped || img.url,
           description: img.description,
           prompt: mainPrompt,
+          sourceUrl: String(img.url || '').trim() || undefined,
         };
       }));
 
@@ -2567,7 +2687,12 @@ export default function JournalistPage() {
       setGeneratedImages((prev) =>
         prev.map((item, itemIndex) => (
           itemIndex === index
-            ? { imageUrl: cropped || nextImage.url, description: nextImage.description, prompt: mainPrompt }
+            ? {
+              imageUrl: cropped || nextImage.url,
+              description: nextImage.description,
+              prompt: mainPrompt,
+              sourceUrl: String(nextImage.url || '').trim() || undefined,
+            }
             : item
         )),
       );

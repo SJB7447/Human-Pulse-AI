@@ -2467,6 +2467,20 @@ type KeywordNewsCacheEntry = {
 
 const KEYWORD_NEWS_CACHE_TTL_MS = 30 * 60 * 1000;
 const keywordNewsCache = new Map<string, KeywordNewsCacheEntry>();
+const DONGA_RSS_FEED_CANDIDATES = Array.from(new Set([
+  String(process.env.DONGA_RSS_URL || "").trim(),
+  "https://rss.donga.com/total.xml",
+  "https://rss.donga.com/politics.xml",
+  "https://rss.donga.com/society.xml",
+  "https://rss.donga.com/economy.xml",
+  "https://rss.donga.com/culture.xml",
+  "https://rss.donga.com/sports.xml",
+].filter(Boolean)));
+
+type DongaRssArticle = KeywordNewsArticle & {
+  image?: string;
+  originalSummary?: string;
+};
 
 function readKeywordNewsCache(keyword: string): KeywordNewsArticle[] | null {
   const key = String(keyword || "").trim().toLowerCase();
@@ -2491,6 +2505,271 @@ function writeKeywordNewsCache(keyword: string, articles: KeywordNewsArticle[]):
     updatedAt: Date.now(),
     articles: valid,
   });
+}
+
+function parseStandardRss(xml: string, fallbackSource: string): DongaRssArticle[] {
+  const items = String(xml || "").match(/<item>[\s\S]*?<\/item>/g) || [];
+  return items.map((item, idx) => {
+    const title = stripHtmlTags(
+      item.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/i)?.[1]
+      || item.match(/<title>([\s\S]*?)<\/title>/i)?.[1]
+      || "",
+    );
+    const linkRaw =
+      item.match(/<link><!\[CDATA\[([\s\S]*?)\]\]><\/link>/i)?.[1]
+      || item.match(/<link>([\s\S]*?)<\/link>/i)?.[1]
+      || "";
+    const descriptionRaw =
+      item.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/i)?.[1]
+      || item.match(/<description>([\s\S]*?)<\/description>/i)?.[1]
+      || "";
+    const pubDate = stripHtmlTags(item.match(/<pubDate>([\s\S]*?)<\/pubDate>/i)?.[1] || "");
+    const source = stripHtmlTags(item.match(/<source[^>]*>([\s\S]*?)<\/source>/i)?.[1] || fallbackSource || "동아일보");
+    const image =
+      normalizeRssLink(item.match(/<media:content[^>]*url="([^"]+)"/i)?.[1] || "")
+      || normalizeRssLink(item.match(/<enclosure[^>]*url="([^"]+)"/i)?.[1] || "")
+      || normalizeRssLink(item.match(/<image><!\[CDATA\[([\s\S]*?)\]\]><\/image>/i)?.[1] || "");
+    const url = normalizeRssLink(linkRaw);
+    const originalSummary = stripHtmlTags(descriptionRaw);
+    return {
+      id: `donga-${idx + 1}`,
+      title: title || `동아일보 기사 ${idx + 1}`,
+      summary: normalizeNewsSummary(originalSummary, title, source || fallbackSource || "동아일보"),
+      originalSummary,
+      url,
+      source: source || fallbackSource || "동아일보",
+      publishedAt: pubDate || undefined,
+      image: image || undefined,
+    };
+  }).filter((row) => row.url && row.title);
+}
+
+function pickRandomItems<T>(rows: T[], count: number): T[] {
+  const pool = [...rows];
+  for (let i = pool.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, Math.max(0, count));
+}
+
+async function fetchDongaRssArticles(limit: number = 5): Promise<DongaRssArticle[]> {
+  const browserLikeHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.7,en;q=0.5",
+    "Cache-Control": "no-cache",
+  } as const;
+
+  const collected: DongaRssArticle[] = [];
+  for (const feedUrl of DONGA_RSS_FEED_CANDIDATES) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 9000);
+      try {
+        const response = await fetch(feedUrl, {
+          headers: browserLikeHeaders,
+          signal: controller.signal,
+        });
+        if (!response.ok) continue;
+        const xml = await response.text();
+        collected.push(...parseStandardRss(xml, "동아일보"));
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      // try next feed
+    }
+  }
+
+  const unique = new Map<string, DongaRssArticle>();
+  for (const item of collected) {
+    const normalizedUrl = normalizeReferenceUrl(item.url) || item.url;
+    const key = normalizedUrl || `${item.title}:${item.publishedAt || ""}`;
+    if (!key) continue;
+    if (!unique.has(key)) {
+      unique.set(key, {
+        ...item,
+        url: normalizedUrl || item.url,
+        source: "동아일보",
+      });
+    }
+  }
+
+  return pickRandomItems(Array.from(unique.values()), limit);
+}
+
+function decodeHtmlEntitiesLoose(input: string): string {
+  return String(input || "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'");
+}
+
+function extractMetaContent(html: string, propertyName: string): string {
+  const regex = new RegExp(`<meta[^>]+(?:property|name)=["']${propertyName}["'][^>]+content=["']([\\s\\S]*?)["'][^>]*>`, "i");
+  return decodeHtmlEntitiesLoose(html.match(regex)?.[1] || "").trim();
+}
+
+async function fetchArticlePageSnapshot(url: string): Promise<{ title: string; summary: string; content: string; image: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.7,en;q=0.5",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`article status ${response.status}`);
+    const html = await response.text();
+    const title = extractMetaContent(html, "og:title") || stripHtmlTags(html.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || "");
+    const summary = extractMetaContent(html, "og:description") || extractMetaContent(html, "description");
+    const image = extractMetaContent(html, "og:image");
+    const withoutScripts = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ");
+    const paragraphs = (withoutScripts.match(/<p[^>]*>[\s\S]*?<\/p>/gi) || [])
+      .map((paragraph) => stripHtmlTags(paragraph))
+      .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
+      .filter((paragraph) => paragraph.length >= 40)
+      .slice(0, 12);
+    return {
+      title: title.trim(),
+      summary: summary.trim(),
+      content: paragraphs.join("\n\n").trim(),
+      image: image.trim(),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function classifyEmotionHeuristically(content: string): { emotion: EmotionType; intensity: number } {
+  const text = String(content || "").normalize("NFKC").toLowerCase();
+  const cueMap: Record<EmotionType, string[]> = {
+    vibrance: ["연예", "문화", "축제", "공연", "활력", "훈훈", "기쁨", "반등", "미담", "호재"],
+    immersion: ["정치", "속보", "갈등", "긴장", "공방", "논란", "충돌", "시위", "격돌", "경쟁"],
+    clarity: ["분석", "해설", "데이터", "지표", "전망", "산업", "기술", "정책", "경제", "수치"],
+    gravity: ["사건", "재난", "범죄", "수사", "피해", "위기", "안전", "사망", "경고", "비상"],
+    serenity: ["회복", "안정", "돌봄", "생활", "건강", "웰빙", "휴식", "환경", "커뮤니티", "일상"],
+    spectrum: ["다양", "균형", "복합", "중립", "스펙트럼", "다층", "종합"],
+  };
+  const scores = (Object.keys(cueMap) as EmotionType[]).map((emotion) => {
+    const count = cueMap[emotion].reduce((acc, keyword) => acc + ((text.match(new RegExp(keyword, "g")) || []).length), 0);
+    return [emotion, count] as const;
+  }).sort((a, b) => b[1] - a[1]);
+  const [emotion, score] = scores[0] || ["spectrum", 0];
+  return {
+    emotion,
+    intensity: Math.max(52, Math.min(90, 56 + score * 6)),
+  };
+}
+
+function buildDongaRewriteFallback(input: {
+  title: string;
+  summary: string;
+  content: string;
+  emotion: EmotionType;
+  sourceUrl: string;
+}) {
+  const profile = EMOTION_NEWS_CATEGORY_PROFILE[input.emotion] || EMOTION_NEWS_CATEGORY_PROFILE.spectrum;
+  const paragraphs = String(input.content || input.summary || input.title)
+    .split(/\n{2,}/)
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  const safeContent = (paragraphs.length > 0 ? paragraphs : [input.summary || input.title])
+    .join("\n\n")
+    .trim();
+  return {
+    title: input.title,
+    summary: normalizeNewsSummary(input.summary || safeContent, input.title, "동아일보"),
+    content: safeContent,
+    category: profile.category,
+  };
+}
+
+async function rewriteDongaArticleForEmotion(input: {
+  title: string;
+  summary: string;
+  content: string;
+  sourceUrl: string;
+  sourceName: string;
+}): Promise<{ emotion: EmotionType; intensity: number; category: string; title: string; summary: string; content: string; fallbackUsed: boolean }> {
+  const heuristic = classifyEmotionHeuristically(`${input.title}\n${input.summary}\n${input.content}`);
+  const profile = EMOTION_NEWS_CATEGORY_PROFILE[heuristic.emotion] || EMOTION_NEWS_CATEGORY_PROFILE.spectrum;
+  const prompt = [
+    "당신은 동아일보 원문을 HueBrief 감정 카테고리 기사로 재구성하는 뉴스 에디터입니다.",
+    "반드시 한국어 JSON 객체만 반환하세요.",
+    '스키마: {"emotion":"vibrance|immersion|clarity|gravity|serenity|spectrum","intensity":0,"category":"string","title":"string","summary":"string","content":"string"}',
+    "규칙:",
+    "- 원문 사실관계, 수치, 인물, 기관명은 없는 내용을 지어내지 말 것",
+    "- 감정 카테고리는 기사 맥락에 가장 맞는 1개만 선택",
+    "- title은 원문 주제를 유지하되 HueBrief 노출용으로 18~48자 정리",
+    "- summary는 50~120자",
+    "- content는 4~6문단 한국어 기사문, 문단 사이에 빈 줄 1개",
+    "- markdown, bullet, 따옴표형 멘트, 출처 나열 금지",
+    `권장 감정 후보: ${heuristic.emotion}`,
+    `권장 카테고리 톤: ${profile.category}`,
+    `톤 규칙: ${profile.toneRules.join(", ")}`,
+    `참고 키워드: ${profile.keywords.join(", ")}`,
+    `원문 제목: ${input.title}`,
+    `원문 요약: ${input.summary}`,
+    `원문 본문: ${input.content.slice(0, 7000)}`,
+  ].join("\n");
+  const text = await generateGeminiText(prompt);
+  const parsed = parseJsonFromModelText<{
+    emotion?: unknown;
+    intensity?: unknown;
+    category?: unknown;
+    title?: unknown;
+    summary?: unknown;
+    content?: unknown;
+  }>(String(text || ""));
+  if (!parsed) {
+    const fallback = buildDongaRewriteFallback({
+      title: input.title,
+      summary: input.summary,
+      content: input.content,
+      emotion: heuristic.emotion,
+      sourceUrl: input.sourceUrl,
+    });
+    return {
+      emotion: heuristic.emotion,
+      intensity: heuristic.intensity,
+      category: fallback.category,
+      title: fallback.title,
+      summary: fallback.summary,
+      content: fallback.content,
+      fallbackUsed: true,
+    };
+  }
+
+  const emotion = toEmotion(parsed.emotion, heuristic.emotion);
+  const intensity = Math.max(0, Math.min(100, Math.round(Number(parsed.intensity) || heuristic.intensity)));
+  const fallback = buildDongaRewriteFallback({
+    title: input.title,
+    summary: input.summary,
+    content: input.content,
+    emotion,
+    sourceUrl: input.sourceUrl,
+  });
+  return {
+    emotion,
+    intensity,
+    category: String(parsed.category || "").trim() || fallback.category,
+    title: String(parsed.title || "").trim() || fallback.title,
+    summary: String(parsed.summary || "").trim() || fallback.summary,
+    content: String(parsed.content || "").trim() || fallback.content,
+    fallbackUsed: !text,
+  };
 }
 
 async function fetchKeywordNewsArticles(
@@ -8409,35 +8688,99 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     try {
-      const result = await Promise.race<any>([
-        runAutoNewsUpdate({
-          maxArticlesPerCountry: 2,
-          concurrency: 2,
-          aiTimeoutMs: 9000,
-          enableImageGeneration: false,
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("news pipeline timeout")), 45000)),
+      const fetched = await Promise.race<DongaRssArticle[]>([
+        fetchDongaRssArticles(5),
+        new Promise<DongaRssArticle[]>((_, reject) => setTimeout(() => reject(new Error("donga rss pipeline timeout")), 45000)),
       ]);
+      if (!Array.isArray(fetched) || fetched.length === 0) {
+        return res.status(502).json({
+          success: false,
+          error: "동아일보 RSS 기사 수집에 실패했습니다.",
+          code: "DONGA_RSS_FETCH_EMPTY",
+        });
+      }
+
+      const existing = await storage.getAllNews(true);
+      const existingSources = new Set(
+        existing
+          .map((item) => normalizeReferenceUrl(String((item as any)?.source || "")))
+          .filter(Boolean),
+      );
+
+      const imported: Array<{ id: string; title: string; emotion: EmotionType; category: string; fallbackUsed: boolean }> = [];
+      let saved = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      for (const article of fetched) {
+        try {
+          const resolvedUrl = await resolveReferenceUrl(String(article.url || ""));
+          const normalizedUrl = normalizeReferenceUrl(resolvedUrl || article.url);
+          if (!normalizedUrl || existingSources.has(normalizedUrl)) {
+            skipped += 1;
+            continue;
+          }
+
+          const snapshot = await fetchArticlePageSnapshot(normalizedUrl).catch(() => ({
+            title: article.title,
+            summary: article.originalSummary || article.summary,
+            content: article.originalSummary || article.summary,
+            image: article.image || "",
+          }));
+          const rewrite = await rewriteDongaArticleForEmotion({
+            title: snapshot.title || article.title,
+            summary: snapshot.summary || article.summary,
+            content: snapshot.content || article.originalSummary || article.summary,
+            sourceUrl: normalizedUrl,
+            sourceName: "동아일보",
+          });
+
+          const created = await storage.createNewsItem({
+            title: rewrite.title,
+            summary: rewrite.summary,
+            content: rewrite.content,
+            source: normalizedUrl,
+            image: snapshot.image || article.image || "",
+            category: rewrite.category,
+            emotion: rewrite.emotion,
+            intensity: rewrite.intensity,
+            authorId: actor.actorId || null,
+            authorName: actor.actorName || "Donga RSS Import",
+          } as any);
+          existingSources.add(normalizedUrl);
+          saved += 1;
+          imported.push({
+            id: created.id,
+            title: created.title,
+            emotion: rewrite.emotion,
+            category: rewrite.category,
+            fallbackUsed: rewrite.fallbackUsed,
+          });
+        } catch (error) {
+          failed += 1;
+        }
+      }
+
       await writeAdminActionLog(
         req,
-        "news_fetch_run",
-        "news_pipeline",
-        `saved=${result?.stats?.saved ?? 0},skipped=${result?.stats?.skipped ?? 0},failed=${result?.stats?.failed ?? 0}`,
+        "donga_rss_import_run",
+        "donga_rss_pipeline",
+        `saved=${saved},skipped=${skipped},failed=${failed}`,
         "news",
       );
       return res.json({
         success: true,
-        stats: result?.stats || { saved: 0, skipped: 0, failed: 0, total: 0 },
-        mode: "live",
-        status: result?.status || "completed",
-        logs: Array.isArray(result?.logs) ? result.logs.slice(0, 10) : [],
+        stats: { saved, skipped, failed, total: fetched.length },
+        mode: "donga-rss",
+        status: "completed",
+        imported,
       });
     } catch (error: any) {
       console.error("[NEWS_FETCH] manual trigger failed:", error);
       return res.status(502).json({
         success: false,
-        error: "뉴스 수집/생성 파이프라인 실행에 실패했습니다.",
-        code: "NEWS_FETCH_PIPELINE_FAILED",
+        error: "동아일보 RSS 원클릭 파이프라인 실행에 실패했습니다.",
+        code: "DONGA_RSS_PIPELINE_FAILED",
         detail: String(error?.message || "unknown"),
       });
     }
