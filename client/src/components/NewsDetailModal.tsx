@@ -1600,7 +1600,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
   const articleTextToken = getNewsTextTokenByDepth(articleDepth);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence initial={false}>
       {article && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -1626,18 +1626,17 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
           <motion.div
             ref={dialogPanelRef}
             layoutId={layoutId}
-            initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 16 }}
+            layout
+            initial={{ opacity: 0 }}
             animate={{
               opacity: 1,
-              scale: shouldReduceMotion ? 1 : 1,
-              y: shouldReduceMotion ? 0 : 0,
             }}
-            exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98, y: 12 }}
+            exit={{ opacity: 0 }}
             transition={{
-              duration: shouldReduceMotion ? 0.2 : 0.35,
-              type: shouldReduceMotion ? 'tween' : 'spring',
-              stiffness: 300,
-              damping: 25,
+              layout: shouldReduceMotion
+                ? { duration: 0.18 }
+                : { type: 'spring', stiffness: 240, damping: 30, mass: 0.94 },
+              opacity: { duration: shouldReduceMotion ? 0.16 : 0.22 },
             }}
             onClick={(e) => e.stopPropagation()}
             className="relative w-[calc(100vw-12px)] sm:w-[calc(100vw-48px)] max-w-[860px] h-[100dvh] sm:h-[96dvh] sm:my-[2dvh] mx-auto flex flex-col overflow-hidden rounded-none sm:rounded-[28px] shadow-[0_28px_80px_rgba(20,20,24,0.30)]"
@@ -1936,7 +1935,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                       const itemEmotionMeta = getEmotionMeta(item.emotion);
                       const recommendationDepth = Math.max(0, Math.min(100, item.intensity ?? 50));
                       const palette = getDepthPalette(item.emotion as EmotionType, recommendationDepth);
-                      const recommendationTextToken = getNewsTextTokenByDepth(recommendationDepth);
+                      const recommendationTextToken = getNewsTextTokenByDepth(recommendationDepth, item.emotion as EmotionType);
                       const recommendationTextColor = recommendationTextToken.usesLightText ? '#ffffff' : '#232221';
                       const recommendationSubTextColor = recommendationTextToken.body;
                       const compactCategory = formatRecommendationCategory(item.category, itemEmotionMeta.label);

@@ -492,6 +492,9 @@ export default function JournalistPage() {
   const selectedRecommendedArticle = selectedRecommendedArticleId
     ? recommendedArticles.find((row) => row.id === selectedRecommendedArticleId) || null
     : null;
+  const selectedPublishTitlePreview = selectedTitleIndex !== null && optimizedTitles[selectedTitleIndex]
+    ? optimizedTitles[selectedTitleIndex].title
+    : selectedRecommendedArticle?.title || searchKeyword.trim() || '선택한 제목이 없습니다.';
   const publishStageRequirements: Array<{ key: 'step3' | 'step4'; label: string; done: boolean }> = [
     { key: 'step3', label: isEditingMode ? '기존 기사 불러오기' : '추천 기사 선택', done: isEditingMode || Boolean(selectedRecommendedArticle) },
     { key: 'step4', label: '본문 작성', done: Boolean(articleContent.trim()) },
@@ -2986,7 +2989,7 @@ export default function JournalistPage() {
         )}
 
         {view === 'write' ? (
-          <div className={activeComposeStage === 'publish' ? 'grid grid-cols-1 xl:grid-cols-[minmax(0,1.18fr)_minmax(420px,0.92fr)] gap-6' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
+          <div className={activeComposeStage === 'publish' ? 'grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.28fr)_minmax(320px,0.88fr)] 2xl:grid-cols-[minmax(0,1.34fr)_minmax(360px,0.82fr)] xl:items-start' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
             <div className={activeComposeStage === 'publish' ? 'space-y-6' : 'lg:col-span-2 space-y-6'}>
               {activeComposeStage === 'author' && (
               <>
@@ -3705,47 +3708,226 @@ export default function JournalistPage() {
               )}
 
               {activeComposeStage === 'publish' && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
-                >
-                  <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-blue-500" />
-                    배포 전 본문 확인
-                  </h2>
-                  <p className="text-xs text-gray-500 mb-3">
-                    2단계에서는 제목/플랫폼/SEO/감정 균형을 점검한 뒤 발행합니다.
-                  </p>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 max-h-[560px] overflow-y-auto">
-                    <pre className="whitespace-pre-wrap text-sm text-gray-800">{articleContent || '본문이 없습니다.'}</pre>
-                  </div>
-                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[11px] font-semibold text-slate-700">참고 출처 (수정 불가)</p>
-                    {draftSourceCitation?.source || draftSourceCitation?.url ? (
-                      <div className="mt-1 space-y-1">
-                        <p className="text-xs text-slate-800">{draftSourceCitation?.title || '참고 기사'}</p>
-                        <p className="text-[11px] text-slate-600">{draftSourceCitation?.source || '출처 확인 필요'}</p>
-                        {draftSourceCitation?.url && (
-                          <a
-                            href={draftSourceCitation.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex max-w-full truncate text-[11px] text-blue-600 hover:text-blue-700"
-                          >
-                            {draftSourceCitation.url}
-                          </a>
-                        )}
+                <>
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-gradient-to-r from-slate-50 via-white to-blue-50 rounded-2xl p-5 shadow-sm border border-slate-200"
+                  >
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-semibold tracking-[0.14em] text-slate-500">PUBLISH OVERVIEW</p>
+                        <h2 className="mt-1 text-lg font-semibold text-gray-900">배포 전 최종 확인</h2>
+                        <p className="mt-2 text-sm text-gray-600">긴 가이드는 왼쪽에서 검토하고, 오른쪽에서는 선택과 발행만 빠르게 마무리할 수 있게 정리했습니다.</p>
                       </div>
-                    ) : (
-                      <p className="mt-1 text-[11px] text-slate-500">출처 정보가 없습니다.</p>
-                    )}
-                  </div>
-                </motion.div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:w-[360px]">
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[11px] text-slate-500">선택 플랫폼</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{selectedPlatforms.length}개</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[11px] text-slate-500">제목 선택</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{selectedTitleIndex !== null ? '완료' : '대기'}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[11px] text-slate-500">발행 감정</p>
+                          <p className="mt-1 text-sm font-semibold uppercase text-slate-900">{effectivePublishEmotion}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-[11px] text-slate-500">고급 도구</p>
+                          <p className="mt-1 text-sm font-semibold text-slate-900">{showDistributionSettings ? '열림' : '닫힘'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-4 rounded-xl border border-blue-100 bg-white/80 p-4">
+                      <p className="text-[11px] font-semibold text-blue-600">선택된 발행 제목</p>
+                      <p className="mt-1 text-sm font-semibold leading-6 text-slate-900">{selectedPublishTitlePreview}</p>
+                    </div>
+                  </motion.div>
+
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
+                  >
+                    <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-blue-500" />
+                      배포 전 본문 확인
+                    </h2>
+                    <p className="text-xs text-gray-500 mb-3">
+                      본문과 출처를 먼저 검토한 뒤, 아래에서 제목과 플랫폼 세부 설정을 이어서 점검하세요.
+                    </p>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 max-h-[560px] overflow-y-auto">
+                      <pre className="whitespace-pre-wrap text-sm text-gray-800">{articleContent || '본문이 없습니다.'}</pre>
+                    </div>
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-[11px] font-semibold text-slate-700">참고 출처 (수정 불가)</p>
+                      {draftSourceCitation?.source || draftSourceCitation?.url ? (
+                        <div className="mt-1 space-y-1">
+                          <p className="text-xs text-slate-800">{draftSourceCitation?.title || '참고 기사'}</p>
+                          <p className="text-[11px] text-slate-600">{draftSourceCitation?.source || '출처 확인 필요'}</p>
+                          {draftSourceCitation?.url && (
+                            <a
+                              href={draftSourceCitation.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex max-w-full truncate text-[11px] text-blue-600 hover:text-blue-700"
+                            >
+                              {draftSourceCitation.url}
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-[11px] text-slate-500">출처 정보가 없습니다.</p>
+                      )}
+                    </div>
+                  </motion.div>
+
+                  {showDistributionSettings && selectedPlatforms.length > 0 && (
+                    <motion.div
+                      ref={titleCandidateRef}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl p-6 shadow-sm border border-orange-100"
+                    >
+                      <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <Wand2 className="w-5 h-5 text-orange-500" />
+                        배포 설정
+                      </h2>
+
+                      <div className="space-y-5">
+                        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_280px]">
+                          <div className="rounded-2xl border border-orange-200 bg-white/80 p-4">
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-gray-800">고급 배포 설정</p>
+                                <p className="mt-1 text-xs leading-5 text-gray-500">제목 후보 확인, 플랫폼 선택 현황, 상세 가이드를 한 번에 보고 바로 발행 단계로 이어갈 수 있습니다.</p>
+                              </div>
+                              <GlassButton
+                                variant="primary"
+                                onClick={handleOptimizeTitles}
+                                disabled={isOptimizingTitles}
+                                className="w-full lg:w-auto lg:min-w-[180px] shrink-0"
+                                data-testid="button-optimize-titles"
+                              >
+                                {isOptimizingTitles ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                                {isOptimizingTitles ? '최적화 중...' : 'AI 제목 최적화'}
+                              </GlassButton>
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-orange-200 bg-white/80 p-4">
+                            <p className="text-xs font-semibold text-gray-500">선택한 플랫폼</p>
+                            <p className="mt-1 text-2xl font-semibold text-gray-900">{selectedPlatforms.length}개</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {selectedPlatforms.map((p) => {
+                                const platform = PLATFORMS.find((pl) => pl.id === p);
+                                return platform ? (
+                                  <span key={p} className="inline-flex items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700">
+                                    {platform.label}
+                                  </span>
+                                ) : null;
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {optimizedTitles.length > 0 && (
+                          <div className="space-y-3">
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="text-xs text-gray-500 font-medium">플랫폼별 최적화 제목</p>
+                              <p className="text-[11px] text-orange-600">한 번 선택한 제목이 상단 요약 카드에 즉시 반영됩니다.</p>
+                            </div>
+                            <div className="grid gap-3 xl:grid-cols-2">
+                              {optimizedTitles.map((item, i) => (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => setSelectedTitleIndex(i)}
+                                  className={`w-full text-left rounded-xl p-4 border transition-all ${selectedTitleIndex === i
+                                    ? 'bg-orange-100 border-orange-400 shadow-sm'
+                                    : 'bg-white border-orange-100 hover:bg-orange-50'
+                                    }`}
+                                >
+                                  <span className="text-xs font-medium text-orange-600 block mb-1">{item.platform}</span>
+                                  <p className={`text-sm leading-6 ${selectedTitleIndex === i ? 'text-orange-900 font-semibold' : 'text-gray-800'}`}>{item.title}</p>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-4 border-t border-orange-200 pt-4">
+                          <div className="flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-sm font-medium text-gray-700">플랫폼별 상세 설정</p>
+                            <p className="text-xs text-gray-500">긴 가이드는 넓은 영역에서 읽기 편하게 유지했습니다.</p>
+                          </div>
+                          <div className="grid gap-4">
+                            {selectedPlatforms.map(platformId => {
+                              const settings = PLATFORM_SETTINGS[platformId];
+                              const platform = PLATFORMS.find(p => p.id === platformId);
+                              if (!settings || !platform) return null;
+
+                              return (
+                                <div key={platformId} className="bg-white rounded-xl p-4 border border-orange-100">
+                                  <div className="mb-4 flex flex-col items-start gap-3 border-b border-gray-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <platform.Icon className="w-5 h-5 text-orange-500" />
+                                      <span className="font-medium text-gray-800">{platform.label}</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      <span className="text-xs px-2 py-1 bg-purple-50 text-purple-600 rounded-full">
+                                        최적 시간: {settings.bestTimes}
+                                      </span>
+                                      <span className="text-xs px-2 py-1 bg-cyan-50 text-cyan-600 rounded-full">
+                                        형식: {settings.contentFormat}
+                                      </span>
+                                      {settings.characterLimit && (
+                                        <span className="text-xs px-2 py-1 bg-amber-50 text-amber-600 rounded-full">
+                                          텍스트 길이 제한: {settings.characterLimit.toLocaleString()}자
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="grid gap-4 md:grid-cols-2">
+                                    <div className="rounded-xl bg-slate-50 p-3">
+                                      <p className="text-xs font-medium text-blue-600 mb-2">배포 가이드</p>
+                                      <ul className="space-y-1.5">
+                                        {settings.deploymentGuide.map((item, i) => (
+                                          <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                                            <span className="text-blue-400 mt-0.5">•</span>
+                                            {item}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+
+                                    <div className="rounded-xl bg-emerald-50/60 p-3">
+                                      <p className="text-xs font-medium text-green-600 mb-2">SEO 권장사항</p>
+                                      <ul className="space-y-1.5">
+                                        {settings.seoTips.map((tip, i) => (
+                                          <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
+                                            <span className="text-green-400 mt-0.5">•</span>
+                                            {tip}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </>
               )}
             </div>
 
-            <div className="space-y-6">
+            <div className={activeComposeStage === 'publish' ? 'space-y-4 xl:sticky xl:top-24 self-start' : 'space-y-6'}>
               {activeComposeStage === 'author' && (
               <motion.div
                 ref={draftVersionRef}
@@ -3840,13 +4022,69 @@ export default function JournalistPage() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.24 }}
+                className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold tracking-[0.12em] text-slate-500">READY TO PUBLISH</p>
+                    <h2 className="mt-1 text-lg font-semibold text-gray-900">발행 액션</h2>
+                  </div>
+                  <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${showDistributionSettings ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
+                    {showDistributionSettings ? '고급 도구 열림' : '기본 설정'}
+                  </span>
+                </div>
+                <div ref={advancedToolRef} className="mt-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setShowDistributionSettings((prev) => !prev)}
+                  >
+                    {showDistributionSettings ? '고급 도구 접기' : '고급 도구 펼치기'}
+                  </Button>
+                </div>
+                <GlassButton
+                  variant="primary"
+                  className="mt-3 w-full"
+                  data-testid="button-publish"
+                  onClick={handlePublishClick}
+                  disabled={unlockedWizardStep < 3}
+                >
+                  <FileText className="w-4 h-4" />
+                  기사 발행하기
+                </GlassButton>
+                {publishGateFeedback && (publishGateFeedback.errors.length > 0 || publishGateFeedback.warnings.length > 0) && (
+                  <div className={`mt-3 rounded-xl border p-3 text-xs ${publishGateFeedback.errors.length > 0 ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                    <p className="font-semibold mb-2">발행 전 점검 결과</p>
+                    {publishGateFeedback.errors.length > 0 && (
+                      <div className="mb-2">
+                        {publishGateFeedback.errors.map((item, idx) => (
+                          <p key={`gate-err-${idx}`}>- {item}</p>
+                        ))}
+                      </div>
+                    )}
+                    {publishGateFeedback.warnings.length > 0 && (
+                      <div>
+                        {publishGateFeedback.warnings.map((item, idx) => (
+                          <p key={`gate-warn-${idx}`}>- {item}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
                 className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100"
               >
                 <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                   <Send className="w-5 h-5 text-orange-500" />
                   배포 플랫폼                </h2>
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
                   {PLATFORMS.map((platform) => (
                     <label
                       key={platform.id}
@@ -3871,145 +4109,6 @@ export default function JournalistPage() {
                   ))}
                 </div>
               </motion.div>
-
-              {/* Distribution Settings Panel */}
-              {showDistributionSettings && selectedPlatforms.length > 0 && (
-                <motion.div
-                  ref={titleCandidateRef}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl p-6 shadow-sm border border-orange-100"
-                >
-                  <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <Wand2 className="w-5 h-5 text-orange-500" />
-                    배포 설정
-                  </h2>
-
-                  <div className="space-y-5">
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_280px]">
-                      <div className="rounded-2xl border border-orange-200 bg-white/80 p-4">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-gray-800">고급 배포 설정</p>
-                            <p className="mt-1 text-xs leading-5 text-gray-500">제목 후보 확인, 플랫폼 선택 현황, 상세 가이드를 한 번에 보고 바로 발행 단계로 이어갈 수 있습니다.</p>
-                          </div>
-                          <GlassButton
-                            variant="primary"
-                            onClick={handleOptimizeTitles}
-                            disabled={isOptimizingTitles}
-                            className="w-full lg:w-auto lg:min-w-[180px] shrink-0"
-                            data-testid="button-optimize-titles"
-                          >
-                            {isOptimizingTitles ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                            {isOptimizingTitles ? '최적화 중...' : 'AI 제목 최적화'}
-                          </GlassButton>
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-orange-200 bg-white/80 p-4">
-                        <p className="text-xs font-semibold text-gray-500">선택한 플랫폼</p>
-                        <p className="mt-1 text-2xl font-semibold text-gray-900">{selectedPlatforms.length}개</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {selectedPlatforms.map((p) => {
-                            const platform = PLATFORMS.find((pl) => pl.id === p);
-                            return platform ? (
-                              <span key={p} className="inline-flex items-center rounded-full bg-orange-100 px-2.5 py-1 text-xs font-medium text-orange-700">
-                                {platform.label}
-                              </span>
-                            ) : null;
-                          })}
-                        </div>
-                      </div>
-                    </div>
-
-                    {optimizedTitles.length > 0 && (
-                      <div className="space-y-3">
-                        <p className="text-xs text-gray-500 font-medium">플랫폼별 최적화 제목</p>
-                        <div className="grid gap-3 xl:grid-cols-2">
-                          {optimizedTitles.map((item, i) => (
-                            <button
-                              key={i}
-                              type="button"
-                              onClick={() => setSelectedTitleIndex(i)}
-                              className={`w-full text-left rounded-xl p-4 border transition-all ${selectedTitleIndex === i
-                                ? 'bg-orange-100 border-orange-400 shadow-sm'
-                                : 'bg-white border-orange-100 hover:bg-orange-50'
-                                }`}
-                            >
-                              <span className="text-xs font-medium text-orange-600 block mb-1">{item.platform}</span>
-                              <p className={`text-sm leading-6 ${selectedTitleIndex === i ? 'text-orange-900 font-semibold' : 'text-gray-800'}`}>{item.title}</p>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="space-y-4 border-t border-orange-200 pt-4">
-                      <div className="flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm font-medium text-gray-700">플랫폼별 상세 설정</p>
-                        <p className="text-xs text-gray-500">가이드는 플랫폼별 카드로 나눠 확인할 수 있습니다.</p>
-                      </div>
-                      <div className="grid gap-4">
-                        {selectedPlatforms.map(platformId => {
-                          const settings = PLATFORM_SETTINGS[platformId];
-                          const platform = PLATFORMS.find(p => p.id === platformId);
-                          if (!settings || !platform) return null;
-
-                          return (
-                            <div key={platformId} className="bg-white rounded-xl p-4 border border-orange-100">
-                              <div className="mb-4 flex flex-col items-start gap-3 border-b border-gray-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
-                                <div className="flex items-center gap-2">
-                                  <platform.Icon className="w-5 h-5 text-orange-500" />
-                                  <span className="font-medium text-gray-800">{platform.label}</span>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  <span className="text-xs px-2 py-1 bg-purple-50 text-purple-600 rounded-full">
-                                    최적 시간: {settings.bestTimes}
-                                  </span>
-                                  <span className="text-xs px-2 py-1 bg-cyan-50 text-cyan-600 rounded-full">
-                                    형식: {settings.contentFormat}
-                                  </span>
-                                  {settings.characterLimit && (
-                                    <span className="text-xs px-2 py-1 bg-amber-50 text-amber-600 rounded-full">
-                                      텍스트 길이 제한: {settings.characterLimit.toLocaleString()}자
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="grid gap-4 md:grid-cols-2">
-                                <div className="rounded-xl bg-slate-50 p-3">
-                                  <p className="text-xs font-medium text-blue-600 mb-2">배포 가이드</p>
-                                  <ul className="space-y-1.5">
-                                    {settings.deploymentGuide.map((item, i) => (
-                                      <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
-                                        <span className="text-blue-400 mt-0.5">•</span>
-                                        {item}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-
-                                <div className="rounded-xl bg-emerald-50/60 p-3">
-                                  <p className="text-xs font-medium text-green-600 mb-2">SEO 권장사항</p>
-                                  <ul className="space-y-1.5">
-                                    {settings.seoTips.map((tip, i) => (
-                                      <li key={i} className="text-xs text-gray-600 flex items-start gap-2">
-                                        <span className="text-green-400 mt-0.5">•</span>
-                                        {tip}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
 
               {/* Publish Status Modal */}
               {showPublishModal && (
@@ -4319,45 +4418,6 @@ export default function JournalistPage() {
               </motion.div>
               )}
 
-              <div ref={advancedToolRef} className="mb-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => setShowDistributionSettings((prev) => !prev)}
-                >
-                  {showDistributionSettings ? '고급 도구 접기' : '고급 도구 펼치기'}
-                </Button>
-              </div>
-              <GlassButton
-                variant="primary"
-                className="w-full"
-                data-testid="button-publish"
-                onClick={handlePublishClick}
-                disabled={unlockedWizardStep < 3}
-              >
-                <FileText className="w-4 h-4" />
-                기사 발행하기
-              </GlassButton>
-              {publishGateFeedback && (publishGateFeedback.errors.length > 0 || publishGateFeedback.warnings.length > 0) && (
-                <div className={`mt-3 rounded-xl border p-3 text-xs ${publishGateFeedback.errors.length > 0 ? 'border-red-200 bg-red-50 text-red-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
-                  <p className="font-semibold mb-2">발행 전 점검 결과</p>
-                  {publishGateFeedback.errors.length > 0 && (
-                    <div className="mb-2">
-                      {publishGateFeedback.errors.map((item, idx) => (
-                        <p key={`gate-err-${idx}`}>- {item}</p>
-                      ))}
-                    </div>
-                  )}
-                  {publishGateFeedback.warnings.length > 0 && (
-                    <div>
-                      {publishGateFeedback.warnings.map((item, idx) => (
-                        <p key={`gate-warn-${idx}`}>- {item}</p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
               </>
               )}
             </div>
