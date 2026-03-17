@@ -25,7 +25,7 @@ export function PWAInstallBanner() {
   return (
     <div style={{ position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, width: 'calc(100% - 32px)', maxWidth: '420px' }}>
       <div style={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '16px', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}>
-        <img src="/favicon.png" alt="HueBrief" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0 }} />
+        <img src="/favicon.png?v=20260317" alt="HueBrief" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: 'hsl(var(--foreground))' }}>앱으로 설치하기</p>
           <p style={{ margin: '2px 0 0', fontSize: 12, color: 'hsl(var(--muted-foreground))' }}>{isIOS ? 'Safari에서 홈 화면에 추가' : '홈 화면에서 바로 실행'}</p>

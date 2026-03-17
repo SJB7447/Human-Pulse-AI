@@ -1,5 +1,5 @@
-const CACHE_NAME = 'huebrief-v1';
-const PRECACHE_URLS = ['/', '/manifest.json', '/favicon.png'];
+const CACHE_NAME = 'huebrief-v2';
+const PRECACHE_URLS = ['/', '/manifest.json', '/favicon.png?v=20260317', '/icon-192.png?v=20260317', '/icon-512.png?v=20260317'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)));
@@ -40,10 +40,10 @@ self.addEventListener('push', (event) => {
   if (!event.data) return;
   let payload;
   try { payload = event.data.json(); } catch { payload = { title: 'HueBrief', body: event.data.text() }; }
-  const { title = 'HueBrief', body = '', url = '/', icon = '/favicon.png', type = 'default' } = payload;
+  const { title = 'HueBrief', body = '', url = '/', icon = '/icon-192.png?v=20260317', type = 'default' } = payload;
   event.waitUntil(
     self.registration.showNotification(title, {
-      body, icon, badge: '/favicon.png',
+      body, icon, badge: '/favicon.png?v=20260317',
       data: { url, type },
       vibrate: [100, 50, 100],
       requireInteraction: type === 'admin_action',
