@@ -96,9 +96,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
       '범죄·수사·사회 안전',
       '심층 리포트·원인 분석'
     ],
-    color: '#adadad',
+    color: '#bababa',
     pastelColor: '#e5e5e5',
-    colorVariations: ['#e5e5e5', '#d1d1d1', '#adadad', '#999898'], // LOW/MID/BASE + darker gray
+    colorVariations: ['#e5e5e5', '#d1d1d1', '#bababa', '#999898'], // LOW/MID/BASE + darker gray
     position: [-3.2, -4.5, 0],
     positionDesktop: [-3.2, -4.5, 0],
     positionMobile: [-1.1, -2.95, 0],

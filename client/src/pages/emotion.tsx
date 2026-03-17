@@ -496,7 +496,7 @@ export default function EmotionPage() {
       vibrance: { low: '#ffedc5', mid: '#ffe197', base: '#ffd150', deep: '#e6b83f' },
       serenity: { low: '#caf2a7', mid: '#adef73', base: '#88d84a', deep: '#66b53a' },
       clarity: { low: '#cad8ff', mid: '#8dabff', base: '#3f65ef', deep: '#2a4bc0' },
-      gravity: { low: '#e5e5e5', mid: '#d1d1d1', base: '#adadad', deep: '#999898' },
+      gravity: { low: '#e5e5e5', mid: '#d1d1d1', base: '#bababa', deep: '#999898' },
       spectrum: { low: '#a0e8dc', mid: '#00abaf', base: '#a773f9', deep: '#7c4dff' },
     };
 
@@ -557,6 +557,9 @@ export default function EmotionPage() {
         tone,
         baseBackground: `linear-gradient(135deg, hsla(${h}, ${Math.max(42, s - 12)}%, 97%, 0.98) 0%, hsla(${h}, ${Math.max(48, s - 6)}%, 92%, 0.94) 100%)`,
         activeBackground: `linear-gradient(135deg, hsla(${h}, ${Math.min(94, s)}%, 94%, 0.98) 0%, hsla(${h}, ${Math.min(96, s + 4)}%, 84%, 0.96) 100%)`,
+        activeRing: emotion.gradientColor
+          ? `linear-gradient(135deg, ${hexToRgba(emotion.color, 0.96)} 0%, ${hexToRgba(emotion.gradientColor, 0.92)} 100%)`
+          : `linear-gradient(135deg, ${hexToRgba(emotion.color, 0.94)} 0%, rgba(255,255,255,0.98) 100%)`,
       };
     });
   }, []);
@@ -710,16 +713,24 @@ export default function EmotionPage() {
                     key={emotion.type}
                     type="button"
                     onClick={() => handleEmotionCategorySelect(emotion.type)}
-                    className="group min-w-[112px] rounded-2xl px-3.5 py-3 text-left transition-all duration-200 sm:min-w-[132px]"
+                    className="group relative min-w-[112px] rounded-2xl border px-3.5 py-3 text-left transition-all duration-200 sm:min-w-[132px]"
                     style={{
-                      background: isActive ? emotion.activeBackground : emotion.baseBackground,
+                      background: isActive
+                        ? `${emotion.activeBackground} padding-box, ${emotion.activeRing} border-box`
+                        : emotion.baseBackground,
+                      borderColor: isActive ? 'transparent' : 'rgba(255,255,255,0.55)',
                       color: emotion.color,
                       boxShadow: isActive
-                        ? `0 10px 26px ${hexToRgba(emotion.color, 0.22)}`
+                        ? `0 0 0 1px ${hexToRgba(emotion.color, 0.18)}, 0 0 18px ${hexToRgba(emotion.color, 0.18)}, 0 0 34px ${hexToRgba(emotion.color, 0.14)}, 0 10px 26px ${hexToRgba(emotion.color, 0.18)}`
                         : '0 8px 20px rgba(35,34,33,0.08)',
                     }}
                     data-testid={`button-emotion-quick-${emotion.type}`}
                   >
+                    {isActive && (
+                      <span className="absolute -top-2 left-3 inline-flex items-center rounded-full bg-white/92 px-2.5 py-1 text-[10px] font-semibold tracking-[0.02em] text-slate-700 shadow-[0_4px_10px_rgba(35,34,33,0.08)]">
+                        현재 위치
+                      </span>
+                    )}
                     <span className="mb-2 inline-flex items-center gap-2">
                       <span
                         className="inline-flex h-7 w-7 items-center justify-center rounded-full"
