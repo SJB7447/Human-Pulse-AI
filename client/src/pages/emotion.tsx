@@ -233,6 +233,7 @@ function extractVideoPreviewFromMeta(content: string | null | undefined): { hasV
 }
 
 export default function EmotionPage() {
+  const ARTICLES_PER_PAGE = 15;
   const { type } = useParams<{ type: EmotionType }>();
   const [mounted, setMounted] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState<NewsItem | null>(null);
@@ -244,8 +245,7 @@ export default function EmotionPage() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [sortKey, setSortKey] = useState<'latest' | 'oldest' | 'intensity_desc' | 'intensity_asc' | 'title_asc'>('latest');
-  const [visibleCount, setVisibleCount] = useState(9);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const [showPeripheralNudge, setShowPeripheralNudge] = useState(false);
   const [expandPeripheralNudge, setExpandPeripheralNudge] = useState(false);
   const [suppressPeripheralNudge, setSuppressPeripheralNudge] = useState(false);
@@ -253,7 +253,6 @@ export default function EmotionPage() {
   const [viewportWidth, setViewportWidth] = useState<number>(
     typeof window !== 'undefined' ? window.innerWidth : 1280,
   );
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const dwellVisibleSecRef = useRef(0);
   const sameEmotionConsumeRef = useRef(0);
   const consumedArticleIdsRef = useRef<Set<string>>(new Set());
@@ -626,31 +625,20 @@ export default function EmotionPage() {
     return rows;
   }, [news, searchTerm, sourceFilter, categoryFilter, sortKey]);
 
-  const hasMore = visibleCount < filteredNews.length;
-  const visibleNews = useMemo(() => filteredNews.slice(0, visibleCount), [filteredNews, visibleCount]);
+  const totalPages = Math.max(1, Math.ceil(filteredNews.length / ARTICLES_PER_PAGE));
+  const visibleNews = useMemo(() => {
+    const startIndex = (currentPage - 1) * ARTICLES_PER_PAGE;
+    return filteredNews.slice(startIndex, startIndex + ARTICLES_PER_PAGE);
+  }, [filteredNews, currentPage, ARTICLES_PER_PAGE]);
 
   useEffect(() => {
-    setVisibleCount(9);
+    setCurrentPage(1);
   }, [type, searchTerm, sourceFilter, categoryFilter, sortKey]);
 
   useEffect(() => {
-    if (!hasMore) return;
-    const node = loadMoreRef.current;
-    if (!node) return;
-
-    const observer = new IntersectionObserver((entries) => {
-      const first = entries[0];
-      if (!first?.isIntersecting) return;
-      setIsLoadingMore(true);
-      window.setTimeout(() => {
-        setVisibleCount((prev) => Math.min(prev + 9, filteredNews.length));
-        setIsLoadingMore(false);
-      }, 120);
-    }, { rootMargin: '180px 0px' });
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [filteredNews.length, hasMore]);
+    if (currentPage <= totalPages) return;
+    setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const recommendationPool = (type === 'spectrum'
     ? news
@@ -1078,16 +1066,42 @@ export default function EmotionPage() {
                 );
               })}
             </div>
-            {hasMore && (
-              <div ref={loadMoreRef} className="py-4 text-center">
-                {isLoadingMore ? (
-                  <span className="text-xs text-gray-500 inline-flex items-center gap-2">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Loading more...
-                  </span>
-                ) : (
-                  <span className="text-xs text-gray-400">Scroll for more</span>
-                )}
+            {totalPages > 1 && (
+              <div className="flex flex-col items-center gap-3 py-4">
+                <p className="text-sm text-gray-500">
+                  페이지 {currentPage} / {totalPages}
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="bg-white/82 hover:bg-white/92"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    이전
+                  </Button>
+                  {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+                    <Button
+                      key={page}
+                      type="button"
+                      variant="ghost"
+                      className={page === currentPage ? 'bg-white text-gray-900 shadow-[0_6px_18px_rgba(35,34,33,0.08)]' : 'bg-white/72 text-gray-500 hover:bg-white/88'}
+                      onClick={() => setCurrentPage(page)}
+                    >
+                      {page}
+                    </Button>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="bg-white/82 hover:bg-white/92"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  >
+                    다음
+                  </Button>
+                </div>
               </div>
             )}
             </>
