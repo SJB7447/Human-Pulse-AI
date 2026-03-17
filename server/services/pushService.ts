@@ -1,16 +1,17 @@
 import webpush from "web-push";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "../supabase.js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "",
-  process.env.SUPABASE_SERVICE_ROLE_KEY || "",
-);
+const vapidPublicKey = String(process.env.VAPID_PUBLIC_KEY || "").trim();
+const vapidPrivateKey = String(process.env.VAPID_PRIVATE_KEY || "").trim();
+const hasVapidConfig = Boolean(vapidPublicKey && vapidPrivateKey);
 
-webpush.setVapidDetails(
-  "mailto:admin@huebrief.com",
-  process.env.VAPID_PUBLIC_KEY || "",
-  process.env.VAPID_PRIVATE_KEY || "",
-);
+if (hasVapidConfig) {
+  webpush.setVapidDetails(
+    "mailto:admin@huebrief.com",
+    vapidPublicKey,
+    vapidPrivateKey,
+  );
+}
 
 export type PushNotificationType =
   | "new_news"
@@ -27,6 +28,7 @@ export interface PushPayload {
 }
 
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
+  if (!hasVapidConfig) return;
   const { data: subs, error } = await supabase.from("push_subscriptions").select("*").eq("user_id", userId);
 
   if (error || !subs?.length) return;
@@ -64,6 +66,7 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
 }
 
 export async function broadcastPush(payload: PushPayload): Promise<void> {
+  if (!hasVapidConfig) return;
   const { data: subs, error } = await supabase.from("push_subscriptions").select("*");
 
   if (error || !subs?.length) return;
