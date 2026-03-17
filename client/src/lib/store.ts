@@ -122,7 +122,7 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
     colorVariations: ['#caf2a7', '#adef73', '#88d84a', '#66b53a'], // LOW/MID/BASE + deeper accent
     position: [-5.2, 1.7, 0],
     positionDesktop: [-5.2, 1.7, 0],
-    positionMobile: [1.15, -1.3, 0],
+    positionMobile: [-1.05, 0.35, 0],
     scaleDesktop: 0.95,
     scaleMobile: 0.42
   },
@@ -141,7 +141,7 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
     gradientColor: '#a773f9',
     position: [0, 0, 0],
     positionDesktop: [0, 0, 0],
-    positionMobile: [-1.05, 0.35, 0],
+    positionMobile: [1.15, -1.3, 0],
     scaleDesktop: 0.95,
     scaleMobile: 0.42
   },
