@@ -36,6 +36,15 @@ const EMOTION_FILTER_COPY: Record<EmotionType, { label: string; hint: string }> 
   spectrum: { label: '스펙트럼', hint: '다양한 관점을 함께 보는 기사' },
 };
 
+const EMOTION_NEWS_TONE_COPY: Record<EmotionType, string> = {
+  vibrance: '연예·문화',
+  immersion: '정치·속보',
+  clarity: '시사·분석',
+  gravity: '사회·재난',
+  serenity: '라이프·회복',
+  spectrum: '균형 큐레이션',
+};
+
 function normalizeCategoryLabel(rawCategory: string | null | undefined): string {
   const value = String(rawCategory || '').trim();
   if (!value) return '기타';
@@ -526,6 +535,22 @@ export default function EmotionPage() {
     return Array.from(labels).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko'));
   }, [news]);
 
+  const emotionQuickLinks = useMemo(() => {
+    return EMOTION_CONFIG.map((emotion) => {
+      const copy = EMOTION_FILTER_COPY[emotion.type];
+      const tone = EMOTION_NEWS_TONE_COPY[emotion.type];
+      const { h, s } = hexToHsl(emotion.color);
+
+      return {
+        ...emotion,
+        copy,
+        tone,
+        baseBackground: `linear-gradient(135deg, hsla(${h}, ${Math.max(42, s - 12)}%, 97%, 0.98) 0%, hsla(${h}, ${Math.max(48, s - 6)}%, 92%, 0.94) 100%)`,
+        activeBackground: `linear-gradient(135deg, hsla(${h}, ${Math.min(94, s)}%, 94%, 0.98) 0%, hsla(${h}, ${Math.min(96, s + 4)}%, 84%, 0.96) 100%)`,
+      };
+    });
+  }, []);
+
   const filteredNews = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
     let rows = [...news];
@@ -663,45 +688,50 @@ export default function EmotionPage() {
               />
             </div>
           </div>
-          <div className="mb-5 flex flex-col items-center">
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => setCategoryFilter('all')}
-                className="inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition"
-                style={{
-                  backgroundColor: categoryFilter === 'all' ? hexToRgba(emotionConfig.color, 0.14) : 'rgba(255,255,255,0.88)',
-                  color: categoryFilter === 'all' ? emotionConfig.color : '#4b5563',
-                  boxShadow: '0 6px 18px rgba(35,34,33,0.08)',
-                }}
-                data-testid="category-filter-all"
-              >
-                전체
-              </button>
-              {categoryOptions.map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  onClick={() => setCategoryFilter(category)}
-                  className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition"
-                  style={{
-                    backgroundColor: categoryFilter === category ? hexToRgba(emotionConfig.color, 0.14) : 'rgba(255,255,255,0.88)',
-                    color: categoryFilter === category ? emotionConfig.color : '#4b5563',
-                    boxShadow: '0 6px 18px rgba(35,34,33,0.08)',
-                  }}
-                  data-testid={`category-filter-${category}`}
-                >
-                  <span
-                    className="inline-flex h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: emotionConfig.color }}
-                    aria-hidden="true"
-                  />
-                  {category}
-                </button>
-              ))}
+          <div className="mb-6 flex flex-col items-center">
+            <div className="flex w-full max-w-4xl flex-wrap items-stretch justify-center gap-2.5 sm:gap-3">
+              {emotionQuickLinks.map((emotion) => {
+                const isActive = emotion.type === type;
+                const EmotionIcon = EMOTION_ICONS[emotion.type];
+
+                return (
+                  <button
+                    key={emotion.type}
+                    type="button"
+                    onClick={() => handleEmotionCategorySelect(emotion.type)}
+                    className="group min-w-[112px] rounded-2xl px-3.5 py-3 text-left transition-all duration-200 sm:min-w-[132px]"
+                    style={{
+                      background: isActive ? emotion.activeBackground : emotion.baseBackground,
+                      color: emotion.color,
+                      boxShadow: isActive
+                        ? `0 10px 26px ${hexToRgba(emotion.color, 0.22)}`
+                        : '0 8px 20px rgba(35,34,33,0.08)',
+                    }}
+                    data-testid={`button-emotion-quick-${emotion.type}`}
+                  >
+                    <span className="mb-2 inline-flex items-center gap-2">
+                      <span
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full"
+                        style={{ backgroundColor: hexToRgba(emotion.color, isActive ? 0.2 : 0.12) }}
+                      >
+                        <EmotionIcon className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="text-xs font-semibold tracking-[-0.01em]">
+                        {emotion.copy.label}
+                      </span>
+                    </span>
+                    <p className="text-[11px] font-semibold leading-tight opacity-95">
+                      {emotion.tone}
+                    </p>
+                    <p className="mt-1 line-clamp-1 text-[10px] leading-tight opacity-75">
+                      {emotion.copy.hint}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
             <p className="mt-2 text-center text-xs text-human-sub">
-              기사 주제별로 바로 좁혀볼 수 있어요. 예: 시사, 연예, 기술·과학
+              검색 후에도 감정별 큐레이션으로 바로 이동할 수 있어요.
             </p>
           </div>
           <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold text-human-main mb-2" data-testid="text-emotion-title">
@@ -726,6 +756,78 @@ export default function EmotionPage() {
                 {news}
               </span>
             ))}
+          </div>
+          <div className="mb-6 space-y-4 rounded-3xl bg-white/64 p-4 sm:p-5 shadow-[0_2px_12px_rgba(35,34,33,0.06)]">
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter('all')}
+                  className="inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition"
+                  style={{
+                    backgroundColor: categoryFilter === 'all' ? hexToRgba(emotionConfig.color, 0.14) : 'rgba(255,255,255,0.88)',
+                    color: categoryFilter === 'all' ? emotionConfig.color : '#4b5563',
+                    boxShadow: '0 6px 18px rgba(35,34,33,0.08)',
+                  }}
+                  data-testid="category-filter-all"
+                >
+                  전체
+                </button>
+                {categoryOptions.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setCategoryFilter(category)}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition"
+                    style={{
+                      backgroundColor: categoryFilter === category ? hexToRgba(emotionConfig.color, 0.14) : 'rgba(255,255,255,0.88)',
+                      color: categoryFilter === category ? emotionConfig.color : '#4b5563',
+                      boxShadow: '0 6px 18px rgba(35,34,33,0.08)',
+                    }}
+                    data-testid={`category-filter-${category}`}
+                  >
+                    <span
+                      className="inline-flex h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: emotionConfig.color }}
+                      aria-hidden="true"
+                    />
+                    {category}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-human-sub">
+                기사 주제별로 바로 좁혀볼 수 있어요. 예: 시사, 연예, 기술·과학
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <select
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className="h-11 rounded-xl bg-white/88 px-3 text-sm text-gray-800 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.3)] focus:outline-none focus:ring-2 focus:ring-black/15"
+                data-testid="select-news-source"
+              >
+                <option value="all">All sources</option>
+                {sourceOptions.map((source) => (
+                  <option key={source} value={source}>
+                    {source}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+                className="h-11 rounded-xl bg-white/88 px-3 text-sm text-gray-800 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.3)] focus:outline-none focus:ring-2 focus:ring-black/15"
+                data-testid="select-news-sort"
+              >
+                <option value="latest">Sort: Latest</option>
+                <option value="oldest">Sort: Oldest</option>
+                <option value="intensity_desc">Sort: Intensity high</option>
+                <option value="intensity_asc">Sort: Intensity low</option>
+                <option value="title_asc">Sort: Title A-Z</option>
+              </select>
+            </div>
           </div>
           <p className="text-human-sub text-sm text-center">
             {filteredNews.length}/{news.length} articles
@@ -755,37 +857,6 @@ export default function EmotionPage() {
           </div>
         ) : (
           <div className="mt-6 sm:mt-8">
-            <div className="mb-8 rounded-3xl bg-white/62 p-4 sm:p-6 shadow-[0_2px_12px_rgba(35,34,33,0.06)]">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <select
-                  value={sourceFilter}
-                  onChange={(e) => setSourceFilter(e.target.value)}
-                  className="h-11 rounded-xl bg-white/88 px-3 text-sm text-gray-800 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.3)] focus:outline-none focus:ring-2 focus:ring-black/15"
-                  data-testid="select-news-source"
-                >
-                  <option value="all">All sources</option>
-                  {sourceOptions.map((source) => (
-                    <option key={source} value={source}>
-                      {source}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={sortKey}
-                  onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-                  className="h-11 rounded-xl bg-white/88 px-3 text-sm text-gray-800 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.3)] focus:outline-none focus:ring-2 focus:ring-black/15"
-                  data-testid="select-news-sort"
-                >
-                  <option value="latest">Sort: Latest</option>
-                  <option value="oldest">Sort: Oldest</option>
-                  <option value="intensity_desc">Sort: Intensity high</option>
-                  <option value="intensity_asc">Sort: Intensity low</option>
-                  <option value="title_asc">Sort: Title A-Z</option>
-                </select>
-              </div>
-            </div>
-
             {filteredNews.length === 0 ? (
               <div className="text-center py-16 rounded-3xl bg-white/60 shadow-[0_2px_12px_rgba(35,34,33,0.06)]">
                 <p className="text-sm text-gray-600">No articles match current search/filter options.</p>
