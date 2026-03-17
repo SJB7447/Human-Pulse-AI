@@ -1560,7 +1560,8 @@ type ChatIntent =
   | "focus_clarity"
   | "positive_channel"
   | "boredom_refresh"
-  | "balance_general";
+  | "balance_general"
+  | "topic_search";
 type HueBotLanguage = "ko" | "en";
 type HueBotResponseStyle = "short" | "deep";
 type ComplianceSeverity = "low" | "medium" | "high";
@@ -3522,6 +3523,46 @@ function detectHueBotTopicEmotionHint(message: string): { emotion: EmotionType; 
   };
 }
 
+function extractHueBotSearchSignal(message: string): {
+  query: string;
+  emotion: EmotionType;
+  matchedKeywords: string[];
+  reason: string;
+} | null {
+  const raw = String(message || "").trim();
+  if (!raw) return null;
+
+  const normalized = normalizeHueBotText(raw);
+  const topicHint = detectHueBotTopicEmotionHint(raw);
+  const hasSearchVerb = /(찾아|찾고|검색|보여|추천|알려|보고\s*싶|보여\s*줘|찾아\s*줘|search|find|show|recommend|looking for|look for|want to see)/i.test(raw);
+  const hasNewsNoun = /(기사|뉴스|주제|토픽|이슈|article|articles|news|topic|topics|story|stories|issue)/i.test(raw);
+  const tokenCount = normalized.split(" ").filter(Boolean).length;
+  const likelyTopicLookup = Boolean(topicHint) && tokenCount <= 8 && (hasSearchVerb || hasNewsNoun);
+
+  if (!likelyTopicLookup && !(hasSearchVerb && hasNewsNoun)) {
+    return null;
+  }
+
+  const cleaned = raw
+    .replace(/[?!.,]+/g, " ")
+    .replace(/(관련된|관련|주제의|주제로|쪽의|분야의|분야|이슈를|이슈|토픽을|토픽|주제를|주제|뉴스를|뉴스|기사를|기사)/gi, " ")
+    .replace(/(찾아줘|찾아\s*줘|찾아봐|찾아\s*봐|보여줘|보여\s*줘|추천해줘|추천\s*해\s*줘|알려줘|알려\s*줘|검색해줘|검색\s*해\s*줘|보고\s*싶어|보고싶어|찾고\s*있어|좀|한번|please)/gi, " ")
+    .replace(/\b(search|find|show|recommend|topic|topics|news|article|articles|story|stories|about|related|please)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const query = cleaned || topicHint?.matchedKeywords?.[0] || raw;
+  const safeQuery = query.replace(/^#+/, "").trim();
+  if (!safeQuery) return null;
+
+  return {
+    query: safeQuery,
+    emotion: topicHint?.emotion || "spectrum",
+    matchedKeywords: topicHint?.matchedKeywords || [],
+    reason: topicHint?.reason || "search_request",
+  };
+}
+
 function buildEmotionRecommendationSet(intent: ChatIntent, recentRecommendations: EmotionType[]): {
   recommendation: EmotionType;
   quickRecommendations: EmotionType[];
@@ -3538,6 +3579,7 @@ function buildEmotionRecommendationSet(intent: ChatIntent, recentRecommendations
     positive_channel: ["immersion", "vibrance", "spectrum", "clarity"],
     boredom_refresh: ["spectrum", "immersion", "vibrance", "clarity"],
     balance_general: ["spectrum", "clarity", "serenity", "vibrance", "gravity"],
+    topic_search: ["spectrum", "clarity", "vibrance", "serenity", "gravity"],
   };
   const pool = pools[intent];
   const recent = recentRecommendations.slice(-3);
@@ -3561,6 +3603,8 @@ function classifyHueBotMessage(message: string, recentRecommendations: EmotionTy
   rationale: string;
   language: HueBotLanguage;
   fallbackUsed: boolean;
+  searchQuery?: string;
+  searchEmotion?: EmotionType;
 } {
   const lower = String(message || "").toLowerCase();
   const trimmed = lower.trim();
@@ -3569,6 +3613,7 @@ function classifyHueBotMessage(message: string, recentRecommendations: EmotionTy
   const language = detectHueBotLanguage(lower);
   const seed = hashString(trimmed || "huebot");
   const topicHint = detectHueBotTopicEmotionHint(trimmed);
+  const searchSignal = extractHueBotSearchSignal(trimmed);
   const directSignalByIntent: Array<{ intent: ChatIntent; regex: RegExp }> = [
     { intent: "anxiety_relief", regex: /(불안|걱정|초조|긴장|anxious|anxiety|nervous|panic|worried)/i },
     { intent: "anger_release", regex: /(화남|화가|분노|짜증|억울|angry|anger|mad|furious|irritated)/i },
@@ -3752,6 +3797,31 @@ function classifyHueBotMessage(message: string, recentRecommendations: EmotionTy
     gravity: "focus_clarity",
   };
   const hintedIntent = topicHint ? topicIntentMap[topicHint.emotion] : undefined;
+  if (searchSignal) {
+    const searchRecommendationSet = buildEmotionRecommendationSet("topic_search", recentRecommendations);
+    const quickRecommendations = Array.from(
+      new Set([searchSignal.emotion, ...searchRecommendationSet.quickRecommendations]),
+    ).slice(0, 3);
+    return {
+      intent: "topic_search",
+      recommendation: searchSignal.emotion,
+      quickRecommendations,
+      confidence: topicHint ? 0.9 : 0.78,
+      followUp: language === "ko"
+        ? "원하면 인물명이나 세부 이슈를 한 단어만 더 붙여서 더 좁혀드릴게요."
+        : "If you want, add one person or subtopic keyword and I'll narrow it down.",
+      text: language === "ko"
+        ? `'${searchSignal.query}' 주제로 바로 볼 수 있는 기사 흐름을 찾아볼게요.`
+        : `I'll look for article flows you can open right away on "${searchSignal.query}".`,
+      rationale: language === "ko"
+        ? "감정 표현보다 주제/기사 탐색 요청으로 판단했습니다."
+        : "This reads more like a topic/article lookup than an emotional request.",
+      language,
+      fallbackUsed: false,
+      searchQuery: searchSignal.query,
+      searchEmotion: searchSignal.emotion,
+    };
+  }
   const intent: ChatIntent = directIntent || matchedGroup?.intent || hintedIntent || "balance_general";
   const recommendationSet = buildEmotionRecommendationSet(intent, recentRecommendations);
   if (matchedGroup && matchedScore > 0) {
@@ -3842,6 +3912,7 @@ function coerceHueBotIntent(value: unknown, fallback: ChatIntent): ChatIntent {
     "positive_channel",
     "boredom_refresh",
     "balance_general",
+    "topic_search",
   ];
   return intents.includes(text as ChatIntent) ? (text as ChatIntent) : fallback;
 }
@@ -3891,7 +3962,7 @@ async function generateHueBotLlmReply(input: {
     "- Avoid robotic template wording.",
     "- Follow 3-step counselor flow: (1) validate feeling, (2) infer balance need, (3) suggest why this lane helps now.",
     "Allowed intent values:",
-    "- anxiety_relief, anger_release, sadness_lift, focus_clarity, positive_channel, boredom_refresh, balance_general",
+    "- anxiety_relief, anger_release, sadness_lift, focus_clarity, positive_channel, boredom_refresh, balance_general, topic_search",
     "Allowed emotion values:",
     "- vibrance, immersion, clarity, gravity, serenity, spectrum",
     "Output schema:",
@@ -6333,28 +6404,56 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
 
     const baseResult = classifyHueBotMessage(message, state.recentRecommendations);
-    const llmResult = await generateHueBotLlmReply({
-      message,
-      language: baseResult.language,
-      responseStyle,
-      baseline: {
-        intent: baseResult.intent,
-        recommendation: baseResult.recommendation,
-        quickRecommendations: baseResult.quickRecommendations,
-        confidence: baseResult.confidence,
-        followUp: baseResult.followUp,
-        text: baseResult.text,
-        rationale: baseResult.rationale,
-      },
-      recentRecommendations: state.recentRecommendations,
-    });
-    const result = llmResult
-      ? {
+    let result = baseResult;
+
+    if (baseResult.intent === "topic_search" && baseResult.searchQuery) {
+      const fetched = await fetchKeywordNewsArticles(baseResult.searchQuery, 3, 5000);
+      const previewTitles = (fetched.articles || [])
+        .map((article) => String(article?.title || "").trim())
+        .filter(Boolean)
+        .slice(0, 2);
+      const previewText = previewTitles.length > 0
+        ? (baseResult.language === "ko"
+          ? ` 예를 들면 ${previewTitles.join(" / ")} 같은 흐름이 있어요.`
+          : ` For example: ${previewTitles.join(" / ")}.`)
+        : "";
+      result = {
         ...baseResult,
-        ...llmResult,
-        fallbackUsed: false,
-      }
-      : baseResult;
+        text: baseResult.language === "ko"
+          ? `'${baseResult.searchQuery}' 주제로 바로 찾아볼 수 있는 기사 흐름을 연결할게요.${previewText}${fetched.fallbackUsed ? " 외부 검색이 불안정하면 감정 페이지 내 큐레이션으로 이어집니다." : ""}`
+          : `I'll connect you to articles for "${baseResult.searchQuery}" right away.${previewText}${fetched.fallbackUsed ? " If external search is unstable, I'll fall back to curated emotion lanes." : ""}`,
+        followUp: baseResult.language === "ko"
+          ? "더 좁히고 싶다면 인물명, 지역명, 세부 이슈 중 하나를 한 단어만 더 적어주세요."
+          : "If you want a narrower result, add one more word such as a person, place, or subtopic.",
+        rationale: baseResult.language === "ko"
+          ? "주제 기반 기사 탐색 요청으로 해석해 검색형 응답을 우선 적용했습니다."
+          : "I interpreted this as a topic-based article lookup and prioritized search behavior.",
+        fallbackUsed: fetched.fallbackUsed,
+      };
+    } else {
+      const llmResult = await generateHueBotLlmReply({
+        message,
+        language: baseResult.language,
+        responseStyle,
+        baseline: {
+          intent: baseResult.intent,
+          recommendation: baseResult.recommendation,
+          quickRecommendations: baseResult.quickRecommendations,
+          confidence: baseResult.confidence,
+          followUp: baseResult.followUp,
+          text: baseResult.text,
+          rationale: baseResult.rationale,
+        },
+        recentRecommendations: state.recentRecommendations,
+      });
+      result = llmResult
+        ? {
+          ...baseResult,
+          ...llmResult,
+          fallbackUsed: false,
+        }
+        : baseResult;
+    }
     const biasWarning = detectBiasWarning(message, result.language);
     const sensitiveIntents: ChatIntent[] = ["anger_release", "anxiety_relief", "sadness_lift"];
     if (sensitiveIntents.includes(result.intent)) {

@@ -326,6 +326,8 @@ export const GeminiService = {
         text: string;
         recommendation?: string;
         quickRecommendations?: string[];
+        searchQuery?: string;
+        searchEmotion?: string;
         intent?: string;
         confidence?: number;
         followUp?: string;
@@ -356,6 +358,8 @@ export const GeminiService = {
                     : "Hue Bot is temporarily unstable. Starting with balanced news.",
                 recommendation: language === 'ko' ? "clarity" : "spectrum",
                 quickRecommendations: language === 'ko' ? ["clarity", "serenity", "spectrum"] : ["spectrum", "clarity", "serenity"],
+                searchQuery: undefined,
+                searchEmotion: undefined,
                 intent: "balance_general",
                 confidence: 0.3,
                 followUp: language === 'ko'

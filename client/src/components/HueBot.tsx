@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Sparkles, Heart, ArrowRight } from 'lucide-react';
+import { X, Send, Sparkles, Heart, ArrowRight, Search } from 'lucide-react';
 import { GeminiService } from '@/services/gemini';
 import { getSupabase } from '@/services/supabaseClient';
 import { useLocation } from 'wouter';
@@ -12,6 +12,8 @@ interface ChatMessage {
   text: string;
   recommendation?: string;
   quickRecommendations?: string[];
+  searchQuery?: string;
+  searchEmotion?: string;
   warning?: string;
   timestamp: Date;
 }
@@ -301,6 +303,8 @@ export function HueBot() {
         type: 'bot',
         text: mergedText,
         recommendation: responseCtx.recommendation,
+        searchQuery: responseCtx.searchQuery,
+        searchEmotion: responseCtx.searchEmotion,
         quickRecommendations: Array.isArray(responseCtx.quickRecommendations)
           ? responseCtx.quickRecommendations
           : (responseCtx.recommendation ? [responseCtx.recommendation] : undefined),
@@ -424,6 +428,35 @@ export function HueBot() {
                       <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                       {msg.warning && (
                         <p className="mt-2 text-xs text-amber-600">{msg.warning}</p>
+                      )}
+
+                      {msg.searchQuery && (
+                        <motion.button
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="mt-3 w-full flex items-center justify-between p-2 rounded-xl bg-sky-50 hover:bg-sky-100 transition-colors group"
+                          onClick={() => {
+                            const targetEmotion = (msg.searchEmotion || msg.recommendation || 'spectrum').toLowerCase();
+                            const nextPath = `/emotion/${targetEmotion}?search=${encodeURIComponent(msg.searchQuery || '')}`;
+                            window.dispatchEvent(new CustomEvent('huebrief:navigate-emotion', {
+                              detail: {
+                                emotion: targetEmotion,
+                                searchQuery: msg.searchQuery,
+                              },
+                            }));
+                            setIsOpen(false);
+                            setLocation(nextPath);
+                          }}
+                        >
+                          <span className="text-xs font-medium text-sky-700">
+                            {uiLanguage === 'ko'
+                              ? `'${msg.searchQuery}' 기사 보기`
+                              : `Open articles for "${msg.searchQuery}"`}
+                          </span>
+                          <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                            <Search className="w-3 h-3 text-sky-600" />
+                          </div>
+                        </motion.button>
                       )}
 
                       {Array.isArray(msg.quickRecommendations) && msg.quickRecommendations.length > 0 ? (
@@ -558,7 +591,7 @@ export function HueBot() {
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={uiLanguage === 'ko' ? '지금 기분을 알려주세요.' : 'Tell me how you feel right now.'}
+                  placeholder={uiLanguage === 'ko' ? '감정이나 찾고 싶은 기사 주제를 입력해 주세요.' : 'Share a feeling or a topic you want to read about.'}
                   className="flex-1 px-4 py-2.5 rounded-xl text-sm text-gray-800 placeholder-gray-400 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-200"
                   aria-label="채팅 메시지 입력"
                   data-testid="input-chat-message"

@@ -1,6 +1,6 @@
 ﻿import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useParams, Link, useLocation } from 'wouter';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, Search, Video } from 'lucide-react';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
@@ -331,6 +331,8 @@ export default function EmotionPage() {
   useEffect(() => {
     if (!type || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
+    const searchFromQuery = params.get('search');
+    setSearchTerm(searchFromQuery ? searchFromQuery.trim() : '');
     if (params.get('nudge') === '1') {
       triggeredPeripheralNudgeRef.current = true;
       setSuppressPeripheralNudge(false);
@@ -442,12 +444,20 @@ export default function EmotionPage() {
 
   useEffect(() => {
     const onNavigateEmotion = (event: Event) => {
-      const custom = event as CustomEvent<{ emotion?: string }>;
+      const custom = event as CustomEvent<{ emotion?: string; searchQuery?: string }>;
       const nextEmotion = String(custom?.detail?.emotion || '').trim().toLowerCase();
+      const nextSearchQuery = String(custom?.detail?.searchQuery || '').trim();
       setSelectedArticle(null);
       setShowPeripheralNudge(false);
       if (nextEmotion && nextEmotion !== type) {
-        setLocation(`/emotion/${nextEmotion}`);
+        const nextPath = nextSearchQuery
+          ? `/emotion/${nextEmotion}?search=${encodeURIComponent(nextSearchQuery)}`
+          : `/emotion/${nextEmotion}`;
+        setLocation(nextPath);
+        return;
+      }
+      if (nextSearchQuery) {
+        setSearchTerm(nextSearchQuery);
       }
     };
 
@@ -661,6 +671,7 @@ export default function EmotionPage() {
     >
       <Header />
 
+      <LayoutGroup id={`emotion-news-${type || 'default'}`}>
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-32 md:pt-28 pb-10 sm:pb-12">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -882,7 +893,7 @@ export default function EmotionPage() {
                 const cardEmotionColor = getEmotionColor(item.emotion);
                 const cardPalette = getCardDepthPalette(cardEmotionColor, depth, item.emotion);
                 const cardBgColor = cardPalette.background;
-                const textToken = getNewsTextTokenByDepth(depth);
+                const textToken = getNewsTextTokenByDepth(depth, item.emotion);
                 const isLightBg = !textToken.usesLightText;
                 const textColor = textToken.usesLightText ? '#ffffff' : '#232221';
                 const titleTextColor = textToken.title;
@@ -919,10 +930,17 @@ export default function EmotionPage() {
                 return (
                   <motion.article
                     key={item.id}
+                    layout
                     layoutId={`news-card-${item.id}`}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: mounted ? 1 : 0, y: mounted ? 0 : 20 }}
-                    transition={{ duration: 0.4, delay: index * 0.1 }}
+                    transition={{
+                      layout: shouldReduceMotion
+                        ? { duration: 0.18 }
+                        : { type: 'spring', stiffness: 240, damping: 30, mass: 0.92 },
+                      opacity: { duration: 0.24, delay: index * 0.06 },
+                      y: { duration: 0.28, delay: index * 0.06 },
+                    }}
                     whileHover={shouldReduceMotion ? undefined : { y: -3, scale: 1.005 }}
                     whileTap={shouldReduceMotion ? undefined : { scale: 0.99 }}
                     onClick={() => openArticleDetail(item, cardBgColor)}
@@ -1017,7 +1035,7 @@ export default function EmotionPage() {
                       </div>
 
                       <h3
-                        className="absolute left-5 right-5 top-[104px] z-10 h-[64px] font-serif text-2xl font-bold leading-[1.35] line-clamp-2"
+                        className="absolute left-5 right-5 top-[104px] z-10 h-[64px] font-serif text-[20px] font-bold leading-[1.35] line-clamp-2"
                         style={{ color: titleTextColor }}
                         data-testid={`text-title-${item.id}`}
                       >
@@ -1103,33 +1121,34 @@ export default function EmotionPage() {
         </motion.div>
       </main>
 
-      <Suspense fallback={null}>
-        <NewsDetailModal
-          article={selectedArticle}
-          emotionType={selectedArticle?.emotion || type || 'serenity'}
-          cardBackground={selectedCardBg}
-          layoutId={selectedArticle ? `news-card-${selectedArticle.id}` : undefined}
-          relatedArticles={recommendationPool}
-          onSelectArticle={(nextArticle) => {
-            const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
-            const cardEmotionColor = getEmotionColor(nextArticle.emotion);
-            const cardPalette = getCardDepthPalette(cardEmotionColor, depth, nextArticle.emotion);
-            setSelectedCardBg(cardPalette.background);
+        <Suspense fallback={null}>
+          <NewsDetailModal
+            article={selectedArticle}
+            emotionType={selectedArticle?.emotion || type || 'serenity'}
+            cardBackground={selectedCardBg}
+            layoutId={selectedArticle ? `news-card-${selectedArticle.id}` : undefined}
+            relatedArticles={recommendationPool}
+            onSelectArticle={(nextArticle) => {
+              const depth = Math.max(0, Math.min(100, nextArticle.intensity ?? 50));
+              const cardEmotionColor = getEmotionColor(nextArticle.emotion);
+              const cardPalette = getCardDepthPalette(cardEmotionColor, depth, nextArticle.emotion);
+              setSelectedCardBg(cardPalette.background);
 
-            if (nextArticle.emotion !== type) {
-              crossCategorySelectionRef.current = nextArticle;
-              setLocation(`/emotion/${nextArticle.emotion}`);
-            }
+              if (nextArticle.emotion !== type) {
+                crossCategorySelectionRef.current = nextArticle;
+                setLocation(`/emotion/${nextArticle.emotion}`);
+              }
 
-            setSelectedArticle(nextArticle);
-          }}
-          onClose={() => {
-            crossCategorySelectionRef.current = null;
-            setSelectedArticle(null);
-          }}
-          onConsumeEvidence={handleArticleConsumeEvidence}
-        />
-      </Suspense>
+              setSelectedArticle(nextArticle);
+            }}
+            onClose={() => {
+              crossCategorySelectionRef.current = null;
+              setSelectedArticle(null);
+            }}
+            onConsumeEvidence={handleArticleConsumeEvidence}
+          />
+        </Suspense>
+      </LayoutGroup>
       {mounted && typeof document !== 'undefined' && type && showPeripheralNudge && !suppressPeripheralNudge ? (
         createPortal(
         <>
