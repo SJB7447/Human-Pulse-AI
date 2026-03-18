@@ -2,7 +2,7 @@
 import { useParams, Link, useLocation } from 'wouter';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'framer-motion';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, Search, Video } from 'lucide-react';
+import { Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, Search, Video } from 'lucide-react';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -684,15 +684,7 @@ export default function EmotionPage() {
           transition={{ duration: 0.6 }}
           className="mb-8 sm:mb-12"
         >
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="sm" data-testid="button-back">
-                <ArrowLeft className="w-4 h-4" />
-                뒤로
-              </Button>
-            </Link>
-          </div>
-          <section className="mt-5 rounded-[36px] bg-white/74 px-6 py-8 shadow-[0_24px_60px_rgba(35,34,33,0.08)] ring-1 ring-white/70 backdrop-blur-[6px] sm:px-8 md:px-10 md:py-10">
+          <section className="rounded-[36px] bg-white/74 px-6 py-8 shadow-[0_24px_60px_rgba(35,34,33,0.08)] ring-1 ring-white/70 backdrop-blur-[6px] sm:px-8 md:px-10 md:py-10">
             <div className="mb-10 flex flex-col items-center">
               <span className="mb-5 inline-flex items-center rounded-full bg-white/92 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.34em] text-slate-500 shadow-[0_10px_24px_rgba(35,34,33,0.06)]">
                 Emotional News Flow

@@ -1734,11 +1734,11 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                 <div className="w-full">
                   {article.image && (
                     <div className="mb-8">
-                      <div className="w-full rounded-2xl overflow-hidden bg-white/55 border border-black/10 aspect-video">
+                      <div className="w-full rounded-2xl overflow-hidden bg-[#f4f1eb] border border-black/10 aspect-[16/10] max-h-[520px]">
                         <img
                           src={article.image}
                           alt={article.title}
-                          className="w-full h-full object-contain bg-white"
+                          className="w-full h-full object-cover"
                         />
                       </div>
                     </div>
@@ -1855,9 +1855,13 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                               className="rounded-xl overflow-hidden border border-white/20 bg-white/10"
                             >
                               {slot.type === 'video' ? (
-                                <video src={slot.source} controls className="w-full max-h-80 object-cover" />
+                                <div className="w-full aspect-[16/10] bg-[#f4f1eb]">
+                                  <video src={slot.source} controls className="w-full h-full object-cover" />
+                                </div>
                               ) : (
-                                <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full max-h-80 object-cover" />
+                                <div className="w-full aspect-[16/10] bg-[#f4f1eb]">
+                                  <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full h-full object-cover" />
+                                </div>
                               )}
                               {slot.caption ? <p className="px-3 py-2 text-xs opacity-80">{slot.caption}</p> : null}
                               {slot.type === 'video' ? <p className="px-3 pb-2 text-[11px] opacity-75">이 영상은 ai로 생성된 영상입니다.</p> : null}
@@ -1885,9 +1889,13 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                               className="rounded-xl overflow-hidden border border-white/20 bg-white/10"
                             >
                               {slot.type === 'video' ? (
-                                <video src={slot.source} controls className="w-full max-h-80 object-cover" />
+                                <div className="w-full aspect-[16/10] bg-[#f4f1eb]">
+                                  <video src={slot.source} controls className="w-full h-full object-cover" />
+                                </div>
                               ) : (
-                                <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full max-h-80 object-cover" />
+                                <div className="w-full aspect-[16/10] bg-[#f4f1eb]">
+                                  <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full h-full object-cover" />
+                                </div>
                               )}
                               {slot.caption ? <p className="px-3 py-2 text-xs opacity-80">{slot.caption}</p> : null}
                               {slot.type === 'video' ? <p className="px-3 pb-2 text-[11px] opacity-75">이 영상은 ai로 생성된 영상입니다.</p> : null}
@@ -1902,9 +1910,13 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                               className="rounded-xl overflow-hidden border border-white/20 bg-white/10"
                             >
                               {slot.type === 'video' ? (
-                                <video src={slot.source} controls className="w-full max-h-80 object-cover" />
+                                <div className="w-full aspect-[16/10] bg-[#f4f1eb]">
+                                  <video src={slot.source} controls className="w-full h-full object-cover" />
+                                </div>
                               ) : (
-                                <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full max-h-80 object-cover" />
+                                <div className="w-full aspect-[16/10] bg-[#f4f1eb]">
+                                  <img src={slot.source} alt={slot.caption || `본문 배치 이미지 ${idx + 1}`} className="w-full h-full object-cover" />
+                                </div>
                               )}
                               {slot.caption ? <p className="px-3 py-2 text-xs opacity-80">{slot.caption}</p> : null}
                               {slot.type === 'video' ? <p className="px-3 pb-2 text-[11px] opacity-75">이 영상은 ai로 생성된 영상입니다.</p> : null}
