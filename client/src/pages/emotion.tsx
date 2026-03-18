@@ -508,7 +508,6 @@ export default function EmotionPage() {
       gravity: { low: '#e5e5e5', mid: '#d1d1d1', base: '#bababa', deep: '#999898' },
       spectrum: { low: '#a0e8dc', mid: '#00abaf', base: '#a773f9', deep: '#7c4dff' },
     };
-
     const safeEmotion = (emotionType && paletteByEmotion[emotionType]) ? emotionType : 'gravity';
     const tone = paletteByEmotion[safeEmotion];
     const normalizedDepth = Math.max(0, Math.min(100, depth));
@@ -599,6 +598,10 @@ export default function EmotionPage() {
       rows = rows.filter((item) => extractCategoryLabels(item.category).includes(categoryFilter));
     }
 
+    if (type === 'spectrum' && sortKey === 'latest') {
+      return rows;
+    }
+
     rows.sort((a, b) => {
       const aTime = new Date(a.created_at || 0).getTime();
       const bTime = new Date(b.created_at || 0).getTime();
@@ -623,7 +626,7 @@ export default function EmotionPage() {
     });
 
     return rows;
-  }, [news, searchTerm, sourceFilter, categoryFilter, sortKey]);
+  }, [news, searchTerm, sourceFilter, categoryFilter, sortKey, type]);
 
   const totalPages = Math.max(1, Math.ceil(filteredNews.length / ARTICLES_PER_PAGE));
   const visibleNews = useMemo(() => {
@@ -693,82 +696,95 @@ export default function EmotionPage() {
               </Button>
             </Link>
           </div>
-          <div className="mt-5 mb-12 flex flex-col items-center">
-            <div className="flex w-full max-w-4xl flex-wrap items-stretch justify-center gap-2.5 sm:gap-3">
-              {emotionQuickLinks.map((emotion) => {
-                const isActive = emotion.type === type;
-                const EmotionIcon = EMOTION_ICONS[emotion.type];
-
-                return (
-                  <button
-                    key={emotion.type}
-                    type="button"
-                    onClick={() => handleEmotionCategorySelect(emotion.type)}
-                    className="group min-w-[112px] rounded-2xl px-3.5 py-3.5 text-left transition-all duration-200 sm:min-w-[132px]"
-                    style={{
-                      background: isActive ? emotion.activeBackground : emotion.baseBackground,
-                      color: emotion.labelColor,
-                      boxShadow: isActive
-                        ? `0 10px 28px ${hexToRgba(emotion.chipColor, 0.18)}, 0 0 18px ${hexToRgba(emotion.chipColor, 0.12)}`
-                        : '0 8px 20px rgba(35,34,33,0.08)',
-                    }}
-                    data-testid={`button-emotion-quick-${emotion.type}`}
-                  >
-                    <span className="mb-2 inline-flex items-center gap-2">
-                      <span
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full"
-                        style={{ backgroundColor: hexToRgba(emotion.chipColor, isActive ? 0.2 : 0.12) }}
-                      >
-                        <EmotionIcon className="h-3.5 w-3.5" style={{ color: emotion.chipColor }} />
-                      </span>
-                      <span className="text-[13px] font-semibold tracking-[-0.01em] sm:text-[14px]">
-                        {emotion.copy.label}
-                      </span>
-                    </span>
-                    <p className="text-[14px] font-semibold leading-tight opacity-95 sm:text-[16px]" style={{ color: emotion.labelColor }}>
-                      {emotion.tone}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <h1 className="font-serif text-3xl sm:text-4xl md:text-5xl font-bold text-human-main mb-3" data-testid="text-emotion-title">
-            {emotionConfig.label}
-          </h1>
-          <p className="text-lg sm:text-xl text-human-main/80 font-medium mb-3">
-            {emotionConfig.labelKo}
-          </p>
-          <p className="text-human-sub text-base sm:text-lg mb-5" data-testid="text-story-count">
-            {emotionConfig.subLabel}
-          </p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {emotionConfig.recommendedNews.map((news, idx) => (
-              <span
-                key={idx}
-                className="px-2.5 sm:px-3 py-1 rounded-full text-xs sm:text-sm leading-tight"
-                style={{
-                  backgroundColor: `${emotionConfig.color}24`,
-                  color: emotionConfig.color,
-                }}
-              >
-                {news}
+          <section className="mt-5 rounded-[36px] bg-white/74 px-6 py-8 shadow-[0_24px_60px_rgba(35,34,33,0.08)] ring-1 ring-white/70 backdrop-blur-[6px] sm:px-8 md:px-10 md:py-10">
+            <div className="mb-10 flex flex-col items-center">
+              <span className="mb-5 inline-flex items-center rounded-full bg-white/92 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.34em] text-slate-500 shadow-[0_10px_24px_rgba(35,34,33,0.06)]">
+                Emotional News Flow
               </span>
-            ))}
-          </div>
-          <div className="mb-6 flex justify-center">
-            <div className="relative w-full max-w-2xl">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="기사 제목, 요약, 출처를 검색해 보세요"
-                className="w-full h-12 rounded-2xl bg-white/90 pl-10 pr-4 text-sm text-gray-800 shadow-[0_10px_24px_rgba(35,34,33,0.08)] ring-1 ring-black/5 focus:outline-none focus:ring-2 focus:ring-black/15"
-                data-testid="input-news-search-top"
-              />
+              <div className="flex w-full max-w-5xl flex-wrap items-stretch justify-center gap-3">
+                {emotionQuickLinks.map((emotion) => {
+                  const isActive = emotion.type === type;
+                  const EmotionIcon = EMOTION_ICONS[emotion.type];
+
+                  return (
+                    <button
+                      key={emotion.type}
+                      type="button"
+                      onClick={() => handleEmotionCategorySelect(emotion.type)}
+                      className="group min-w-[126px] rounded-[26px] px-4 py-4 text-left transition-all duration-200 sm:min-w-[138px]"
+                      style={{
+                        background: isActive
+                          ? `linear-gradient(180deg, ${hexToRgba(emotion.chipColor, 0.14)} 0%, ${hexToRgba(emotion.chipColor, 0.22)} 100%)`
+                          : 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,248,248,0.92) 100%)',
+                        color: emotion.labelColor,
+                        boxShadow: isActive
+                          ? `0 14px 30px ${hexToRgba(emotion.chipColor, 0.16)}`
+                          : '0 10px 24px rgba(35,34,33,0.06)',
+                        border: isActive
+                          ? `1px solid ${hexToRgba(emotion.chipColor, 0.24)}`
+                          : '1px solid rgba(255,255,255,0.92)',
+                      }}
+                      data-testid={`button-emotion-quick-${emotion.type}`}
+                    >
+                      <span className="mb-2 inline-flex items-center gap-2">
+                        <span
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-full"
+                          style={{ backgroundColor: hexToRgba(emotion.chipColor, isActive ? 0.18 : 0.12) }}
+                        >
+                          <EmotionIcon className="h-3.5 w-3.5" style={{ color: emotion.chipColor }} />
+                        </span>
+                        <span className="text-[13px] font-semibold tracking-[-0.01em] sm:text-[14px]">
+                          {emotion.copy.label}
+                        </span>
+                      </span>
+                      <p className="text-[14px] font-semibold leading-tight opacity-95 sm:text-[15px]" style={{ color: emotion.labelColor }}>
+                        {emotion.tone}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          <div className="mb-6 space-y-4 rounded-3xl bg-white/64 p-4 sm:p-5 shadow-[0_2px_12px_rgba(35,34,33,0.06)]">
+
+            <div className="mx-auto max-w-4xl text-center">
+              <h1 className="mb-3 font-serif text-2xl font-bold tracking-[-0.03em] text-human-main sm:text-3xl md:text-4xl" data-testid="text-emotion-title">
+                {emotionConfig.label}
+              </h1>
+              <p className="mb-3 text-base font-semibold text-human-main/82 sm:text-lg">
+                {emotionConfig.labelKo}
+              </p>
+              <p className="mx-auto mb-6 max-w-2xl text-xs text-human-sub sm:text-sm" data-testid="text-story-count">
+                {emotionConfig.subLabel}
+              </p>
+              <div className="mb-8 flex flex-wrap justify-center gap-2">
+                {emotionConfig.recommendedNews.map((news, idx) => (
+                  <span
+                    key={idx}
+                    className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold shadow-[0_8px_20px_rgba(35,34,33,0.05)] sm:text-sm"
+                    style={{
+                      color: emotionConfig.color,
+                    }}
+                  >
+                    {news}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-6 flex justify-center">
+              <div className="relative w-full max-w-3xl">
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="기사 제목, 요약, 출처를 검색해 보세요"
+                  className="h-14 w-full rounded-[22px] bg-white/92 pl-11 pr-5 text-sm text-gray-800 shadow-[0_14px_30px_rgba(35,34,33,0.06)] ring-1 ring-black/4 focus:outline-none focus:ring-2 focus:ring-black/10"
+                  data-testid="input-news-search-top"
+                />
+              </div>
+            </div>
+
+            <div className="mx-auto mb-5 max-w-5xl space-y-4 rounded-[30px] bg-white/86 p-5 shadow-[0_18px_40px_rgba(35,34,33,0.06)] ring-1 ring-white/80">
             <div className="flex flex-col gap-3">
               <div className="flex max-h-[108px] flex-wrap items-start gap-2 overflow-hidden py-1">
                 <button
@@ -776,9 +792,9 @@ export default function EmotionPage() {
                   onClick={() => setCategoryFilter('all')}
                   className="inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition"
                   style={{
-                    backgroundColor: categoryFilter === 'all' ? hexToRgba(emotionConfig.color, 0.14) : 'rgba(255,255,255,0.88)',
+                    backgroundColor: categoryFilter === 'all' ? hexToRgba(emotionConfig.color, 0.16) : 'rgba(255,255,255,0.92)',
                     color: categoryFilter === 'all' ? emotionConfig.color : '#4b5563',
-                    boxShadow: '0 6px 18px rgba(35,34,33,0.08)',
+                    boxShadow: '0 8px 20px rgba(35,34,33,0.06)',
                   }}
                   data-testid="category-filter-all"
                 >
@@ -791,9 +807,9 @@ export default function EmotionPage() {
                     onClick={() => setCategoryFilter(category)}
                     className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition"
                     style={{
-                      backgroundColor: categoryFilter === category ? hexToRgba(emotionConfig.color, 0.14) : 'rgba(255,255,255,0.88)',
+                      backgroundColor: categoryFilter === category ? hexToRgba(emotionConfig.color, 0.16) : 'rgba(255,255,255,0.92)',
                       color: categoryFilter === category ? emotionConfig.color : '#4b5563',
-                      boxShadow: '0 6px 18px rgba(35,34,33,0.08)',
+                      boxShadow: '0 8px 20px rgba(35,34,33,0.06)',
                     }}
                     data-testid={`category-filter-${category}`}
                   >
@@ -815,10 +831,10 @@ export default function EmotionPage() {
               <select
                 value={sourceFilter}
                 onChange={(e) => setSourceFilter(e.target.value)}
-                className="h-11 rounded-xl bg-white/88 px-3 text-sm text-gray-800 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.3)] focus:outline-none focus:ring-2 focus:ring-black/15"
+                className="h-14 rounded-[20px] bg-white/94 px-4 text-sm text-gray-800 shadow-[0_10px_22px_rgba(35,34,33,0.05)] focus:outline-none focus:ring-2 focus:ring-black/10"
                 data-testid="select-news-source"
               >
-                <option value="all">All sources</option>
+                <option value="all">모든 출처</option>
                 {sourceOptions.map((source) => (
                   <option key={source} value={source}>
                     {source}
@@ -829,20 +845,21 @@ export default function EmotionPage() {
               <select
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-                className="h-11 rounded-xl bg-white/88 px-3 text-sm text-gray-800 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.3)] focus:outline-none focus:ring-2 focus:ring-black/15"
+                className="h-14 rounded-[20px] bg-white/94 px-4 text-sm text-gray-800 shadow-[0_10px_22px_rgba(35,34,33,0.05)] focus:outline-none focus:ring-2 focus:ring-black/10"
                 data-testid="select-news-sort"
               >
-                <option value="latest">Sort: Latest</option>
-                <option value="oldest">Sort: Oldest</option>
-                <option value="intensity_desc">Sort: Intensity high</option>
-                <option value="intensity_asc">Sort: Intensity low</option>
-                <option value="title_asc">Sort: Title A-Z</option>
+                <option value="latest">최신순</option>
+                <option value="oldest">오래된순</option>
+                <option value="intensity_desc">강도 높은순</option>
+                <option value="intensity_asc">강도 낮은순</option>
+                <option value="title_asc">제목순</option>
               </select>
             </div>
           </div>
-          <p className="text-human-sub text-sm text-center">
-            {filteredNews.length}/{news.length} articles
+          <p className="pt-2 text-center text-sm font-medium text-human-sub">
+            {filteredNews.length}/{news.length}개의 기사
           </p>
+          </section>
         </motion.div>
 
         {isLoading ? (
