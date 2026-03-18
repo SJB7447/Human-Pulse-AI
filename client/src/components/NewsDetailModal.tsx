@@ -125,12 +125,12 @@ function isDarkHexColor(hex: string): boolean {
 
 function getDepthPalette(emotion: EmotionType, depth: number): { background: string; border: string } {
   const paletteByEmotion: Record<EmotionType, { low: string; mid: string; base: string; deep: string }> = {
-    immersion: { low: '#ffc7ce', mid: '#ff97a9', base: '#f4606b', deep: '#d94a54' },
-    vibrance: { low: '#ffedc5', mid: '#ffe197', base: '#ffd150', deep: '#e6b83f' },
-    serenity: { low: '#caf2a7', mid: '#adef73', base: '#88d84a', deep: '#66b53a' },
-    clarity: { low: '#cad8ff', mid: '#8dabff', base: '#3f65ef', deep: '#2a4bc0' },
-    gravity: { low: '#e5e5e5', mid: '#d1d1d1', base: '#adadad', deep: '#999898' },
-    spectrum: { low: '#a0e8dc', mid: '#00abaf', base: '#a773f9', deep: '#7c4dff' },
+    immersion: { low: '#F7DADE', mid: '#F4A4A9', base: '#F4606B', deep: '#D94A54' },
+    vibrance: { low: '#FFE7C0', mid: '#F9CE80', base: '#FFB052', deep: '#D98B34' },
+    serenity: { low: '#C1EAD1', mid: '#8ECBA0', base: '#4FA86A', deep: '#3D8553' },
+    clarity: { low: '#CBD8F4', mid: '#88A3EF', base: '#4275E5', deep: '#2F56B8' },
+    gravity: { low: '#E0E0E0', mid: '#B5B5B5', base: '#898989', deep: '#6E6E6E' },
+    spectrum: { low: '#A0E8DC', mid: '#00ABAF', base: '#A773F9', deep: '#7C4DFF' },
   };
   const tone = paletteByEmotion[emotion] || paletteByEmotion.gravity;
   const normalizedDepth = Math.max(0, Math.min(100, depth));
@@ -823,7 +823,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === emotionType);
   const articleEmotionConfig = EMOTION_CONFIG.find((entry) => entry.type === article?.emotion) || emotionConfig;
-  const color = articleEmotionConfig?.color || '#999898';
+  const color = articleEmotionConfig?.color || '#898989';
 
   useEffect(() => {
     setInteractiveArticle(null);
@@ -1316,7 +1316,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
   const getEmotionMeta = (emotion: EmotionType) => {
     const matched = EMOTION_CONFIG.find((entry) => entry.type === emotion);
     return {
-      color: matched?.color || '#999898',
+      color: matched?.color || '#898989',
       label: matched?.labelKo || emotion,
     };
   };

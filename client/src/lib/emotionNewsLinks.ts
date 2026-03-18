@@ -16,7 +16,7 @@ export const EMOTION_NEWS_LINKS: EmotionNewsLink[] = [
     labelEn: 'Spectrum',
     categoryKo: '전체 보기',
     categoryEn: 'All',
-    color: '#00abaf',
+    color: '#00ABAF',
   },
   {
     type: 'immersion',
@@ -24,7 +24,7 @@ export const EMOTION_NEWS_LINKS: EmotionNewsLink[] = [
     labelEn: 'Immersion',
     categoryKo: '빨강',
     categoryEn: 'Red',
-    color: '#f4606b',
+    color: '#F4606B',
   },
   {
     type: 'clarity',
@@ -32,7 +32,7 @@ export const EMOTION_NEWS_LINKS: EmotionNewsLink[] = [
     labelEn: 'Clarity',
     categoryKo: '파랑',
     categoryEn: 'Blue',
-    color: '#3f65ef',
+    color: '#4275E5',
   },
   {
     type: 'serenity',
@@ -40,7 +40,7 @@ export const EMOTION_NEWS_LINKS: EmotionNewsLink[] = [
     labelEn: 'Serenity',
     categoryKo: '초록',
     categoryEn: 'Green',
-    color: '#88d84a',
+    color: '#4FA86A',
   },
   {
     type: 'vibrance',
@@ -48,7 +48,7 @@ export const EMOTION_NEWS_LINKS: EmotionNewsLink[] = [
     labelEn: 'Vibrance',
     categoryKo: '노랑',
     categoryEn: 'Yellow',
-    color: '#ffd150',
+    color: '#FFB052',
   },
   {
     type: 'gravity',
@@ -56,6 +56,6 @@ export const EMOTION_NEWS_LINKS: EmotionNewsLink[] = [
     labelEn: 'Gravity',
     categoryKo: '회색',
     categoryEn: 'Gray',
-    color: '#bababa',
+    color: '#898989',
   },
 ];

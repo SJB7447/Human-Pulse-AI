@@ -369,13 +369,13 @@ function mergeContentWithExistingMeta(originalContent: string | null | undefined
 
 function getEmotionColor(emotion: string): string {
   const colors: Record<string, string> = {
-    vibrance: '#ffd150',
-    immersion: '#f4606b',
-    clarity: '#3f65ef',
-    gravity: '#adadad',
-    serenity: '#88d84a',
-    spectrum: '#00abaf',
-    default: '#999898',
+    vibrance: '#FFB052',
+    immersion: '#F4606B',
+    clarity: '#4275E5',
+    gravity: '#898989',
+    serenity: '#4FA86A',
+    spectrum: '#00ABAF',
+    default: '#898989',
   };
   return colors[(emotion || '').toLowerCase()] || colors.default;
 }

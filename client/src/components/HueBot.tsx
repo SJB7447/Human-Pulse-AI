@@ -95,7 +95,7 @@ export function HueBot() {
     return {
       key: normalized,
       label: config?.labelKo || normalized.toUpperCase(),
-      color: config?.color || '#00abaf',
+      color: config?.color || '#00ABAF',
     };
   };
 
@@ -390,7 +390,7 @@ export function HueBot() {
             <div
               className="p-4 flex items-center justify-between"
               style={{
-                background: 'linear-gradient(135deg, #ffd150 0%, #f4606b 50%, #3f65ef 100%)',
+                background: 'linear-gradient(135deg, #FFB052 0%, #F4606B 50%, #4275E5 100%)',
               }}
             >
               <div className="flex items-center gap-2">
@@ -631,9 +631,9 @@ export function HueBot() {
         className="w-14 h-14 rounded-full flex items-center justify-center shadow-xl relative hover-elevate active-elevate-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-400 focus-visible:ring-offset-2"
         style={{
           background: isOpen
-            ? 'linear-gradient(135deg, #f4606b 0%, #3f65ef 100%)'
-            : 'linear-gradient(135deg, #ffd150 0%, #f4606b 50%, #3f65ef 100%)',
-          boxShadow: '0 4px 20px rgba(244, 96, 107, 0.4)',
+            ? 'linear-gradient(135deg, #F4606B 0%, #4275E5 100%)'
+            : 'linear-gradient(135deg, #FFB052 0%, #F4606B 50%, #4275E5 100%)',
+          boxShadow: '0 4px 20px rgba(244, 96, 107, 0.32)',
         }}
         data-testid="button-hue-bot"
         aria-label={isOpen ? 'Hue Bot 닫기' : 'Hue Bot 열기'}

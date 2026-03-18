@@ -141,7 +141,7 @@ export function Header({ transparent = false }: HeaderProps) {
       <div className="flex w-full min-w-0 items-center justify-between gap-2 sm:gap-3">
         <div className="flex min-w-0 items-center gap-2 sm:gap-6">
           <Link href="/">
-            <span className="cursor-pointer text-lg font-serif font-bold transition-colors sm:text-xl" style={{ color: '#00abaf' }}>
+            <span className="cursor-pointer text-lg font-serif font-bold transition-colors sm:text-xl" style={{ color: '#00ABAF' }}>
               HueBrief
             </span>
           </Link>

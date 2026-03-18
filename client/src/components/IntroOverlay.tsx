@@ -77,7 +77,7 @@ export function IntroOverlay() {
               transition={{ duration: 0.5, delay: 0.5 }}
               className="flex gap-2"
             >
-              {['#ffd150', '#f4606b', '#3f65ef', '#adadad', '#88d84a'].map((color, i) => (
+              {['#FFB052', '#F4606B', '#4275E5', '#898989', '#4FA86A'].map((color, i) => (
                 <motion.div
                   key={color}
                   initial={{ scale: 0 }}

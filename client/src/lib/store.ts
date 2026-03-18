@@ -33,9 +33,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
       '활력을 주는 흐름',
       '기분 좋게 읽히는 소식'
     ],
-    color: '#ffd150',
-    pastelColor: '#ffedc5',
-    colorVariations: ['#ffedc5', '#ffe197', '#ffd150', '#e6b83f'], // LOW/MID/BASE + deeper accent
+    color: '#FFB052',
+    pastelColor: '#FFE7C0',
+    colorVariations: ['#FFE7C0', '#F9CE80', '#FFB052', '#D98B34'], // LOW/MID/BASE + deeper accent
     position: [0, 5.5, 0],
     positionDesktop: [0, 5.5, 0],
     positionMobile: [-1.05, 3.65, 0],
@@ -54,8 +54,8 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
       '강한 몰입을 만드는 기사'
     ],
     color: '#f4606b',
-    pastelColor: '#ffc7ce',
-    colorVariations: ['#ffc7ce', '#ff97a9', '#f4606b', '#d94a54'], // Light pink to deep coral red
+    pastelColor: '#F7DADE',
+    colorVariations: ['#F7DADE', '#F4A4A9', '#F4606B', '#D94A54'], // LOW/MID/BASE + deeper accent
     position: [5.2, 1.7, 0],
     positionDesktop: [5.2, 1.7, 0],
     positionMobile: [1.1, 2.05, 0],
@@ -73,9 +73,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
       '차분한 해설 중심',
       '판단을 돕는 정보'
     ],
-    color: '#3f65ef',
-    pastelColor: '#cad8ff',
-    colorVariations: ['#cad8ff', '#8dabff', '#3f65ef', '#2a4bc0'], // LOW/MID/BASE + deeper accent
+    color: '#4275E5',
+    pastelColor: '#CBD8F4',
+    colorVariations: ['#CBD8F4', '#88A3EF', '#4275E5', '#2F56B8'], // LOW/MID/BASE + deeper accent
     position: [3.2, -4.5, 0],
     positionDesktop: [3.2, -4.5, 0],
     positionMobile: [1.05, -4.65, 0],
@@ -93,9 +93,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
       '무게감 있는 쟁점',
       '깊은 생각을 남기는 기사'
     ],
-    color: '#bababa',
-    pastelColor: '#e5e5e5',
-    colorVariations: ['#e5e5e5', '#d1d1d1', '#bababa', '#999898'], // LOW/MID/BASE + darker gray
+    color: '#898989',
+    pastelColor: '#E0E0E0',
+    colorVariations: ['#E0E0E0', '#B5B5B5', '#898989', '#6E6E6E'], // LOW/MID/BASE + darker gray
     position: [-3.2, -4.5, 0],
     positionDesktop: [-3.2, -4.5, 0],
     positionMobile: [-1.1, -2.95, 0],
@@ -113,9 +113,9 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
       '회복감을 주는 이야기',
       '안정을 돕는 정보'
     ],
-    color: '#88d84a',
-    pastelColor: '#caf2a7',
-    colorVariations: ['#caf2a7', '#adef73', '#88d84a', '#66b53a'], // LOW/MID/BASE + deeper accent
+    color: '#4FA86A',
+    pastelColor: '#C1EAD1',
+    colorVariations: ['#C1EAD1', '#8ECBA0', '#4FA86A', '#3D8553'], // LOW/MID/BASE + deeper accent
     position: [-5.2, 1.7, 0],
     positionDesktop: [-5.2, 1.7, 0],
     positionMobile: [-1.05, 0.35, 0],
@@ -131,10 +131,10 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
     recommendedNews: [
       '다양한 감정 톤의 뉴스를 함께 보기'
     ],
-    color: '#00abaf',
+    color: '#00ABAF',
     pastelColor: '#a0e8dc',
-    colorVariations: ['#a0e8dc', '#00abaf', '#a773f9', '#7c4dff'], // Teal logo to violet gradient
-    gradientColor: '#a773f9',
+    colorVariations: ['#A0E8DC', '#00ABAF', '#A773F9', '#7C4DFF'], // Teal logo to violet gradient
+    gradientColor: '#A773F9',
     position: [0, 0, 0],
     positionDesktop: [0, 0, 0],
     positionMobile: [1.15, -1.3, 0],

@@ -12,21 +12,21 @@ export const NEWS_TEXT_TOKENS = {
 
 const CARD_TEXT_TONE_BY_EMOTION: Record<EmotionType, { low: 'dark' | 'light'; mid: 'dark' | 'light'; high: 'dark' | 'light' }> = {
   vibrance: { low: 'dark', mid: 'dark', high: 'dark' },
-  immersion: { low: 'dark', mid: 'light', high: 'light' },
-  clarity: { low: 'dark', mid: 'light', high: 'light' },
-  gravity: { low: 'dark', mid: 'dark', high: 'dark' },
+  immersion: { low: 'dark', mid: 'dark', high: 'light' },
+  clarity: { low: 'dark', mid: 'dark', high: 'light' },
+  gravity: { low: 'dark', mid: 'dark', high: 'light' },
   serenity: { low: 'dark', mid: 'dark', high: 'light' },
   spectrum: { low: 'dark', mid: 'light', high: 'light' },
 };
 
 const CARD_TEXT_COLOR = {
   dark: {
-    title: '#1f2937',
-    body: '#4b5563',
+    title: '#3A3A3A',
+    body: 'rgba(58,58,58,0.84)',
   },
   light: {
-    title: '#f8fafc',
-    body: 'rgba(248,250,252,0.92)',
+    title: '#FFFFFF',
+    body: 'rgba(255,255,255,0.92)',
   },
 } as const;
 

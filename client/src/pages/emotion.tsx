@@ -444,17 +444,17 @@ export default function EmotionPage() {
 
   const getEmotionColor = (emotionType?: EmotionType | null) => {
     const config = EMOTION_CONFIG.find((entry) => entry.type === emotionType);
-    return config?.color || emotionConfig?.color || '#999898';
+    return config?.color || emotionConfig?.color || '#898989';
   };
 
   const getCardDepthPalette = (_baseHex: string, depth: number, emotionType?: EmotionType | null) => {
     const paletteByEmotion: Record<EmotionType, { low: string; mid: string; base: string; deep: string }> = {
-      immersion: { low: '#ffc7ce', mid: '#ff97a9', base: '#f4606b', deep: '#d94a54' },
-      vibrance: { low: '#ffedc5', mid: '#ffe197', base: '#ffd150', deep: '#e6b83f' },
-      serenity: { low: '#caf2a7', mid: '#adef73', base: '#88d84a', deep: '#66b53a' },
-      clarity: { low: '#cad8ff', mid: '#8dabff', base: '#3f65ef', deep: '#2a4bc0' },
-      gravity: { low: '#e5e5e5', mid: '#d1d1d1', base: '#bababa', deep: '#999898' },
-      spectrum: { low: '#a0e8dc', mid: '#00abaf', base: '#a773f9', deep: '#7c4dff' },
+      immersion: { low: '#F7DADE', mid: '#F4A4A9', base: '#F4606B', deep: '#D94A54' },
+      vibrance: { low: '#FFE7C0', mid: '#F9CE80', base: '#FFB052', deep: '#D98B34' },
+      serenity: { low: '#C1EAD1', mid: '#8ECBA0', base: '#4FA86A', deep: '#3D8553' },
+      clarity: { low: '#CBD8F4', mid: '#88A3EF', base: '#4275E5', deep: '#2F56B8' },
+      gravity: { low: '#E0E0E0', mid: '#B5B5B5', base: '#898989', deep: '#6E6E6E' },
+      spectrum: { low: '#A0E8DC', mid: '#00ABAF', base: '#A773F9', deep: '#7C4DFF' },
     };
     const safeEmotion = (emotionType && paletteByEmotion[emotionType]) ? emotionType : 'gravity';
     const tone = paletteByEmotion[safeEmotion];
@@ -509,8 +509,8 @@ export default function EmotionPage() {
         ...emotion,
         copy,
         tone,
-        chipColor: isGravity ? '#999898' : emotion.color,
-        labelColor: isGravity ? '#5f5d5c' : emotion.color,
+        chipColor: isGravity ? '#898989' : emotion.color,
+        labelColor: isGravity ? '#3A3A3A' : emotion.color,
         hintColor: isGravity ? '#787674' : undefined,
         baseBackground: isGravity
           ? 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(243,243,243,0.98) 42%, rgba(229,229,229,0.96) 100%)'
@@ -621,6 +621,7 @@ export default function EmotionPage() {
 
   const heroArticle = news[0];
   const subArticles = news.slice(1);
+  const selectedEmotionSurfaceTextColor = type === 'vibrance' ? '#3A3A3A' : '#FFFFFF';
 
   return (
     <div
@@ -713,7 +714,7 @@ export default function EmotionPage() {
                         className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition"
                         style={{
                           backgroundColor: topicFilter === 'all' ? emotionConfig.color : 'rgba(255,255,255,0.92)',
-                          color: topicFilter === 'all' ? '#ffffff' : '#4b5563',
+                          color: topicFilter === 'all' ? selectedEmotionSurfaceTextColor : '#4b5563',
                           boxShadow: '0 8px 20px rgba(35,34,33,0.06)',
                         }}
                         data-testid="topic-filter-all"
@@ -728,7 +729,7 @@ export default function EmotionPage() {
                           className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition"
                           style={{
                             backgroundColor: topicFilter === topic.id ? emotionConfig.color : 'rgba(255,255,255,0.92)',
-                            color: topicFilter === topic.id ? '#ffffff' : '#4b5563',
+                            color: topicFilter === topic.id ? selectedEmotionSurfaceTextColor : '#4b5563',
                             boxShadow: '0 8px 20px rgba(35,34,33,0.06)',
                           }}
                           data-testid={`topic-filter-${topic.id}`}
@@ -1121,7 +1122,7 @@ export default function EmotionPage() {
           >
             {peripheralRecommendations.map((emotion, index) => {
               const config = EMOTION_CONFIG.find((entry) => entry.type === emotion);
-              const color = config?.color || '#00abaf';
+              const color = config?.color || '#00ABAF';
               const side: 'left' | 'right' = emotion === 'spectrum' ? 'right' : 'left';
               const seed = index;
               const driftClass =
@@ -1220,7 +1221,7 @@ export default function EmotionPage() {
               </button>
               <button
                 type="button"
-                className="h-8 px-2.5 rounded-md text-xs bg-[#00abaf] text-white hover:bg-[#01979a]"
+                className="h-8 px-2.5 rounded-md text-xs bg-[#00ABAF] text-white hover:bg-[#01979A]"
                 onClick={() => {
                   setExpandPeripheralNudge(false);
                   setShowPeripheralNudge(false);

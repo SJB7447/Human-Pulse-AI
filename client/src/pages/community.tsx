@@ -49,7 +49,7 @@ const emotionColorMap = EMOTION_CONFIG.reduce<Record<string, string>>((acc, emot
 }, {});
 
 function getEmotionBadgeStyle(emotion: EmotionType) {
-  const color = emotionColorMap[emotion] || '#00abaf';
+  const color = emotionColorMap[emotion] || '#00ABAF';
   return {
     color,
     border: `1px solid ${color}66`,

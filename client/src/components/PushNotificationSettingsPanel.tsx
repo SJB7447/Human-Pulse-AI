@@ -64,8 +64,8 @@ export function PushNotificationSettingsPanel({ userId }: Props) {
         <div
           className="inline-flex h-10 w-10 items-center justify-center rounded-full"
           style={{
-            background: isSubscribed ? "rgba(63,101,239,0.12)" : "rgba(15,23,42,0.06)",
-            color: isSubscribed ? "#3f65ef" : "#475569",
+            background: isSubscribed ? "rgba(66,117,229,0.12)" : "rgba(15,23,42,0.06)",
+            color: isSubscribed ? "#4275E5" : "#475569",
           }}
         >
           {isSubscribed ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
@@ -113,7 +113,7 @@ export function PushNotificationSettingsPanel({ userId }: Props) {
             onClick={handleEnable}
             disabled={loading || !isSupported}
             className="inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ background: "linear-gradient(135deg, #00abaf 0%, #3f65ef 100%)" }}
+            style={{ background: "linear-gradient(135deg, #00ABAF 0%, #4275E5 100%)" }}
           >
             {loading ? "요청 중..." : permission === "granted" ? "알림 바로 켜기" : "브라우저 권한 요청"}
           </button>

@@ -46,7 +46,7 @@ export function PWAInstallDockButton() {
       style={{
         bottom: showScrollTopDock ? "10.5rem" : "6rem",
         background: "rgba(255,255,255,0.94)",
-        color: "#00abaf",
+        color: "#00ABAF",
         border: "1px solid rgba(0,171,175,0.14)",
         boxShadow: "0 10px 24px rgba(0, 171, 175, 0.18)",
       }}
