@@ -11,15 +11,28 @@ export function PWAInstallBanner() {
   if (isInstalled || dismissed || !isInstallable) return null;
 
   const handleInstall = async () => {
+    const confirmed = window.confirm('HueBrief를 이 기기에 설치할까요?');
+    if (!confirmed) return;
+
     if (isIOS) {
-      toast({ title: '앱으로 설치하기', description: "Safari 하단의 공유 버튼(□↑)을 누른 뒤 '홈 화면에 추가'를 선택하세요." });
+      toast({
+        title: '앱으로 설치하기',
+        description: "Safari 하단의 공유 버튼(□↑)을 누른 뒤 '홈 화면에 추가'를 선택해 주세요.",
+      });
       setDismissed(true);
       return;
     }
+
     setLoading(true);
     const accepted = await install();
     setLoading(false);
-    if (accepted) toast({ title: '설치 완료!', description: 'HueBrief가 홈 화면에 추가됐어요.' });
+
+    if (accepted) {
+      toast({
+        title: '설치 완료',
+        description: 'HueBrief가 홈 화면에 추가되었습니다.',
+      });
+    }
   };
 
   return (

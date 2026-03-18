@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -12,6 +12,15 @@ interface UsePWAReturn {
   install: () => Promise<boolean>;
 }
 
+function isStandaloneMode(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  return (
+    window.matchMedia('(display-mode: standalone)').matches ||
+    Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
+  );
+}
+
 export function usePWA(): UsePWAReturn {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
@@ -20,20 +29,29 @@ export function usePWA(): UsePWAReturn {
   const isIOS =
     typeof navigator !== 'undefined' &&
     /iphone|ipad|ipod/i.test(navigator.userAgent) &&
-    !(window.navigator as any).standalone;
+    !isStandaloneMode();
 
   useEffect(() => {
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    if (isStandaloneMode()) {
       setIsInstalled(true);
+      setIsInstallable(false);
+      setDeferredPrompt(null);
       return;
     }
-    if (isIOS) { setIsInstallable(true); return; }
+
+    setIsInstalled(false);
+
+    if (isIOS) {
+      setIsInstallable(true);
+      return;
+    }
 
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
       setIsInstallable(true);
     };
+
     const handleAppInstalled = () => {
       setIsInstalled(true);
       setIsInstallable(false);
@@ -42,6 +60,7 @@ export function usePWA(): UsePWAReturn {
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
     window.addEventListener('appinstalled', handleAppInstalled);
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       window.removeEventListener('appinstalled', handleAppInstalled);
@@ -50,10 +69,16 @@ export function usePWA(): UsePWAReturn {
 
   const install = async (): Promise<boolean> => {
     if (!deferredPrompt) return false;
+
     await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     setDeferredPrompt(null);
-    if (outcome === 'accepted') { setIsInstalled(true); setIsInstallable(false); }
+
+    if (outcome === 'accepted') {
+      setIsInstalled(true);
+      setIsInstallable(false);
+    }
+
     return outcome === 'accepted';
   };
 
@@ -62,10 +87,11 @@ export function usePWA(): UsePWAReturn {
 
 export async function registerServiceWorker(): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
+
   try {
     const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-    console.log('[PWA] Service Worker 등록 완료:', registration.scope);
+    console.log('[PWA] Service Worker registered:', registration.scope);
   } catch (err) {
-    console.error('[PWA] Service Worker 등록 실패:', err);
+    console.error('[PWA] Service Worker registration failed:', err);
   }
 }
