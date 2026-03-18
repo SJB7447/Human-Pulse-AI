@@ -24,15 +24,14 @@ export interface EmotionConfig {
 export const EMOTION_CONFIG: EmotionConfig[] = [
   {
     type: 'vibrance',
-    label: '설레는 파동',
-    labelKo: '기쁨/활력/긍정',
-    subLabel: '기분 좋게 번지는 긍정의 리듬',
-    subLabelKo: '기분 좋게 번지는 긍정의 리듬',
+    label: 'Vibrance',
+    labelKo: '설렘· 기쁨',
+    subLabel: '기쁨과 활력을 주는 뉴스',
+    subLabelKo: '기쁨과 활력을 주는 뉴스',
     recommendedNews: [
-      '미담·선행·긍정 뉴스',
-      '연예·문화·콘텐츠 소식',
-      '축제·행사·라이프스타일',
-      '스포츠 하이라이트(긍정 톤)'
+      '반가운 변화가 보이는 기사',
+      '활력을 주는 흐름',
+      '기분 좋게 읽히는 소식'
     ],
     color: '#ffd150',
     pastelColor: '#ffedc5',
@@ -45,15 +44,14 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
   },
   {
     type: 'immersion',
-    label: '격렬한 몰입',
-    labelKo: '열정/주의/긴장',
-    subLabel: '변화를 만들어내는 강렬한 에너지',
-    subLabelKo: '변화를 만들어내는 강렬한 에너지',
+    label: 'Immersion',
+    labelKo: '긴장· 열정',
+    subLabel: '긴장감과 열정이 느껴지는 뉴스',
+    subLabelKo: '긴장감과 열정이 느껴지는 뉴스',
     recommendedNews: [
-      '정치 이슈',
-      '속보·긴급 이슈',
-      '사회 갈등·공적 논쟁',
-      '노동·시위·정책 충돌'
+      '긴장감 높은 전개',
+      '열기가 느껴지는 이슈',
+      '강한 몰입을 만드는 기사'
     ],
     color: '#f4606b',
     pastelColor: '#ffc7ce',
@@ -66,15 +64,14 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
   },
   {
     type: 'clarity',
-    label: '차분한 명료함',
-    labelKo: '집중/차분/이성',
-    subLabel: '복잡한 현상을 꿰뚫어 보는 이성의 시선',
-    subLabelKo: '복잡한 현상을 꿰뚫어 보는 이성의 시선',
+    label: 'Clarity',
+    labelKo: '냉철· 이성적',
+    subLabel: '이성적이고 차분하게 읽히는 뉴스',
+    subLabelKo: '이성적이고 차분하게 읽히는 뉴스',
     recommendedNews: [
-      '심층 분석·해설',
-      '경제·정책 분석',
-      '데이터 기반 리포트',
-      '산업·기술 동향'
+      '맥락을 분석하며 읽는 기사',
+      '차분한 해설 중심',
+      '판단을 돕는 정보'
     ],
     color: '#3f65ef',
     pastelColor: '#cad8ff',
@@ -87,14 +84,14 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
   },
   {
     type: 'gravity',
-    label: '깊은 무게감',
-    labelKo: '여운/차분/성찰',
-    subLabel: '감정을 차분히 정돈하게 만드는 성찰의 시간',
-    subLabelKo: '감정을 차분히 정돈하게 만드는 성찰의 시간',
+    label: 'Gravity',
+    labelKo: '묵직함· 성찰',
+    subLabel: '무겁고 깊은 성찰을 유도하는 뉴스',
+    subLabelKo: '무겁고 깊은 성찰을 유도하는 뉴스',
     recommendedNews: [
-      '사건사고·재난',
-      '범죄·수사·사회 안전',
-      '심층 리포트·원인 분석'
+      '쉽게 넘길 수 없는 문제',
+      '무게감 있는 쟁점',
+      '깊은 생각을 남기는 기사'
     ],
     color: '#bababa',
     pastelColor: '#e5e5e5',
@@ -107,15 +104,14 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
   },
   {
     type: 'serenity',
-    label: '고요한 쉼표',
-    labelKo: '회복/안정/여유',
-    subLabel: '잠시 숨을 고르는 편안한 휴식',
-    subLabelKo: '잠시 숨을 고르는 편안한 휴식',
+    label: 'Serenity',
+    labelKo: '힐링· 안정',
+    subLabel: '마음이 회복되고 안정되는 뉴스',
+    subLabelKo: '마음이 회복되고 안정되는 뉴스',
     recommendedNews: [
-      '환경·기후·자연',
-      '건강·웰빙·생활 안정',
-      '지역·커뮤니티·휴먼 스토리',
-      '스트레스 완화형 정보'
+      '마음을 가라앉히는 읽기',
+      '회복감을 주는 이야기',
+      '안정을 돕는 정보'
     ],
     color: '#88d84a',
     pastelColor: '#caf2a7',
@@ -128,12 +124,12 @@ export const EMOTION_CONFIG: EmotionConfig[] = [
   },
   {
     type: 'spectrum',
-    label: '열린 스펙트럼',
-    labelKo: '중립/다양성',
-    subLabel: '무엇이든 읽을 수 있는 유연한 마음',
-    subLabelKo: '무엇이든 읽을 수 있는 유연한 마음',
+    label: 'Spectrum',
+    labelKo: '스펙트럼',
+    subLabel: '여러 감정 결의 뉴스를 함께 보는 모아보기',
+    subLabelKo: '여러 감정 결의 뉴스를 함께 보는 모아보기',
     recommendedNews: [
-      '5가지 카테고리의 균형 잡힌 뉴스'
+      '다양한 감정 톤의 뉴스를 함께 보기'
     ],
     color: '#00abaf',
     pastelColor: '#a0e8dc',

@@ -1720,11 +1720,11 @@ export default function AdminPage() {
   const selectedCountOnPage = Array.from(selectedArticleIds).filter((id) => currentPageIdSet.has(id)).length;
   const allSelected = pagedArticles.length > 0 && selectedCountOnPage === pagedArticles.length;
   const emotionKoLabelMap: Record<string, string> = {
-    vibrance: '설레는 파동',
-    immersion: '격렬한 몰입',
-    clarity: '맑은 통찰',
-    gravity: '침잠한 여운',
-    serenity: '편안한 숨결',
+    vibrance: '설렘· 기쁨',
+    immersion: '긴장· 열정',
+    clarity: '냉철· 이성적',
+    gravity: '묵직함· 성찰',
+    serenity: '힐링· 안정',
     spectrum: '스펙트럼',
   };
   const emotionChartRows = useMemo(() => {

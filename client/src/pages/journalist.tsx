@@ -1570,7 +1570,7 @@ export default function JournalistPage() {
         .filter((emotion) => emotion.type !== 'spectrum')
         .map((emotion) => ({
           value: emotion.type,
-          label: `${emotion.labelKo}(${emotion.categoryKo})`,
+          label: `${emotion.categoryKo} · ${emotion.labelKo}`,
         })),
     [],
   );

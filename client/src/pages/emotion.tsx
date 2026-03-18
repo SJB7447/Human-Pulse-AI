@@ -28,21 +28,21 @@ const EMOTION_ICONS: Record<EmotionType, typeof Heart> = {
 };
 
 const EMOTION_FILTER_COPY: Record<EmotionType, { label: string; hint: string }> = {
-  vibrance: { label: '설렘', hint: '연예·문화·스타일' },
-  immersion: { label: '몰입', hint: '정치·속보' },
-  clarity: { label: '통찰', hint: '시사·경제·분석' },
-  gravity: { label: '무게', hint: '사회·재난' },
-  serenity: { label: '안정', hint: '환경·회복·웰빙' },
-  spectrum: { label: '스펙트럼', hint: '모아보기' },
+  vibrance: { label: '노랑 · 설렘· 기쁨', hint: '기쁨과 활력을 주는 뉴스' },
+  immersion: { label: '빨강 · 긴장· 열정', hint: '긴장감과 열정이 느껴지는 뉴스' },
+  clarity: { label: '파랑 · 냉철· 이성적', hint: '이성적이고 차분하게 읽히는 뉴스' },
+  gravity: { label: '회색 · 묵직함· 성찰', hint: '무겁고 깊은 성찰을 유도하는 뉴스' },
+  serenity: { label: '초록 · 힐링· 안정', hint: '마음이 회복되고 안정되는 뉴스' },
+  spectrum: { label: '스펙트럼', hint: '여러 감정 결의 뉴스를 함께 보기' },
 };
 
 const EMOTION_NEWS_TONE_COPY: Record<EmotionType, string> = {
-  vibrance: '연예·문화·스타일',
-  immersion: '정치·속보',
-  clarity: '시사·경제·분석',
-  gravity: '사회·재난',
-  serenity: '환경·회복·웰빙',
-  spectrum: '모아보기',
+  vibrance: '읽는 순간 기분이 밝아지는 결',
+  immersion: '긴장감과 열기가 크게 느껴지는 결',
+  clarity: '차분하게 분석하며 읽게 되는 결',
+  gravity: '가볍게 넘기기 어려운 깊은 결',
+  serenity: '회복과 안정을 천천히 주는 결',
+  spectrum: '다양한 감정 층위를 함께 보는 결',
 };
 
 function normalizeCategoryLabel(rawCategory: string | null | undefined): string {
@@ -736,11 +736,8 @@ export default function EmotionPage() {
 
             <div className="mx-auto max-w-4xl text-center">
               <h1 className="mb-3 font-serif text-2xl font-bold tracking-[-0.03em] text-human-main sm:text-3xl md:text-4xl" data-testid="text-emotion-title">
-                {emotionConfig.label}
+                {emotionConfig.label} · {emotionConfig.labelKo}
               </h1>
-              <p className="mb-3 text-base font-semibold text-human-main/82 sm:text-lg">
-                {emotionConfig.labelKo}
-              </p>
               <p className="mx-auto mb-6 max-w-2xl text-xs text-human-sub sm:text-sm" data-testid="text-story-count">
                 {emotionConfig.subLabel}
               </p>
