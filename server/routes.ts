@@ -17,6 +17,7 @@ import {
   type StoryBlockIntent,
   validateInteractiveArticle,
 } from "../shared/interactiveArticle.js";
+import { buildArticleTopicSummaries, normalizeArticleTopic, resolveArticleTopic } from "../shared/articleTopics.js";
 import { selectRecommendationMix } from "../shared/recommendationMix.js";
 
 function getEmotionColor(emotion: EmotionType): string {
@@ -493,6 +494,7 @@ function resolveArticleMediaUrl(value: unknown): string | null {
 }
 
 function toArticleListItem(row: any) {
+  const topic = resolveArticleTopic(row);
   return {
     id: row?.id,
     title: row?.title ?? "",
@@ -500,6 +502,7 @@ function toArticleListItem(row: any) {
     source: row?.source ?? "",
     image: resolveArticleMediaUrl(row?.image),
     category: row?.category ?? null,
+    topic,
     emotion: toEmotion(row?.emotion),
     intensity: Number(row?.intensity ?? 50) || 50,
     views: Number(row?.views ?? 0) || 0,
@@ -6003,6 +6006,20 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ success: true });
   });
 
+  app.get("/api/articles/topics", async (req, res) => {
+    try {
+      const emotion = toEmotion(req.query.emotion);
+      const rows = emotion === "spectrum"
+        ? await storage.getAllNews(false)
+        : await storage.getNewsByEmotion(emotion);
+      const topics = buildArticleTopicSummaries(rows);
+      res.json({ topics });
+    } catch (error: any) {
+      console.error("[API] /api/articles/topics failed:", error);
+      res.status(200).json({ topics: [] });
+    }
+  });
+
   app.post("/api/auth/journalist/email/send", async (req, res) => {
     const email = String(req.body?.email || "").trim().toLowerCase();
     if (!email) return res.status(400).json({ error: "email is required." });
@@ -9189,8 +9206,44 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     try {
       const includeHidden = req.query.all === "true";
       const view = String(req.query.view || "list").trim().toLowerCase() === "full" ? "full" : "list";
-      const news = await storage.getAllNews(includeHidden);
-      res.json(news.map((item) => (view === "full" ? toArticleDetailItem(item) : toArticleListItem(item))));
+      const requestedEmotion = String(req.query.emotion || "").trim().toLowerCase();
+      const requestedTopic = normalizeArticleTopic(req.query.topic);
+      const safePage = Math.max(1, Number(req.query.page || 1) || 1);
+      const safeLimit = Math.max(1, Math.min(Number(req.query.limit || 12) || 12, 100));
+      const shouldUseFilteredEnvelope =
+        Boolean(requestedEmotion) ||
+        req.query.topic !== undefined ||
+        req.query.page !== undefined ||
+        req.query.limit !== undefined;
+
+      let news = await storage.getAllNews(includeHidden);
+
+      if (requestedEmotion) {
+        const emotion = toEmotion(requestedEmotion);
+        if (emotion !== "spectrum") {
+          news = news.filter((item) => toEmotion((item as any)?.emotion) === emotion);
+        }
+      }
+
+      if (requestedTopic) {
+        news = news.filter((item) => resolveArticleTopic(item) === requestedTopic);
+      }
+
+      const mapped = news.map((item) => (view === "full" ? toArticleDetailItem(item) : toArticleListItem(item)));
+
+      if (!shouldUseFilteredEnvelope) {
+        res.json(mapped);
+        return;
+      }
+
+      const total = mapped.length;
+      const start = (safePage - 1) * safeLimit;
+      res.json({
+        items: mapped.slice(start, start + safeLimit),
+        total,
+        page: safePage,
+        pageSize: safeLimit,
+      });
     } catch (error: any) {
       console.error("[API] /api/articles failed:", error);
       res.status(200).json([]);

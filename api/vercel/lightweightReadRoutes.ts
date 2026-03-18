@@ -1,4 +1,5 @@
 import type { Express, NextFunction, Request, Response } from "express";
+import { buildArticleTopicSummaries, normalizeArticleTopic, resolveArticleTopic } from "../../shared/articleTopics.js";
 
 const EMOTION_TYPES = ["vibrance", "immersion", "clarity", "gravity", "serenity", "spectrum"] as const;
 type EmotionType = typeof EMOTION_TYPES[number];
@@ -90,13 +91,58 @@ export function registerLightweightReadRoutes(app: Express, options: Lightweight
 
     try {
       const includeHidden = req.query.all === "true";
+      const requestedEmotion = String(req.query.emotion || "").trim().toLowerCase();
+      const requestedTopic = normalizeArticleTopic(req.query.topic);
+      const safePage = Math.max(1, Number(req.query.page || 1) || 1);
+      const safeLimit = Math.max(1, Math.min(Number(req.query.limit || 12) || 12, 100));
+      const shouldUseFilteredEnvelope =
+        Boolean(requestedEmotion) ||
+        req.query.topic !== undefined ||
+        req.query.page !== undefined ||
+        req.query.limit !== undefined;
       const select = "select=*&order=created_at.desc";
-      const query = includeHidden ? select : `${select}&is_published=eq.true`;
+      const filters: string[] = [];
+      if (!includeHidden) filters.push("is_published=eq.true");
+      if (requestedEmotion && requestedEmotion !== "spectrum") {
+        filters.push(`emotion=eq.${encodeURIComponent(toEmotion(requestedEmotion))}`);
+      }
+      const query = [select, ...filters].join("&");
       const rows = await fetchRows("news_items", query);
-      return res.status(200).json(rows);
+      const topicFiltered = requestedTopic
+        ? rows.filter((row) => resolveArticleTopic(row) === requestedTopic)
+        : rows;
+
+      if (!shouldUseFilteredEnvelope) {
+        return res.status(200).json(topicFiltered);
+      }
+
+      const start = (safePage - 1) * safeLimit;
+      return res.status(200).json({
+        items: topicFiltered.slice(start, start + safeLimit),
+        total: topicFiltered.length,
+        page: safePage,
+        pageSize: safeLimit,
+      });
     } catch (error) {
       console.error("[Lightweight API] /api/articles failed:", error);
       return res.status(200).json([]);
+    }
+  });
+
+  app.get("/api/articles/topics", async (req: Request, res: Response, next: NextFunction) => {
+    if (bypassIfNeeded(next)) return;
+
+    try {
+      const emotion = toEmotion(req.query.emotion);
+      const filters = ["select=*", "is_published=eq.true"];
+      if (emotion !== "spectrum") {
+        filters.push(`emotion=eq.${encodeURIComponent(emotion)}`);
+      }
+      const rows = await fetchRows("news_items", filters.join("&"));
+      return res.status(200).json({ topics: buildArticleTopicSummaries(rows) });
+    } catch (error) {
+      console.error("[Lightweight API] /api/articles/topics failed:", error);
+      return res.status(200).json({ topics: [] });
     }
   });
 

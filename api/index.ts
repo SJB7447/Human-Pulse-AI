@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer } from "http";
 import { registerRoutes } from "../server/routes.js";
+import { buildArticleTopicSummaries, normalizeArticleTopic, resolveArticleTopic } from "../shared/articleTopics.js";
 
 type ApiMode = "full" | "lightweight";
 
@@ -117,11 +118,11 @@ export default async function handler(req: any, res: any) {
   try {
     if (method === "POST" && normalizedPath === "/api/ai/search-keyword-news") {
       const body = await parseJsonBody(req);
-      const keyword = String(body?.keyword || "").trim() || "주요 이슈";
+      const keyword = String(body?.keyword || "").trim() || "주요 ?�슈";
       const articles = Array.from({ length: 5 }).map((_, index) => ({
         id: `lightweight-fallback-${index + 1}`,
-        title: `${keyword} 관련 핵심 이슈 ${index + 1}`,
-        summary: `${keyword} 키워드를 중심으로 최근 쟁점을 정리한 참고 기사 요약입니다. (lightweight fallback)`,
+        title: `${keyword} 관???�심 ?�슈 ${index + 1}`,
+        summary: `${keyword} ?�워?��? 중심?�로 최근 ?�점???�리??참고 기사 ?�약?�니?? (lightweight fallback)`,
         url: "",
         source: "lightweight fallback",
         publishedAt: new Date().toISOString(),
@@ -169,11 +170,49 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    if (normalizedPath === "/api/articles/topics") {
+      const emotion = toEmotion(query.get("emotion"));
+      const filters = ["select=*", "is_published=eq.true"];
+      if (emotion !== "spectrum") {
+        filters.push(`emotion=eq.${encodeURIComponent(emotion)}`);
+      }
+      const rows = await fetchRows("news_items", filters.join("&"));
+      return sendJson(res, 200, { topics: buildArticleTopicSummaries(rows) });
+    }
+
     if (normalizedPath === "/api/news" || normalizedPath === "/api/articles") {
       const includeHidden = query.get("all") === "true";
+      const requestedEmotion = String(query.get("emotion") || "").trim().toLowerCase();
+      const requestedTopic = normalizeArticleTopic(query.get("topic"));
+      const safePage = Math.max(1, Number(query.get("page") || 1) || 1);
+      const safeLimit = Math.max(1, Math.min(Number(query.get("limit") || 12) || 12, 100));
+      const shouldUseFilteredEnvelope =
+        normalizedPath === "/api/articles" && (
+          Boolean(requestedEmotion) ||
+          query.get("topic") !== null ||
+          query.get("page") !== null ||
+          query.get("limit") !== null
+        );
       const select = "select=*&order=created_at.desc";
-      const rows = await fetchRows("news_items", includeHidden ? select : `${select}&is_published=eq.true`);
-      return sendJson(res, 200, rows);
+      const filters = [];
+      if (!includeHidden) filters.push("is_published=eq.true");
+      if (requestedEmotion && requestedEmotion !== "spectrum") {
+        filters.push(`emotion=eq.${encodeURIComponent(toEmotion(requestedEmotion))}`);
+      }
+      const rows = await fetchRows("news_items", [select, ...filters].join("&"));
+      const topicFiltered = requestedTopic
+        ? rows.filter((row: any) => resolveArticleTopic(row) === requestedTopic)
+        : rows;
+      if (!shouldUseFilteredEnvelope) {
+        return sendJson(res, 200, topicFiltered);
+      }
+      const start = (safePage - 1) * safeLimit;
+      return sendJson(res, 200, {
+        items: topicFiltered.slice(start, start + safeLimit),
+        total: topicFiltered.length,
+        page: safePage,
+        pageSize: safeLimit,
+      });
     }
 
     if (normalizedPath === "/api/admin/stats") {
@@ -284,6 +323,7 @@ export default async function handler(req: any, res: any) {
     if (method === "GET" && (
       normalizedPath === "/api/news" ||
       normalizedPath === "/api/articles" ||
+      normalizedPath === "/api/articles/topics" ||
       normalizedPath === "/api/community" ||
       normalizedPath.startsWith("/api/news/") ||
       normalizedPath.startsWith("/api/admin/")
@@ -350,3 +390,6 @@ async function ensureFullApi(): Promise<void> {
 
   await fullApiInitPromise;
 }
+
+
+

@@ -1,16 +1,16 @@
 ﻿import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useParams, Link, useLocation } from 'wouter';
+import { useParams, useLocation } from 'wouter';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, Search, Video } from 'lucide-react';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useNews, type NewsItem } from '@/hooks/useNews';
+import { useEmotionTopics, useNews, type NewsItem } from '@/hooks/useNews';
 import { useToast } from '@/hooks/use-toast';
 import { Header } from '@/components/Header';
-import { EmotionTag } from '@/components/ui/EmotionTag';
 import { getNewsTextTokenByDepth } from '@/lib/newsTextTokens';
+import { type ArticleTopicId, normalizeArticleTopic } from '@shared/articleTopics';
 import {
   emitPeripheralNudgeEvent,
   getDwellThresholdSeconds,
@@ -44,58 +44,6 @@ const EMOTION_NEWS_TONE_COPY: Record<EmotionType, string> = {
   serenity: '회복과 안정을 천천히 주는 결',
   spectrum: '다양한 감정 층위를 함께 보는 결',
 };
-
-function normalizeCategoryLabel(rawCategory: string | null | undefined): string {
-  const value = String(rawCategory || '').trim();
-  const cleaned = value.replace(/^[\s\-–—_.,/|·•]+|[\s\-–—_.,/|·•]+$/g, '').trim();
-  if (!cleaned || !/[A-Za-z0-9가-힣]/.test(cleaned)) return '';
-  const lower = cleaned.toLowerCase();
-
-  if (/(politics|policy|government|economy|business|finance|society|social|world|international|current affairs|news|정치|정책|경제|사회|국제|시사)/i.test(lower)) {
-    return '시사';
-  }
-  if (/(entertainment|culture|arts|music|movie|drama|celebrity|fashion|연예|문화|예술|영화|드라마|패션)/i.test(lower)) {
-    return '연예';
-  }
-  if (/(tech|technology|science|ai|startup|digital|research|기술|과학|ai|스타트업|디지털)/i.test(lower)) {
-    return '기술·과학';
-  }
-  if (/(health|wellbeing|wellness|life|lifestyle|food|travel|건강|웰빙|라이프|생활|푸드|여행)/i.test(lower)) {
-    return '라이프';
-  }
-  if (/(sports|football|baseball|soccer|basketball|올림픽|스포츠|축구|야구|농구)/i.test(lower)) {
-    return '스포츠';
-  }
-  if (/(climate|environment|eco|weather|환경|기후|날씨|생태)/i.test(lower)) {
-    return '환경';
-  }
-  if (/(community|opinion|column|people|교육|커뮤니티|칼럼|오피니언|인물)/i.test(lower)) {
-    return '커뮤니티';
-  }
-
-  return cleaned.length <= 12 ? cleaned : `${cleaned.slice(0, 12)}…`;
-}
-
-function extractCategoryLabels(rawCategory: string | null | undefined): string[] {
-  const value = String(rawCategory || '').trim();
-  if (!value) return ['기타'];
-
-  const hashtagMatches = value.match(/#[^\s#]+/g);
-  const baseTokens = hashtagMatches && hashtagMatches.length > 0
-    ? hashtagMatches
-    : value.split(/[,\n]+/).flatMap((chunk) => chunk.split(/\s+/));
-
-  const labels = baseTokens
-    .map((token) => String(token || '').trim())
-    .filter(Boolean)
-    .map((token) => token.replace(/^#+/, '').trim())
-    .filter((token) => Boolean(token) && /[A-Za-z0-9가-힣]/.test(token))
-    .map((token) => normalizeCategoryLabel(token));
-
-  const uniqueLabels = Array.from(new Set(labels.filter(Boolean)));
-  const fallbackLabel = normalizeCategoryLabel(value);
-  return uniqueLabels.length > 0 ? uniqueLabels : [fallbackLabel || '기타'];
-}
 
 const MOCK_AUTHORS = [
   { name: 'Kim J.', avatar: null },
@@ -242,7 +190,7 @@ export default function EmotionPage() {
   const { toast } = useToast();
   const [selectedCardBg, setSelectedCardBg] = useState<string>('rgba(255,255,255,0.96)');
   const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [topicFilter, setTopicFilter] = useState<ArticleTopicId | 'all'>('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [sortKey, setSortKey] = useState<'latest' | 'oldest' | 'intensity_desc' | 'intensity_asc' | 'title_asc'>('latest');
   const [currentPage, setCurrentPage] = useState(1);
@@ -334,9 +282,9 @@ export default function EmotionPage() {
     if (!type || typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const searchFromQuery = params.get('search');
-    const categoryFromQuery = params.get('category');
+    const topicFromQuery = normalizeArticleTopic(params.get('topic')) || normalizeArticleTopic(params.get('category'));
     setSearchTerm(searchFromQuery ? searchFromQuery.trim() : '');
-    setCategoryFilter(categoryFromQuery ? categoryFromQuery.trim() : 'all');
+    setTopicFilter(topicFromQuery || 'all');
     if (params.get('nudge') === '1') {
       triggeredPeripheralNudgeRef.current = true;
       setSuppressPeripheralNudge(false);
@@ -451,13 +399,13 @@ export default function EmotionPage() {
       const custom = event as CustomEvent<{ emotion?: string; searchQuery?: string; searchCategory?: string }>;
       const nextEmotion = String(custom?.detail?.emotion || '').trim().toLowerCase();
       const nextSearchQuery = String(custom?.detail?.searchQuery || '').trim();
-      const nextSearchCategory = String(custom?.detail?.searchCategory || '').trim();
+      const nextSearchCategory = normalizeArticleTopic(custom?.detail?.searchCategory);
       setSelectedArticle(null);
       setShowPeripheralNudge(false);
       if (nextEmotion && nextEmotion !== type) {
         const params = new URLSearchParams();
         if (nextSearchQuery) params.set('search', nextSearchQuery);
-        if (nextSearchCategory) params.set('category', nextSearchCategory);
+        if (nextSearchCategory) params.set('topic', nextSearchCategory);
         const nextPath = `/emotion/${nextEmotion}${params.toString() ? `?${params.toString()}` : ''}`;
         setLocation(nextPath);
         return;
@@ -466,7 +414,7 @@ export default function EmotionPage() {
         setSearchTerm(nextSearchQuery);
       }
       if (nextSearchCategory) {
-        setCategoryFilter(nextSearchCategory);
+        setTopicFilter(nextSearchCategory);
       }
     };
 
@@ -492,7 +440,7 @@ export default function EmotionPage() {
   };
 
   const emotionConfig = EMOTION_CONFIG.find(e => e.type === type);
-  const Icon = type ? EMOTION_ICONS[type] : Heart;
+  const { data: topicSummaries = [], isLoading: isTopicsLoading } = useEmotionTopics(type);
 
   const getEmotionColor = (emotionType?: EmotionType | null) => {
     const config = EMOTION_CONFIG.find((entry) => entry.type === emotionType);
@@ -532,9 +480,9 @@ export default function EmotionPage() {
     };
   };
 
-  const { data: news = [], isLoading, error } = useNews(type);
+  const { data: news = [], isLoading, isFetching: isNewsFetching, error } = useNews(type, topicFilter);
   const shouldLoadSpectrumRecommendations = Boolean(selectedArticle) && type !== 'spectrum';
-  const { data: spectrumNews = [] } = useNews(shouldLoadSpectrumRecommendations ? 'spectrum' : undefined);
+  const { data: spectrumNews = [] } = useNews(shouldLoadSpectrumRecommendations ? 'spectrum' : undefined, 'all');
 
   const sourceOptions = useMemo(() => {
     const set = new Set<string>();
@@ -545,13 +493,10 @@ export default function EmotionPage() {
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
   }, [news]);
 
-  const categoryOptions = useMemo(() => {
-    const labels = new Set<string>();
-    for (const item of news) {
-      extractCategoryLabels(item.category).forEach((label) => labels.add(label));
-    }
-    return Array.from(labels).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko')).slice(0, 10);
-  }, [news]);
+  const totalEmotionArticleCount = useMemo(() => {
+    const summed = topicSummaries.reduce((acc, topic) => acc + topic.count, 0);
+    return summed > 0 ? summed : news.length;
+  }, [topicSummaries, news.length]);
 
   const emotionQuickLinks = useMemo(() => {
     return EMOTION_CONFIG.map((emotion) => {
@@ -594,10 +539,6 @@ export default function EmotionPage() {
       rows = rows.filter((item) => (item.source || '').trim() === sourceFilter);
     }
 
-    if (categoryFilter !== 'all') {
-      rows = rows.filter((item) => extractCategoryLabels(item.category).includes(categoryFilter));
-    }
-
     rows.sort((a, b) => {
       const aTime = new Date(a.created_at || 0).getTime();
       const bTime = new Date(b.created_at || 0).getTime();
@@ -622,7 +563,7 @@ export default function EmotionPage() {
     });
 
     return rows;
-  }, [news, searchTerm, sourceFilter, categoryFilter, sortKey]);
+  }, [news, searchTerm, sourceFilter, sortKey]);
 
   const totalPages = Math.max(1, Math.ceil(filteredNews.length / ARTICLES_PER_PAGE));
   const visibleNews = useMemo(() => {
@@ -632,7 +573,29 @@ export default function EmotionPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [type, searchTerm, sourceFilter, categoryFilter, sortKey]);
+  }, [type, searchTerm, sourceFilter, topicFilter, sortKey]);
+
+  useEffect(() => {
+    if (!type || typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (topicFilter === 'all') {
+      params.delete('topic');
+      params.delete('category');
+    } else {
+      params.set('topic', topicFilter);
+      params.delete('category');
+    }
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}`;
+    window.history.replaceState({}, '', nextUrl);
+  }, [type, topicFilter]);
+
+  useEffect(() => {
+    if (topicFilter === 'all') return;
+    if (isTopicsLoading) return;
+    if (topicSummaries.some((topic) => topic.id === topicFilter)) return;
+    setTopicFilter('all');
+  }, [isTopicsLoading, topicFilter, topicSummaries]);
 
   useEffect(() => {
     if (currentPage <= totalPages) return;
@@ -654,11 +617,9 @@ export default function EmotionPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <h1 className="text-2xl font-bold text-gray-800" data-testid="text-error-title">감정 카테고리를 찾을 수 없습니다</h1>
-          <Link href="/">
-            <Button className="mt-4" data-testid="button-go-home">
-              홈으로 돌아가기
-            </Button>
-          </Link>
+          <Button className="mt-4" data-testid="button-go-home" onClick={() => setLocation('/')}>
+            홈으로 돌아가기
+          </Button>
         </div>
       </div>
     );
@@ -741,18 +702,49 @@ export default function EmotionPage() {
               <p className="mx-auto mb-6 max-w-2xl text-xs text-human-sub sm:text-sm" data-testid="text-story-count">
                 {emotionConfig.subLabel}
               </p>
-              <div className="mb-8 flex flex-wrap justify-center gap-2">
-                {emotionConfig.recommendedNews.map((news, idx) => (
-                  <span
-                    key={idx}
-                    className="rounded-full bg-white/90 px-3 py-1.5 text-xs font-semibold shadow-[0_8px_20px_rgba(35,34,33,0.05)] sm:text-sm"
-                    style={{
-                      color: emotionConfig.color,
-                    }}
-                  >
-                    {news}
-                  </span>
-                ))}
+              <div className="mb-8">
+                <div className="mx-auto flex max-w-4xl gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {isTopicsLoading ? (
+                    Array.from({ length: 3 }).map((_, index) => (
+                      <span
+                        key={`topic-skeleton-${index}`}
+                        className="h-10 min-w-[96px] animate-pulse rounded-full bg-white/75 shadow-[0_8px_20px_rgba(35,34,33,0.05)]"
+                      />
+                    ))
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setTopicFilter('all')}
+                        className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition"
+                        style={{
+                          backgroundColor: topicFilter === 'all' ? emotionConfig.color : 'rgba(255,255,255,0.92)',
+                          color: topicFilter === 'all' ? '#ffffff' : '#4b5563',
+                          boxShadow: '0 8px 20px rgba(35,34,33,0.06)',
+                        }}
+                        data-testid="topic-filter-all"
+                      >
+                        전체 ({totalEmotionArticleCount})
+                      </button>
+                      {topicSummaries.map((topic) => (
+                        <button
+                          key={topic.id}
+                          type="button"
+                          onClick={() => setTopicFilter(topic.id)}
+                          className="shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition"
+                          style={{
+                            backgroundColor: topicFilter === topic.id ? emotionConfig.color : 'rgba(255,255,255,0.92)',
+                            color: topicFilter === topic.id ? '#ffffff' : '#4b5563',
+                            boxShadow: '0 8px 20px rgba(35,34,33,0.06)',
+                          }}
+                          data-testid={`topic-filter-${topic.id}`}
+                        >
+                          {topic.label} ({topic.count})
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -770,48 +762,6 @@ export default function EmotionPage() {
             </div>
 
             <div className="mx-auto mb-5 max-w-5xl space-y-4 rounded-[30px] bg-white/86 p-5 shadow-[0_18px_40px_rgba(35,34,33,0.06)] ring-1 ring-white/80">
-            <div className="flex flex-col gap-3">
-              <div className="flex max-h-[108px] flex-wrap items-start gap-2 overflow-hidden py-1">
-                <button
-                  type="button"
-                  onClick={() => setCategoryFilter('all')}
-                  className="inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition"
-                  style={{
-                    backgroundColor: categoryFilter === 'all' ? hexToRgba(emotionConfig.color, 0.16) : 'rgba(255,255,255,0.92)',
-                    color: categoryFilter === 'all' ? emotionConfig.color : '#4b5563',
-                    boxShadow: '0 8px 20px rgba(35,34,33,0.06)',
-                  }}
-                  data-testid="category-filter-all"
-                >
-                  전체
-                </button>
-                {categoryOptions.map((category) => (
-                  <button
-                    key={category}
-                    type="button"
-                    onClick={() => setCategoryFilter(category)}
-                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition"
-                    style={{
-                      backgroundColor: categoryFilter === category ? hexToRgba(emotionConfig.color, 0.16) : 'rgba(255,255,255,0.92)',
-                      color: categoryFilter === category ? emotionConfig.color : '#4b5563',
-                      boxShadow: '0 8px 20px rgba(35,34,33,0.06)',
-                    }}
-                    data-testid={`category-filter-${category}`}
-                  >
-                    <span
-                      className="inline-flex h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: emotionConfig.color }}
-                      aria-hidden="true"
-                    />
-                    {category}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-human-sub">
-                기사 주제별로 바로 좁혀볼 수 있어요. 예: 시사, 연예, 기술·과학
-              </p>
-            </div>
-
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <select
                 value={sourceFilter}
@@ -842,7 +792,7 @@ export default function EmotionPage() {
             </div>
           </div>
           <p className="pt-2 text-center text-sm font-medium text-human-sub">
-            {filteredNews.length}/{news.length}개의 기사
+            {filteredNews.length}/{topicFilter === 'all' ? totalEmotionArticleCount : news.length}개의 기사
           </p>
           </section>
         </motion.div>
@@ -872,23 +822,24 @@ export default function EmotionPage() {
           <div className="mt-6 sm:mt-8">
             {filteredNews.length === 0 ? (
               <div className="text-center py-16 rounded-3xl bg-white/60 shadow-[0_2px_12px_rgba(35,34,33,0.06)]">
-                <p className="text-sm text-gray-600">No articles match current search/filter options.</p>
+                <p className="text-sm text-gray-600">현재 검색/필터 조건에 맞는 기사가 없습니다.</p>
                 <Button
                   type="button"
                   variant="ghost"
                   className="mt-3 bg-white/82 hover:bg-white/92"
                   onClick={() => {
                     setSearchTerm('');
-                    setCategoryFilter('all');
+                    setTopicFilter('all');
                     setSourceFilter('all');
                     setSortKey('latest');
                   }}
                 >
-                  Reset filters
+                  필터 초기화
                 </Button>
               </div>
             ) : (
             <>
+            <div className="relative">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 justify-items-center gap-6 sm:gap-7 lg:gap-8 pb-8">
               {visibleNews.map((item, index) => {
                 const depth = Math.max(0, Math.min(100, item.intensity ?? 50));
@@ -1067,6 +1018,15 @@ export default function EmotionPage() {
                   </motion.article>
                 );
               })}
+            </div>
+            {isNewsFetching && !isLoading ? (
+              <div className="absolute inset-0 flex items-center justify-center rounded-3xl bg-white/55 backdrop-blur-[1px]">
+                <div className="inline-flex items-center gap-2 rounded-full bg-white/92 px-4 py-2 text-sm font-medium text-gray-700 shadow-[0_8px_20px_rgba(35,34,33,0.08)]">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  기사를 불러오는 중...
+                </div>
+              </div>
+            ) : null}
             </div>
             {totalPages > 1 && (
               <div className="flex flex-col items-center gap-3 py-4">

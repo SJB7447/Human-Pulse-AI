@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { EmotionType } from '@/lib/store';
+import type { ArticleTopicId, ArticleTopicSummary } from '@shared/articleTopics';
 
 export interface NewsItem {
     id: string;
@@ -9,6 +10,7 @@ export interface NewsItem {
     source: string;
     image: string | null;
     category: string | null;
+    topic?: ArticleTopicId | null;
     emotion: EmotionType;
     intensity: number;
     created_at: string | null;
@@ -57,6 +59,7 @@ function toNewsItem(item: any): NewsItem {
         source: item.source || 'Unknown Source',
         image: resolvedImage,
         category: item.category || null,
+        topic: item.topic || null,
         emotion: item.emotion as EmotionType,
         intensity: item.intensity || 50,
         created_at: item.created_at || item.createdAt || null,
@@ -105,23 +108,74 @@ async function safeFetchJson(url: string): Promise<any[]> {
     }
 }
 
-async function fetchNewsByEmotion(emotion: EmotionType): Promise<NewsItem[]> {
-    const data = await safeFetchJson(`/api/news/${emotion}`);
+async function fetchFilteredArticles(emotion: EmotionType, topic: ArticleTopicId | 'all' = 'all'): Promise<NewsItem[]> {
+    const params = new URLSearchParams({
+        emotion,
+        page: '1',
+        limit: '200',
+    });
+    if (topic !== 'all') {
+        params.set('topic', topic);
+    }
+    const data = await safeFetchJson(`/api/articles?${params.toString()}`);
     return (data || []).map(toNewsItem);
 }
 
-export function useNews(emotion: EmotionType | undefined) {
+async function fetchEmotionTopics(emotion: EmotionType): Promise<ArticleTopicSummary[]> {
+    const response = await fetch(`/api/articles/topics?emotion=${encodeURIComponent(emotion)}`, {
+        headers: { Accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+        throw new Error(`API ${response.status}: /api/articles/topics?emotion=${emotion}`);
+    }
+
+    const payload = await response.json().catch(() => ({ topics: [] }));
+    const rows = Array.isArray(payload?.topics) ? payload.topics : [];
+    return rows
+        .map((row: any) => ({
+            id: row?.id as ArticleTopicId,
+            label: String(row?.label || ''),
+            count: Number(row?.count || 0),
+        }))
+        .filter((row: { id: ArticleTopicId; label: string; count: number }) => Boolean(row.id) && row.count > 0);
+}
+
+export function useNews(emotion: EmotionType | undefined, topic: ArticleTopicId | 'all' = 'all') {
     return useQuery<NewsItem[]>({
-        queryKey: ['news', emotion],
+        queryKey: ['news', emotion, topic],
         queryFn: async () => {
             if (!emotion) {
                 return [];
             }
 
             try {
-                return await fetchNewsByEmotion(emotion);
+                return await fetchFilteredArticles(emotion, topic);
             } catch (error) {
                 console.error('[useNews] fetch failed:', error);
+                return [];
+            }
+        },
+        enabled: !!emotion,
+        staleTime: 60_000,
+        gcTime: 10 * 60_000,
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: true,
+        retry: 1,
+    });
+}
+
+export function useEmotionTopics(emotion: EmotionType | undefined) {
+    return useQuery<ArticleTopicSummary[]>({
+        queryKey: ['news-topics', emotion],
+        queryFn: async () => {
+            if (!emotion) return [];
+
+            try {
+                return await fetchEmotionTopics(emotion);
+            } catch (error) {
+                console.error('[useEmotionTopics] fetch failed:', error);
                 return [];
             }
         },
