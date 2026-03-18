@@ -18,6 +18,13 @@ import {
   validateInteractiveArticle,
 } from "../shared/interactiveArticle.js";
 import { buildArticleTopicSummaries, normalizeArticleTopic, resolveArticleTopic } from "../shared/articleTopics.js";
+import {
+  createDefaultNotificationPrefs,
+  normalizeNotificationRole,
+  sanitizeNotificationPrefsPatch,
+  type NotificationPrefs,
+  type NotificationSettingsRole,
+} from "../shared/notification.types.js";
 import { selectRecommendationMix } from "../shared/recommendationMix.js";
 
 function getEmotionColor(emotion: EmotionType): string {
@@ -35,6 +42,142 @@ function getEmotionColor(emotion: EmotionType): string {
 function toEmotion(value: unknown, fallback: EmotionType = "spectrum"): EmotionType {
   const text = String(value || "").toLowerCase();
   return emotionTypes.includes(text as EmotionType) ? (text as EmotionType) : fallback;
+}
+
+const NOTIFICATION_PREF_SELECT = [
+  "user_id",
+  "breaking",
+  "emotion",
+  "keyword",
+  "digest",
+  "reporter_comment",
+  "reporter_reply",
+  "reporter_share_spike",
+  "reporter_view_milestone",
+  "reporter_article_published",
+  "reporter_edit_requested",
+  "reporter_weekly_summary",
+  "admin_report",
+  "admin_new_reporter",
+  "admin_signup_spike",
+  "admin_push_fail",
+  "admin_edge_error",
+  "admin_daily_stats",
+  "admin_keyword_abuse",
+  "quiet_hours_start",
+  "quiet_hours_end",
+].join(", ");
+
+function normalizeNotificationPrefsRow(row: any): NotificationPrefs {
+  const defaults = createDefaultNotificationPrefs();
+  return {
+    breaking: typeof row?.breaking === "boolean" ? row.breaking : defaults.breaking,
+    emotion: typeof row?.emotion === "boolean" ? row.emotion : defaults.emotion,
+    keyword: typeof row?.keyword === "boolean" ? row.keyword : defaults.keyword,
+    digest: typeof row?.digest === "boolean" ? row.digest : defaults.digest,
+    reporter_comment: typeof row?.reporter_comment === "boolean" ? row.reporter_comment : defaults.reporter_comment,
+    reporter_reply: typeof row?.reporter_reply === "boolean" ? row.reporter_reply : defaults.reporter_reply,
+    reporter_share_spike: typeof row?.reporter_share_spike === "boolean" ? row.reporter_share_spike : defaults.reporter_share_spike,
+    reporter_view_milestone: typeof row?.reporter_view_milestone === "boolean" ? row.reporter_view_milestone : defaults.reporter_view_milestone,
+    reporter_article_published: typeof row?.reporter_article_published === "boolean" ? row.reporter_article_published : defaults.reporter_article_published,
+    reporter_edit_requested: typeof row?.reporter_edit_requested === "boolean" ? row.reporter_edit_requested : defaults.reporter_edit_requested,
+    reporter_weekly_summary: typeof row?.reporter_weekly_summary === "boolean" ? row.reporter_weekly_summary : defaults.reporter_weekly_summary,
+    admin_report: typeof row?.admin_report === "boolean" ? row.admin_report : defaults.admin_report,
+    admin_new_reporter: typeof row?.admin_new_reporter === "boolean" ? row.admin_new_reporter : defaults.admin_new_reporter,
+    admin_signup_spike: typeof row?.admin_signup_spike === "boolean" ? row.admin_signup_spike : defaults.admin_signup_spike,
+    admin_push_fail: typeof row?.admin_push_fail === "boolean" ? row.admin_push_fail : defaults.admin_push_fail,
+    admin_edge_error: typeof row?.admin_edge_error === "boolean" ? row.admin_edge_error : defaults.admin_edge_error,
+    admin_daily_stats: typeof row?.admin_daily_stats === "boolean" ? row.admin_daily_stats : defaults.admin_daily_stats,
+    admin_keyword_abuse: typeof row?.admin_keyword_abuse === "boolean" ? row.admin_keyword_abuse : defaults.admin_keyword_abuse,
+    quiet_hours_start: String(row?.quiet_hours_start || defaults.quiet_hours_start),
+    quiet_hours_end: String(row?.quiet_hours_end || defaults.quiet_hours_end),
+  };
+}
+
+async function resolveNotificationSettingsRole(supabaseAdmin: any, userId: string, fallbackRole: unknown): Promise<NotificationSettingsRole> {
+  const headerRole = normalizeNotificationRole(fallbackRole);
+  if (!userId) return headerRole;
+
+  try {
+    const { data } = await supabaseAdmin.from("profiles").select("role").eq("id", userId).maybeSingle();
+    const profileRole = normalizeNotificationRole(data?.role);
+    return profileRole === "general" ? headerRole : profileRole;
+  } catch {
+    return headerRole;
+  }
+}
+
+async function ensureNotificationPrefs(
+  supabaseAdmin: any,
+  userId: string,
+  role: NotificationSettingsRole,
+): Promise<NotificationPrefs> {
+  const defaults = createDefaultNotificationPrefs();
+  const { data, error } = await supabaseAdmin
+    .from("notification_prefs")
+    .select(NOTIFICATION_PREF_SELECT)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error && !String(error.message || "").includes("0 rows")) {
+    throw error;
+  }
+
+  if (data) {
+    return normalizeNotificationPrefsRow(data);
+  }
+
+  const insertPayload = {
+    user_id: userId,
+    ...defaults,
+  };
+  const { data: created, error: insertError } = await supabaseAdmin
+    .from("notification_prefs")
+    .upsert(insertPayload, { onConflict: "user_id" })
+    .select(NOTIFICATION_PREF_SELECT)
+    .single();
+
+  if (insertError) throw insertError;
+  return normalizeNotificationPrefsRow(created);
+}
+
+async function authenticateNotificationActor(
+  req: any,
+  supabaseAdmin: any,
+  fallbackRole: unknown,
+): Promise<{ userId: string; role: NotificationSettingsRole }> {
+  const authHeader = typeof req.headers?.authorization === "string" ? req.headers.authorization.trim() : "";
+  const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  if (!token) {
+    const error: any = new Error("로그인이 필요합니다.");
+    error.status = 401;
+    throw error;
+  }
+
+  const { data, error: authError } = await supabaseAdmin.auth.getUser(token);
+  const authUserId = String(data?.user?.id || "").trim();
+  if (authError || !authUserId) {
+    const error: any = new Error("유효한 로그인 세션이 필요합니다.");
+    error.status = 401;
+    throw error;
+  }
+
+  const requestedUserId = String(
+    req.headers?.["x-actor-id"] || req.query?.userId || req.body?.userId || "",
+  ).trim();
+  if (requestedUserId && requestedUserId !== authUserId) {
+    const error: any = new Error("다른 사용자의 알림 데이터에는 접근할 수 없습니다.");
+    error.status = 403;
+    throw error;
+  }
+
+  const role = await resolveNotificationSettingsRole(
+    supabaseAdmin,
+    authUserId,
+    fallbackRole || data?.user?.user_metadata?.role,
+  );
+
+  return { userId: authUserId, role };
 }
 
 const REQUIRED_INTENTS: StoryBlockIntent[] = ["intro", "context", "tension", "interpretation", "closure"];
@@ -4647,10 +4790,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
             review_complete: "기사 검수가 완료됐어요",
           };
           sendPushToUser(authorId, {
-            type: "admin_action",
-            title: "관리자 알림",
+            type: action === "publish" ? "reporter_article_published" : "admin_action",
+            title: action === "publish" ? "기사 발행 완료" : "관리자 알림",
             body: actionLabel[action] || `관리자 조치: ${action}`,
-            url: "/journalist",
+            url: "/reporter",
             icon: "/favicon.png",
           }).catch(() => {});
         }
@@ -5159,10 +5302,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         const authorId = (post as any)?.authorId || (post as any)?.author_id;
         if (authorId && authorId !== userId) {
           sendPushToUser(authorId, {
-            type: "new_comment",
+            type: "reporter_comment",
             title: "내 기사에 댓글이 달렸어요",
             body: `${username}: ${content.slice(0, 60)}`,
-            url: `/community/${postId}`,
+            url: "/reporter",
             icon: "/favicon.png",
           }).catch(() => {});
         }
@@ -5785,6 +5928,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       createdAt: new Date().toISOString(),
     };
     roleRequestFallback.push(row);
+    if (requestedRole === "journalist") {
+      const { data: adminRows } = await supabase.from("profiles").select("id").eq("role", "admin");
+      const adminIds = Array.from(new Set([
+        ...((adminRows || []).map((item: any) => String(item?.id || "").trim()).filter(Boolean)),
+        ...roleRequestFallback
+          .filter((item) => item.requestedRole === "admin" && item.status === "approved")
+          .map((item) => item.userId)
+          .filter(Boolean),
+      ]));
+      await Promise.allSettled(adminIds.map((adminId) => sendPushToUser(adminId, {
+        type: "admin_new_reporter",
+        title: "기자 가입 신청이 들어왔어요",
+        body: `${String(email || "새 사용자")} 님이 기자 계정 가입을 요청했어요.`,
+        url: "/admin",
+        icon: "/favicon.png",
+      })));
+    }
     res.status(201).json({ id: row.id, status: row.status, createdAt: row.createdAt });
   });
 
@@ -8821,6 +8981,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const supabaseModule = await import("./supabase.js");
     const supabaseClient = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
     if (!supabaseClient) return res.status(500).json({ error: "DB 연결 실패" });
+    try {
+      const actor = await authenticateNotificationActor(req, supabaseClient, req.headers["x-actor-role"] || req.body?.role);
+      if (actor.userId !== String(userId).trim()) {
+        return res.status(403).json({ error: "다른 사용자의 구독은 등록할 수 없습니다." });
+      }
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "푸시 구독 등록 실패") });
+    }
     const { error } = await supabaseClient
       .from("push_subscriptions")
       .upsert({ user_id: userId, endpoint, p256dh, auth }, { onConflict: "endpoint" });
@@ -8834,7 +9002,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const supabaseModule = await import("./supabase.js");
     const supabaseClient = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
     if (!supabaseClient) return res.status(500).json({ error: "DB 연결 실패" });
-    await supabaseClient.from("push_subscriptions").delete().eq("endpoint", endpoint);
+    let userId = "";
+    try {
+      ({ userId } = await authenticateNotificationActor(req, supabaseClient, req.headers["x-actor-role"] || req.body?.role));
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "푸시 구독 해제 실패") });
+    }
+    await supabaseClient.from("push_subscriptions").delete().eq("endpoint", endpoint).eq("user_id", userId);
     return res.json({ success: true });
   });
 
@@ -8842,12 +9016,71 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ publicKey: process.env.VAPID_PUBLIC_KEY || "" });
   });
 
-  app.get("/api/notifications", async (req, res) => {
-    const userId = String(req.headers["x-actor-id"] || req.query.userId || "").trim();
-    if (!userId) return res.status(400).json({ error: "userId 필요" });
+  app.get("/api/notification-prefs", async (req, res) => {
+    const fallbackRole = req.headers["x-actor-role"] || req.query.role;
+
     const supabaseModule = await import("./supabase.js");
     const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
     if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
+
+    try {
+      const { userId, role } = await authenticateNotificationActor(req, supabaseAdmin, fallbackRole);
+      const prefs = await ensureNotificationPrefs(supabaseAdmin, userId, role);
+      return res.json({ role, prefs });
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "알림 설정 조회 실패") });
+    }
+  });
+
+  app.patch("/api/notification-prefs", async (req, res) => {
+    const fallbackRole = req.headers["x-actor-role"] || req.body?.role;
+
+    const supabaseModule = await import("./supabase.js");
+    const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
+    if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
+
+    try {
+      const { userId, role } = await authenticateNotificationActor(req, supabaseAdmin, fallbackRole);
+      const patch = sanitizeNotificationPrefsPatch(req.body || {}, role);
+
+      if (Object.keys(patch).length === 0) {
+        const prefs = await ensureNotificationPrefs(supabaseAdmin, userId, role);
+        return res.json({ role, prefs, updatedKeys: [] });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from("notification_prefs")
+        .upsert({
+          user_id: userId,
+          ...createDefaultNotificationPrefs(),
+          ...patch,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" })
+        .select(NOTIFICATION_PREF_SELECT)
+        .single();
+
+      if (error) throw error;
+
+      return res.json({
+        role,
+        prefs: normalizeNotificationPrefsRow(data),
+        updatedKeys: Object.keys(patch),
+      });
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "알림 설정 저장 실패") });
+    }
+  });
+
+  app.get("/api/notifications", async (req, res) => {
+    const supabaseModule = await import("./supabase.js");
+    const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
+    if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
+    let userId = "";
+    try {
+      ({ userId } = await authenticateNotificationActor(req, supabaseAdmin, req.headers["x-actor-role"] || req.query.role));
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "알림 목록 조회 실패") });
+    }
     const { data, error } = await supabaseAdmin
       .from("notification_inbox")
       .select("*")
@@ -8866,16 +9099,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const supabaseModule = await import("./supabase.js");
     const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
     if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
-    await supabaseAdmin.from("notification_inbox").update({ is_read: true }).eq("id", id).then(() => {}).catch(() => {});
+    let userId = "";
+    try {
+      ({ userId } = await authenticateNotificationActor(req, supabaseAdmin, req.headers["x-actor-role"] || req.body?.role));
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "알림 읽음 처리 실패") });
+    }
+    await supabaseAdmin
+      .from("notification_inbox")
+      .update({ is_read: true })
+      .eq("id", id)
+      .eq("user_id", userId)
+      .then(() => {})
+      .catch(() => {});
     return res.json({ success: true });
   });
 
   app.patch("/api/notifications/read-all", async (req, res) => {
-    const userId = String(req.headers["x-actor-id"] || req.body?.userId || "").trim();
-    if (!userId) return res.status(400).json({ error: "userId 필요" });
     const supabaseModule = await import("./supabase.js");
     const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
     if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
+    let userId = "";
+    try {
+      ({ userId } = await authenticateNotificationActor(req, supabaseAdmin, req.headers["x-actor-role"] || req.body?.role));
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "알림 읽음 처리 실패") });
+    }
     await supabaseAdmin
       .from("notification_inbox")
       .update({ is_read: true })

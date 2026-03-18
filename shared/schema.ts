@@ -151,6 +151,50 @@ export const analyticsEvents = pgTable("analytics_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const notificationPrefs = pgTable("notification_prefs", {
+  userId: text("user_id").primaryKey(),
+  breaking: boolean("breaking").notNull().default(true),
+  emotion: boolean("emotion").notNull().default(false),
+  keyword: boolean("keyword").notNull().default(false),
+  digest: boolean("digest").notNull().default(false),
+  reporterComment: boolean("reporter_comment").notNull().default(true),
+  reporterReply: boolean("reporter_reply").notNull().default(true),
+  reporterShareSpike: boolean("reporter_share_spike").notNull().default(true),
+  reporterViewMilestone: boolean("reporter_view_milestone").notNull().default(true),
+  reporterArticlePublished: boolean("reporter_article_published").notNull().default(true),
+  reporterEditRequested: boolean("reporter_edit_requested").notNull().default(true),
+  reporterWeeklySummary: boolean("reporter_weekly_summary").notNull().default(true),
+  adminReport: boolean("admin_report").notNull().default(true),
+  adminNewReporter: boolean("admin_new_reporter").notNull().default(true),
+  adminSignupSpike: boolean("admin_signup_spike").notNull().default(true),
+  adminPushFail: boolean("admin_push_fail").notNull().default(true),
+  adminEdgeError: boolean("admin_edge_error").notNull().default(true),
+  adminDailyStats: boolean("admin_daily_stats").notNull().default(true),
+  adminKeywordAbuse: boolean("admin_keyword_abuse").notNull().default(true),
+  quietHoursStart: varchar("quiet_hours_start", { length: 5 }).notNull().default("22:00"),
+  quietHoursEnd: varchar("quiet_hours_end", { length: 5 }).notNull().default("07:00"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const articleStats = pgTable("article_stats", {
+  articleId: text("article_id").primaryKey(),
+  reporterId: text("reporter_id").notNull(),
+  viewCount: integer("view_count").notNull().default(0),
+  shareCount: integer("share_count").notNull().default(0),
+  commentCount: integer("comment_count").notNull().default(0),
+  lastMilestone: integer("last_milestone").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const contentReports = pgTable("content_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  articleId: text("article_id").notNull(),
+  reporterId: text("reporter_id"),
+  reason: text("reason").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -221,6 +265,20 @@ export const insertAnalyticsEventSchema = createInsertSchema(analyticsEvents).om
   createdAt: true,
 });
 
+export const insertNotificationPrefsSchema = createInsertSchema(notificationPrefs).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertArticleStatsSchema = createInsertSchema(articleStats).omit({
+  updatedAt: true,
+});
+
+export const insertContentReportSchema = createInsertSchema(contentReports).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -256,3 +314,12 @@ export type GuestEmotionLog = typeof guestEmotionLogs.$inferSelect;
 
 export type InsertAnalyticsEvent = z.infer<typeof insertAnalyticsEventSchema>;
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+
+export type InsertNotificationPrefs = z.infer<typeof insertNotificationPrefsSchema>;
+export type NotificationPrefs = typeof notificationPrefs.$inferSelect;
+
+export type InsertArticleStats = z.infer<typeof insertArticleStatsSchema>;
+export type ArticleStats = typeof articleStats.$inferSelect;
+
+export type InsertContentReport = z.infer<typeof insertContentReportSchema>;
+export type ContentReport = typeof contentReports.$inferSelect;

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/services/supabaseClient";
 
 export function usePushNotification(userId: string | null) {
   const [isSupported, setIsSupported] = useState(false);
@@ -14,7 +15,7 @@ export function usePushNotification(userId: string | null) {
       setPermission(Notification.permission);
     }
     if (!userId) return;
-    checkSubscription();
+    void checkSubscription();
   }, [userId]);
 
   const checkSubscription = async () => {
@@ -22,13 +23,18 @@ export function usePushNotification(userId: string | null) {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
       setIsSubscribed(!!sub);
-    } catch {}
+    } catch {
+      setIsSubscribed(false);
+    }
   };
 
   const subscribe = async (): Promise<boolean> => {
     if (!userId || !isSupported) return false;
     setLoading(true);
     try {
+      const { data } = await supabase.auth.getSession();
+      const accessToken = String(data?.session?.access_token || "");
+
       const keyRes = await fetch("/api/push/vapid-public-key");
       const { publicKey } = await keyRes.json();
 
@@ -41,7 +47,10 @@ export function usePushNotification(userId: string | null) {
       const json = sub.toJSON();
       await fetch("/api/push/subscribe", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           userId,
           endpoint: json.endpoint,
@@ -64,17 +73,25 @@ export function usePushNotification(userId: string | null) {
   const unsubscribe = async (): Promise<boolean> => {
     setLoading(true);
     try {
+      const { data } = await supabase.auth.getSession();
+      const accessToken = String(data?.session?.access_token || "");
+
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
       if (!sub) {
         setIsSubscribed(false);
         return true;
       }
+
       await fetch("/api/push/subscribe", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({ endpoint: sub.endpoint }),
       });
+
       await sub.unsubscribe();
       setPermission(typeof Notification !== "undefined" ? Notification.permission : "default");
       setIsSubscribed(false);

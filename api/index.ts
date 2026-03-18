@@ -2,11 +2,17 @@ import express from "express";
 import { createServer } from "http";
 import { registerRoutes } from "../server/routes.js";
 import { buildArticleTopicSummaries, normalizeArticleTopic, resolveArticleTopic } from "../shared/articleTopics.js";
+import {
+  createDefaultNotificationPrefs,
+  normalizeNotificationRole,
+  sanitizeNotificationPrefsPatch,
+} from "../shared/notification.types.js";
 
 type ApiMode = "full" | "lightweight";
 
 const EMOTION_TYPES = ["vibrance", "immersion", "clarity", "gravity", "serenity", "spectrum"] as const;
 type EmotionType = typeof EMOTION_TYPES[number];
+const lightweightNotificationPrefs = new Map<string, { role: string; prefs: ReturnType<typeof createDefaultNotificationPrefs> }>();
 
 function getRequestPath(url: unknown): string {
   const raw = String(url || "/");
@@ -118,11 +124,11 @@ export default async function handler(req: any, res: any) {
   try {
     if (method === "POST" && normalizedPath === "/api/ai/search-keyword-news") {
       const body = await parseJsonBody(req);
-      const keyword = String(body?.keyword || "").trim() || "주요 ?�슈";
+      const keyword = String(body?.keyword || "").trim() || "주요 이슈";
       const articles = Array.from({ length: 5 }).map((_, index) => ({
         id: `lightweight-fallback-${index + 1}`,
-        title: `${keyword} 관???�심 ?�슈 ${index + 1}`,
-        summary: `${keyword} ?�워?��? 중심?�로 최근 ?�점???�리??참고 기사 ?�약?�니?? (lightweight fallback)`,
+        title: `${keyword} 관련 핵심 이슈 ${index + 1}`,
+        summary: `${keyword} 키워드를 중심으로 최근 쟁점을 정리한 참고 기사 요약입니다. (lightweight fallback)`,
         url: "",
         source: "lightweight fallback",
         publishedAt: new Date().toISOString(),
@@ -161,6 +167,64 @@ export default async function handler(req: any, res: any) {
 
     if (method === "PATCH" && (normalizedPath === "/api/notifications/read-all" || normalizedPath.startsWith("/api/notifications/"))) {
       return sendJson(res, 200, { success: true, mode: "lightweight" as ApiMode });
+    }
+
+    if (normalizedPath === "/api/notification-prefs") {
+      const authHeader = typeof req?.headers?.authorization === "string" ? req.headers.authorization.trim() : "";
+      const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+      if (!token) {
+        return sendJson(res, 401, { error: "로그인이 필요합니다." });
+      }
+
+      const config = getSupabaseConfig();
+      if (!config) {
+        return sendJson(res, 500, { error: "Supabase 설정이 없습니다." });
+      }
+
+      const authResponse = await fetch(`${config.url.replace(/\/+$/, "")}/auth/v1/user`, {
+        method: "GET",
+        headers: {
+          apikey: config.key,
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      }).catch(() => null);
+
+      if (!authResponse || !authResponse.ok) {
+        return sendJson(res, 401, { error: "유효한 로그인 세션이 필요합니다." });
+      }
+
+      const authPayload = await authResponse.json().catch(() => null);
+      const authUserId = String(authPayload?.id || "").trim();
+      if (!authUserId) {
+        return sendJson(res, 401, { error: "유효한 로그인 세션이 필요합니다." });
+      }
+
+      const requestedUserId = String(req?.headers?.["x-actor-id"] || query.get("userId") || "").trim();
+      if (requestedUserId && requestedUserId !== authUserId) {
+        return sendJson(res, 403, { error: "다른 사용자의 알림 설정에는 접근할 수 없습니다." });
+      }
+
+      const role = normalizeNotificationRole(req?.headers?.["x-actor-role"] || query.get("role") || authPayload?.user_metadata?.role);
+      const existing = lightweightNotificationPrefs.get(authUserId) || { role, prefs: createDefaultNotificationPrefs() };
+
+      if (method === "GET") {
+        return sendJson(res, 200, existing);
+      }
+
+      if (method === "PATCH") {
+        const body = await parseJsonBody(req);
+        const patch = sanitizeNotificationPrefsPatch(body || {}, role);
+        const next = {
+          role,
+          prefs: {
+            ...existing.prefs,
+            ...patch,
+          },
+        };
+        lightweightNotificationPrefs.set(authUserId, next);
+        return sendJson(res, 200, { ...next, updatedKeys: Object.keys(patch) });
+      }
     }
 
     if (method !== "GET") {
@@ -390,6 +454,7 @@ async function ensureFullApi(): Promise<void> {
 
   await fullApiInitPromise;
 }
+
 
 
 

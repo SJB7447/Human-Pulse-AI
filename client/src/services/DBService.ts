@@ -1,6 +1,7 @@
 ﻿import { supabase } from './supabaseClient';
 import { useEmotionStore } from '@/lib/store';
 import type { EmotionType } from '@/lib/store';
+import type { NotificationPrefs, NotificationSettingsRole } from '@shared/notification.types';
 
 type ApiError = Error & { status?: number };
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -70,6 +71,12 @@ export type UserComposedArticleRecord = {
     reviewedAt: string;
     createdAt: string;
     updatedAt: string;
+};
+
+export type NotificationPrefsResponse = {
+    role: NotificationSettingsRole;
+    prefs: NotificationPrefs;
+    updatedKeys?: string[];
 };
 
 export type AdminArticleListResponse<T = any> = {
@@ -255,6 +262,12 @@ const buildActorHeaders = (): Record<string, string> => {
         'x-actor-name': String(actor.name || '').slice(0, 160),
         'x-actor-email': String(actor.email || '').slice(0, 160),
     };
+};
+
+const buildAuthHeaders = async (): Promise<Record<string, string>> => {
+    const { data } = await supabase.auth.getSession();
+    const accessToken = String(data?.session?.access_token || '').trim();
+    return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
 };
 
 const normalizeOwnerToken = (value: unknown): string =>
@@ -1160,6 +1173,47 @@ export const DBService = {
     async getSubscription(userId: string) {
         const response = await fetch(`/api/billing/subscription/${userId}`);
         if (!response.ok) throw await createApiError(response, '구독 정보를 불러오지 못했습니다.');
+        return await response.json();
+    },
+
+    async getNotificationPrefs(): Promise<NotificationPrefsResponse> {
+        const auth = await this.getAuthContext();
+        if (!auth?.userId) {
+            throw new Error('알림 설정을 불러오려면 로그인이 필요합니다.');
+        }
+        const authHeaders = await buildAuthHeaders();
+
+        const response = await fetch('/api/notification-prefs', {
+            headers: {
+                ...authHeaders,
+                ...buildActorHeaders(),
+                'x-actor-id': auth.userId,
+                'x-actor-role': normalizeActorRole(auth.role),
+            },
+        });
+        if (!response.ok) throw await createApiError(response, '알림 설정을 불러오지 못했습니다.');
+        return await response.json();
+    },
+
+    async updateNotificationPrefs(patch: Partial<NotificationPrefs>): Promise<NotificationPrefsResponse> {
+        const auth = await this.getAuthContext();
+        if (!auth?.userId) {
+            throw new Error('알림 설정을 저장하려면 로그인이 필요합니다.');
+        }
+        const authHeaders = await buildAuthHeaders();
+
+        const response = await fetch('/api/notification-prefs', {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders,
+                ...buildActorHeaders(),
+                'x-actor-id': auth.userId,
+                'x-actor-role': normalizeActorRole(auth.role),
+            },
+            body: JSON.stringify(patch),
+        });
+        if (!response.ok) throw await createApiError(response, '알림 설정 저장에 실패했습니다.');
         return await response.json();
     },
 

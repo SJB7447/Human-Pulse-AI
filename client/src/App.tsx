@@ -21,6 +21,8 @@ const LoginPage = lazy(() => import("@/pages/login"));
 const CommunityPage = lazy(() => import("@/pages/community"));
 const PricingPage = lazy(() => import("@/pages/pricing"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
+const MyPageNotificationsPage = lazy(() => import("@/pages/mypage-notifications"));
+const AdminNotificationSettingsPage = lazy(() => import("@/pages/admin-notification-settings"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 function Router() {
@@ -30,6 +32,11 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/emotion/:type" component={EmotionPage} />
         <Route path="/mypage" component={MyPage} />
+        <Route path="/mypage/notifications">
+          <ProtectedRoute>
+            <MyPageNotificationsPage />
+          </ProtectedRoute>
+        </Route>
         <Route path="/community" component={CommunityPage} />
         <Route path="/pricing" component={PricingPage} />
         <Route path="/settings">
@@ -45,6 +52,11 @@ function Router() {
         <Route path="/reporter">
           <ProtectedRoute allowedRoles={["journalist", "admin"]}>
             <JournalistPage />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/admin/settings/notifications">
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminNotificationSettingsPage />
           </ProtectedRoute>
         </Route>
         <Route path="/admin">

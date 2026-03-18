@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useEmotionStore } from "@/lib/store";
+import { supabase } from "@/services/supabaseClient";
 
 export interface NotificationItem {
   id: string;
@@ -22,8 +23,13 @@ export function useNotifications() {
     if (!user?.id) return;
     setLoading(true);
     try {
+      const { data } = await supabase.auth.getSession();
+      const accessToken = String(data?.session?.access_token || "");
       const res = await window.fetch("/api/notifications", {
-        headers: { "x-actor-id": user.id },
+        headers: {
+          "x-actor-id": user.id,
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
       });
       if (res.ok) setNotifications(await res.json());
     } catch {}
@@ -42,15 +48,26 @@ export function useNotifications() {
   }, [fetch]);
 
   const markRead = async (id: string) => {
-    await window.fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
+    const { data } = await supabase.auth.getSession();
+    const accessToken = String(data?.session?.access_token || "");
+    await window.fetch(`/api/notifications/${id}/read`, {
+      method: "PATCH",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    });
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
   };
 
   const markAllRead = async () => {
     if (!user?.id) return;
+    const { data } = await supabase.auth.getSession();
+    const accessToken = String(data?.session?.access_token || "");
     await window.fetch("/api/notifications/read-all", {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-actor-id": user.id },
+      headers: {
+        "Content-Type": "application/json",
+        "x-actor-id": user.id,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
     });
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
   };

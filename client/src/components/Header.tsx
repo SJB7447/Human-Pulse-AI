@@ -138,8 +138,8 @@ export function Header({ transparent = false }: HeaderProps) {
         transparent ? 'bg-transparent' : 'bg-white/80 backdrop-blur-xl border-b border-gray-100'
       }`}
     >
-      <div className="flex w-full min-w-0 items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3 sm:gap-8">
+      <div className="flex w-full min-w-0 items-center justify-between gap-2 sm:gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-6">
           <Link href="/">
             <span className="cursor-pointer text-lg font-serif font-bold transition-colors sm:text-xl" style={{ color: '#00abaf' }}>
               HueBrief
@@ -182,41 +182,41 @@ export function Header({ transparent = false }: HeaderProps) {
           </nav>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
+        <div className="flex min-w-0 shrink-0 items-center gap-1 sm:gap-2">
           {user ? (
-            <div className="flex items-center gap-1.5 sm:gap-3">
-              <span className="text-sm text-gray-600 hidden md:inline font-medium">
+            <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+              <span className="max-w-[120px] truncate text-sm text-gray-600 hidden xl:inline font-medium">
                 {user.email?.split('@')[0]}{t.userSuffix}
               </span>
               <NotificationDropdown />
               <Link href="/mypage">
-                <GlassButton variant="outline" size="sm" className="bg-white/50 px-2 sm:px-3 hover:bg-white/80">
+                <GlassButton variant="outline" size="sm" className="bg-white/50 px-2 lg:px-3 hover:bg-white/80">
                   <User className="w-4 h-4" />
-                  <span className="hidden sm:inline">{t.myPage}</span>
+                  <span className="hidden lg:inline">{t.myPage}</span>
                 </GlassButton>
               </Link>
               <GlassButton
                 variant="outline"
                 size="sm"
                 onClick={handleLogout}
-                className="bg-white/50 px-2 text-red-500 hover:bg-white/80 hover:text-red-600 border-red-100 hover:border-red-200 sm:px-3"
+                className="bg-white/50 px-2 text-red-500 hover:bg-white/80 hover:text-red-600 border-red-100 hover:border-red-200 lg:px-3"
               >
                 <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">{t.logout}</span>
+                <span className="hidden lg:inline">{t.logout}</span>
               </GlassButton>
             </div>
           ) : (
             <>
               <Link href="/login">
-                <GlassButton variant="outline" size="sm" className="bg-white/50 px-2 sm:px-3 hover:bg-white/80">
+                <GlassButton variant="outline" size="sm" className="bg-white/50 px-2 lg:px-3 hover:bg-white/80">
                   <LogIn className="w-4 h-4" />
-                  <span className="hidden sm:inline">{t.login}</span>
+                  <span className="hidden lg:inline">{t.login}</span>
                 </GlassButton>
               </Link>
               <Link href="/login?mode=signup">
-                <GlassButton variant="primary" size="sm" className="px-2 sm:px-3">
+                <GlassButton variant="primary" size="sm" className="px-2 lg:px-3">
                   <UserPlus className="w-4 h-4" />
-                  <span className="hidden sm:inline">{t.signUp}</span>
+                  <span className="hidden lg:inline">{t.signUp}</span>
                 </GlassButton>
               </Link>
             </>
