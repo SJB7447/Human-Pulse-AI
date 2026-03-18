@@ -598,10 +598,6 @@ export default function EmotionPage() {
       rows = rows.filter((item) => extractCategoryLabels(item.category).includes(categoryFilter));
     }
 
-    if (type === 'spectrum' && sortKey === 'latest') {
-      return rows;
-    }
-
     rows.sort((a, b) => {
       const aTime = new Date(a.created_at || 0).getTime();
       const bTime = new Date(b.created_at || 0).getTime();
@@ -626,7 +622,7 @@ export default function EmotionPage() {
     });
 
     return rows;
-  }, [news, searchTerm, sourceFilter, categoryFilter, sortKey, type]);
+  }, [news, searchTerm, sourceFilter, categoryFilter, sortKey]);
 
   const totalPages = Math.max(1, Math.ceil(filteredNews.length / ARTICLES_PER_PAGE));
   const visibleNews = useMemo(() => {
