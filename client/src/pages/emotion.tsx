@@ -193,7 +193,7 @@ export default function EmotionPage() {
   const [topicFilter, setTopicFilter] = useState<ArticleTopicId | 'all'>('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [sortKey, setSortKey] = useState<'latest' | 'oldest' | 'intensity_desc' | 'intensity_asc' | 'title_asc'>('latest');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [visibleCount, setVisibleCount] = useState(ARTICLES_PER_PAGE);
   const [showPeripheralNudge, setShowPeripheralNudge] = useState(false);
   const [expandPeripheralNudge, setExpandPeripheralNudge] = useState(false);
   const [suppressPeripheralNudge, setSuppressPeripheralNudge] = useState(false);
@@ -565,14 +565,13 @@ export default function EmotionPage() {
     return rows;
   }, [news, searchTerm, sourceFilter, sortKey]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredNews.length / ARTICLES_PER_PAGE));
+  const canLoadMore = visibleCount < filteredNews.length;
   const visibleNews = useMemo(() => {
-    const startIndex = (currentPage - 1) * ARTICLES_PER_PAGE;
-    return filteredNews.slice(startIndex, startIndex + ARTICLES_PER_PAGE);
-  }, [filteredNews, currentPage, ARTICLES_PER_PAGE]);
+    return filteredNews.slice(0, visibleCount);
+  }, [filteredNews, visibleCount]);
 
   useEffect(() => {
-    setCurrentPage(1);
+    setVisibleCount(ARTICLES_PER_PAGE);
   }, [type, searchTerm, sourceFilter, topicFilter, sortKey]);
 
   useEffect(() => {
@@ -596,11 +595,6 @@ export default function EmotionPage() {
     if (topicSummaries.some((topic) => topic.id === topicFilter)) return;
     setTopicFilter('all');
   }, [isTopicsLoading, topicFilter, topicSummaries]);
-
-  useEffect(() => {
-    if (currentPage <= totalPages) return;
-    setCurrentPage(totalPages);
-  }, [currentPage, totalPages]);
 
   const recommendationPool = (type === 'spectrum'
     ? news
@@ -1028,42 +1022,23 @@ export default function EmotionPage() {
               </div>
             ) : null}
             </div>
-            {totalPages > 1 && (
+            {filteredNews.length > ARTICLES_PER_PAGE && (
               <div className="flex flex-col items-center gap-3 py-4">
                 <p className="text-sm text-gray-500">
-                  페이지 {currentPage} / {totalPages}
+                  현재 {visibleNews.length} / {filteredNews.length}개의 기사
                 </p>
-                <div className="flex flex-wrap items-center justify-center gap-2">
+                {canLoadMore ? (
                   <Button
                     type="button"
                     variant="ghost"
-                    className="bg-white/82 hover:bg-white/92"
-                    disabled={currentPage <= 1}
-                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    className="bg-white/86 px-5 text-gray-800 shadow-[0_10px_24px_rgba(35,34,33,0.08)] hover:bg-white"
+                    onClick={() => setVisibleCount((prev) => Math.min(filteredNews.length, prev + ARTICLES_PER_PAGE))}
                   >
-                    이전
+                    기사 {Math.min(ARTICLES_PER_PAGE, filteredNews.length - visibleCount)}개 더보기
                   </Button>
-                  {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
-                    <Button
-                      key={page}
-                      type="button"
-                      variant="ghost"
-                      className={page === currentPage ? 'bg-white text-gray-900 shadow-[0_6px_18px_rgba(35,34,33,0.08)]' : 'bg-white/72 text-gray-500 hover:bg-white/88'}
-                      onClick={() => setCurrentPage(page)}
-                    >
-                      {page}
-                    </Button>
-                  ))}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="bg-white/82 hover:bg-white/92"
-                    disabled={currentPage >= totalPages}
-                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                  >
-                    다음
-                  </Button>
-                </div>
+                ) : (
+                  <span className="text-xs font-medium text-gray-400">모든 기사를 확인했습니다.</span>
+                )}
               </div>
             )}
             </>

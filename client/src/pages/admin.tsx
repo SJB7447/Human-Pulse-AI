@@ -132,7 +132,7 @@ const ADMIN_CATEGORY_PRESET_KEYWORDS: Record<AdminEmotionKey, Array<{ preset: st
     { preset: '균형 브리핑', keywords: ['브리핑', '종합', '비교', '해설'] },
   ],
 };
-const ARTICLES_PER_PAGE = 10;
+const ARTICLES_PER_PAGE = 15;
 const PAGE_ELLIPSIS = 'ellipsis';
 type PageToken = number | typeof PAGE_ELLIPSIS;
 
