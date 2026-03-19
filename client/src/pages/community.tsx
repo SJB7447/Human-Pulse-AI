@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'wouter';
 import { Header } from '@/components/Header';
+import { ADMIN_EMOTION_OPTIONS, getCategoryFieldLabel } from '@/lib/articleFilters';
 import { EMOTION_CONFIG, type EmotionType, useEmotionStore } from '@/lib/store';
 import { BookOpen, ChevronDown, ChevronUp, ExternalLink, Heart, Loader2, Pencil, Send } from 'lucide-react';
 import { DBService, type CommunityCommentRecord } from '@/services/DBService';
@@ -87,6 +88,9 @@ export default function CommunityPage() {
   const [editContent, setEditContent] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [lastPublishedLink, setLastPublishedLink] = useState('');
+  const [feedEmotionFilter, setFeedEmotionFilter] = useState<string>('all');
+  const [feedCategoryFilter, setFeedCategoryFilter] = useState<string>('all');
+  const [feedSearchQuery, setFeedSearchQuery] = useState('');
   const [originalArticle, setOriginalArticle] = useState<OriginalArticlePreview | null>(null);
   const [originalArticleLoading, setOriginalArticleLoading] = useState(false);
   const [showOriginalArticleFull, setShowOriginalArticleFull] = useState(false);
@@ -336,7 +340,55 @@ export default function CommunityPage() {
     }
   };
 
-  const renderedItems = useMemo(() => items.slice(0, 24), [items]);
+  const communityCategoryOptions = useMemo(() => {
+    const sourceItems = feedEmotionFilter === 'all'
+      ? items
+      : items.filter((item) => String(item.emotion || '').toLowerCase() === feedEmotionFilter);
+
+    return Array.from(new Set(
+      sourceItems
+        .map((item) => getCategoryFieldLabel(item.emotion, item.category))
+        .filter((value) => Boolean(String(value).trim())),
+    )).map((value) => ({
+      value,
+      label: value,
+    }));
+  }, [feedEmotionFilter, items]);
+
+  const renderedItems = useMemo(() => {
+    const normalizedSearch = feedSearchQuery.trim().toLowerCase();
+
+    return items
+      .filter((item) => {
+        if (feedEmotionFilter !== 'all' && String(item.emotion || '').toLowerCase() !== feedEmotionFilter) {
+          return false;
+        }
+
+        const mappedCategory = getCategoryFieldLabel(item.emotion, item.category);
+        if (feedCategoryFilter !== 'all' && mappedCategory !== feedCategoryFilter) {
+          return false;
+        }
+
+        if (!normalizedSearch) {
+          return true;
+        }
+
+        const searchableText = [
+          item.title,
+          item.excerpt,
+          item.content,
+          item.sourceTitle,
+          item.sourceUrl,
+          item.author,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        return searchableText.includes(normalizedSearch);
+      })
+      .slice(0, 24);
+  }, [feedCategoryFilter, feedEmotionFilter, feedSearchQuery, items]);
   const sortedComments = useMemo(() => {
     const rows = [...comments];
     if (commentSort === 'popular') {
@@ -596,6 +648,45 @@ export default function CommunityPage() {
           )}
         </section>
 
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 mb-8">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <select
+              value={feedEmotionFilter}
+              onChange={(e) => {
+                setFeedEmotionFilter(e.target.value);
+                setFeedCategoryFilter('all');
+              }}
+              className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            >
+              <option value="all">전체 감정</option>
+              {ADMIN_EMOTION_OPTIONS.map((entry) => (
+                <option key={`community-filter-emotion-${entry}`} value={entry}>
+                  {entry.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <select
+              value={feedCategoryFilter}
+              onChange={(e) => setFeedCategoryFilter(e.target.value)}
+              className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            >
+              <option value="all">전체 중분류</option>
+              {communityCategoryOptions.map((option) => (
+                <option key={`community-filter-category-${option.value}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={feedSearchQuery}
+              onChange={(e) => setFeedSearchQuery(e.target.value)}
+              placeholder="기사 제목/요약/출처 검색"
+              className="h-10 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+            />
+          </div>
+        </section>
+
         {loading && (
           <div className="flex items-center justify-center py-20 text-gray-500 gap-2">
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -611,7 +702,7 @@ export default function CommunityPage() {
 
         {!loading && !error && renderedItems.length === 0 && (
           <div className="rounded-2xl border border-dashed border-gray-300 bg-white px-5 py-10 text-center text-gray-500">
-            아직 공개된 커뮤니티 글이 없습니다.
+            {items.length === 0 ? '아직 공개된 커뮤니티 글이 없습니다.' : '현재 필터 조건에 맞는 글이 없습니다.'}
           </div>
         )}
 

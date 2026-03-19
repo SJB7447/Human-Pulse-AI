@@ -121,8 +121,8 @@ export function Header({ transparent = false }: HeaderProps) {
               />
               <span className="text-sm font-medium text-gray-900">
                 {locale === 'ko'
-                  ? `${item.categoryKo} · ${item.labelKo}`
-                  : `${item.categoryEn} · ${item.labelEn}`}
+                  ? [item.categoryKo, item.labelKo].filter(Boolean).join(' · ')
+                  : [item.categoryEn, item.labelEn].filter(Boolean).join(' · ')}
               </span>
             </div>
           </DropdownMenuItem>

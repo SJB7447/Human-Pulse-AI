@@ -28,12 +28,12 @@ const EMOTION_ICONS: Record<EmotionType, typeof Heart> = {
 };
 
 const EMOTION_FILTER_COPY: Record<EmotionType, { label: string; hint: string }> = {
-  vibrance: { label: '노랑 · 설렘· 기쁨', hint: '읽는 순간 기분이 밝아지는 결' },
-  immersion: { label: '빨강 · 긴장· 열정', hint: '긴장감과 열기가 크게 느껴지는 결' },
-  clarity: { label: '파랑 · 냉철· 이성적', hint: '차분하게 분석하며 읽게 되는 결' },
-  gravity: { label: '회색 · 묵직함· 성찰', hint: '가볍게 넘기기 어려운 깊은 결' },
-  serenity: { label: '초록 · 힐링· 안정', hint: '회복과 안정을 천천히 주는 결' },
-  spectrum: { label: '민트 · 스펙트럼', hint: '다양한 감정 층위를 함께 보는 결' },
+  vibrance: { label: '설렘· 기쁨', hint: '읽는 순간 기분이 밝아지는 결' },
+  immersion: { label: '긴장· 열정', hint: '긴장감과 열기가 크게 느껴지는 결' },
+  clarity: { label: '냉철· 이성적', hint: '차분하게 분석하며 읽게 되는 결' },
+  gravity: { label: '묵직함· 성찰', hint: '가볍게 넘기기 어려운 깊은 결' },
+  serenity: { label: '힐링· 안정', hint: '회복과 안정을 천천히 주는 결' },
+  spectrum: { label: '다양함 · 전체보기', hint: '다양한 감정 층위를 함께 보는 결' },
 };
 
 const MOCK_AUTHORS = [
