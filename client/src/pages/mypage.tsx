@@ -226,6 +226,12 @@ export default function MyPage() {
           label: '프로필 보기',
         }),
       });
+      void DBService.logInAppNotification({
+        type: 'admin_action',
+        title: 'SNS 연결 설정 저장 완료',
+        body: '마이페이지 프로필 영역에 저장되었습니다. 아래 SNS 연결 카드에서 바로 확인할 수 있습니다.',
+        url: '/mypage?tab=profile',
+      }).catch(() => {});
     } catch (error: any) {
       toast({
         title: 'SNS 설정 저장 실패',
@@ -253,6 +259,12 @@ export default function MyPage() {
         label: '인사이트 보기',
       }),
     });
+    void DBService.logInAppNotification({
+      type: 'admin_action',
+      title: '인사이트 삭제 완료',
+      body: '마이페이지 인사이트 목록에서 제거되었습니다.',
+      url: '/mypage?tab=insight',
+    }).catch(() => {});
   };
 
   const handleStartEditComposed = (article: UserComposedArticleRecord) => {
@@ -292,6 +304,12 @@ export default function MyPage() {
           label: '내 기사 보기',
         }),
       });
+      void DBService.logInAppNotification({
+        type: 'admin_action',
+        title: '내 기사 수정 완료',
+        body: '마이페이지 나만의 기사 목록에 수정 내용이 반영되었습니다.',
+        url: '/mypage?tab=custom',
+      }).catch(() => {});
     } catch (error: any) {
       toast({
         title: '수정 실패',
@@ -315,6 +333,12 @@ export default function MyPage() {
           label: '상태 확인',
         }),
       });
+      void DBService.logInAppNotification({
+        type: 'admin_action',
+        title: '재승인 요청 완료',
+        body: '관리자 검증 대기열로 다시 전달되었습니다. 마이페이지 나만의 기사 탭에서 상태를 확인할 수 있습니다.',
+        url: '/mypage?tab=custom',
+      }).catch(() => {});
     } catch (error: any) {
       toast({
         title: '재승인 요청 실패',

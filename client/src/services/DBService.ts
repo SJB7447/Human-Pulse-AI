@@ -1261,6 +1261,33 @@ export const DBService = {
         return await response.json();
     },
 
+    async logInAppNotification(input: {
+        type?: string;
+        title: string;
+        body: string;
+        url?: string;
+    }): Promise<{ success: boolean }> {
+        const auth = await this.getAuthContext();
+        if (!auth?.userId) {
+            throw new Error('알림을 저장하려면 로그인이 필요합니다.');
+        }
+        const authHeaders = await buildAuthHeaders();
+
+        const response = await fetch('/api/notifications/log', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders,
+                ...buildActorHeaders(),
+                'x-actor-id': auth.userId,
+                'x-actor-role': normalizeActorRole(auth.role),
+            },
+            body: JSON.stringify(input),
+        });
+        if (!response.ok) throw await createApiError(response, '알림 저장에 실패했습니다.');
+        return await response.json();
+    },
+
     async subscribePremium(userId: string) {
         const response = await fetch('/api/billing/subscribe', {
             method: 'POST',

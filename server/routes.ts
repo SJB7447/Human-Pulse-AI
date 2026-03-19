@@ -9339,6 +9339,54 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.post("/api/notifications/log", async (req, res) => {
+    const supabaseModule = await import("./supabase.js");
+    const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
+    if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
+
+    try {
+      const { userId } = await authenticateNotificationActor(
+        req,
+        supabaseAdmin,
+        req.headers["x-actor-role"] || req.body?.role,
+      );
+
+      const typeRaw = String(req.body?.type || "admin_action").trim();
+      const allowedTypes = new Set([
+        "admin_action",
+        "article_publish",
+        "breaking",
+        "emotion",
+        "keyword",
+        "digest",
+        "reporter_edit_requested",
+        "reporter_comment",
+        "reporter_article_published",
+        "admin_report",
+      ]);
+      const type = allowedTypes.has(typeRaw) ? typeRaw : "admin_action";
+      const title = String(req.body?.title || "").trim().slice(0, 120);
+      const body = String(req.body?.body || "").trim().slice(0, 500);
+      const url = String(req.body?.url || "/").trim().slice(0, 240) || "/";
+
+      if (!title || !body) {
+        return res.status(400).json({ error: "title and body are required." });
+      }
+
+      await sendPushToUser(userId, {
+        type: type as any,
+        title,
+        body,
+        url,
+        icon: "/favicon.png",
+      });
+
+      return res.status(201).json({ success: true });
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "알림 저장 실패") });
+    }
+  });
+
   app.get("/api/notifications", async (req, res) => {
     const supabaseModule = await import("./supabase.js");
     const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;

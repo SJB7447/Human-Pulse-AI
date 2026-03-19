@@ -2879,6 +2879,12 @@ export default function JournalistPage() {
                 label: "기사 목록 보기",
               }),
             });
+            void DBService.logInAppNotification({
+              type: "admin_action",
+              title: "기사 수정 완료",
+              body: "기자 워크스페이스에 수정본이 반영되었습니다. 기사 목록에서 바로 확인할 수 있습니다.",
+              url: "/journalist",
+            }).catch(() => {});
           } else {
             // Create New Article
             data = await DBService.saveArticle({
@@ -2899,6 +2905,12 @@ export default function JournalistPage() {
                 label: "발행 기사 보기",
               }),
             });
+            void DBService.logInAppNotification({
+              type: "article_publish",
+              title: "기사 발행 완료",
+              body: "감정 뉴스 페이지에 게시되었고, 배포 결과는 기사 목록과 감정 페이지에서 확인할 수 있습니다.",
+              url: `/emotion/${emotionLabel}?id=${data.id}`,
+            }).catch(() => {});
           }
 
           setPublishingStatus(prev => ({ ...prev, [platformId]: 'success' }));

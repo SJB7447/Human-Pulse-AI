@@ -289,6 +289,12 @@ export default function CommunityPage() {
               label: '피드 보기',
             }),
       });
+      void DBService.logInAppNotification({
+        type: 'admin_action',
+        title: '커뮤니티 등록 완료',
+        body: '커뮤니티 피드에 반영되었습니다. 방금 작성한 글은 커뮤니티 목록에서 바로 확인할 수 있습니다.',
+        url: publishedId ? `/community#post-${publishedId}` : '/community',
+      }).catch(() => {});
 
       await loadFeed();
     } catch (e: any) {

@@ -1174,6 +1174,12 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
           label: "내 기사 보기",
         }),
       });
+      void DBService.logInAppNotification({
+        type: "admin_action",
+        title: "내가 쓴 기사 저장 완료",
+        body: "마이페이지 나만의 기사에 저장되었고, 커뮤니티 검증 대기열에도 등록되었습니다.",
+        url: "/mypage?tab=custom",
+      }).catch(() => {});
       setShowOpinionComposer(false);
       setComposedDraft(null);
       setLocation('/mypage?tab=custom');
