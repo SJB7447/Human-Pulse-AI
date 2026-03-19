@@ -625,30 +625,6 @@ export default function CommunityPage() {
         </section>
 
         <section className="rounded-2xl border border-gray-200 bg-white p-5 mb-8">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">임시저장 목록</h2>
-          {drafts.length === 0 ? (
-            <p className="text-sm text-gray-500">저장된 임시초안이 없습니다.</p>
-          ) : (
-            <div className="space-y-2">
-              {drafts.map((draft) => (
-                <div key={draft.id} className="rounded-lg border border-gray-200 p-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm text-gray-800 line-clamp-1">{draft.opinion}</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {draft.emotion} · {new Date(draft.updatedAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button size="sm" variant="outline" onClick={() => handleApplyDraft(draft)}>불러오기</Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleDeleteDraft(draft.id)}>삭제</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-2xl border border-gray-200 bg-white p-5 mb-8">
           <div className="flex flex-col sm:flex-row gap-2">
             <select
               value={feedEmotionFilter}
@@ -685,6 +661,30 @@ export default function CommunityPage() {
               className="h-10 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-200"
             />
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 mb-8">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">임시저장 목록</h2>
+          {drafts.length === 0 ? (
+            <p className="text-sm text-gray-500">저장된 임시초안이 없습니다.</p>
+          ) : (
+            <div className="space-y-2">
+              {drafts.map((draft) => (
+                <div key={draft.id} className="rounded-lg border border-gray-200 p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-800 line-clamp-1">{draft.opinion}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {draft.emotion} · {new Date(draft.updatedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button size="sm" variant="outline" onClick={() => handleApplyDraft(draft)}>불러오기</Button>
+                    <Button size="sm" variant="ghost" onClick={() => handleDeleteDraft(draft.id)}>삭제</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {loading && (

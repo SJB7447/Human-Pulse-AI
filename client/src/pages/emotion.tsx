@@ -182,7 +182,6 @@ export default function EmotionPage() {
   const [selectedCardBg, setSelectedCardBg] = useState<string>('rgba(255,255,255,0.96)');
   const [searchTerm, setSearchTerm] = useState('');
   const [topicFilter, setTopicFilter] = useState<ArticleTopicId | 'all'>('all');
-  const [sourceFilter, setSourceFilter] = useState('all');
   const [sortKey, setSortKey] = useState<'latest' | 'oldest' | 'intensity_desc' | 'intensity_asc' | 'title_asc'>('latest');
   const [visibleCount, setVisibleCount] = useState(ARTICLES_PER_PAGE);
   const [showPeripheralNudge, setShowPeripheralNudge] = useState(false);
@@ -475,15 +474,6 @@ export default function EmotionPage() {
   const shouldLoadSpectrumRecommendations = Boolean(selectedArticle) && type !== 'spectrum';
   const { data: spectrumNews = [] } = useNews(shouldLoadSpectrumRecommendations ? 'spectrum' : undefined, 'all');
 
-  const sourceOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const item of news) {
-      const source = (item.source || '').trim();
-      if (source) set.add(source);
-    }
-    return Array.from(set.values()).sort((a, b) => a.localeCompare(b));
-  }, [news]);
-
   const totalEmotionArticleCount = useMemo(() => {
     const summed = topicSummaries.reduce((acc, topic) => acc + topic.count, 0);
     return summed > 0 ? summed : news.length;
@@ -524,10 +514,6 @@ export default function EmotionPage() {
       });
     }
 
-    if (sourceFilter !== 'all') {
-      rows = rows.filter((item) => (item.source || '').trim() === sourceFilter);
-    }
-
     rows.sort((a, b) => {
       const aTime = new Date(a.created_at || 0).getTime();
       const bTime = new Date(b.created_at || 0).getTime();
@@ -552,7 +538,7 @@ export default function EmotionPage() {
     });
 
     return rows;
-  }, [news, searchTerm, sourceFilter, sortKey]);
+  }, [news, searchTerm, sortKey]);
 
   const canLoadMore = visibleCount < filteredNews.length;
   const visibleNews = useMemo(() => {
@@ -561,7 +547,7 @@ export default function EmotionPage() {
 
   useEffect(() => {
     setVisibleCount(ARTICLES_PER_PAGE);
-  }, [type, searchTerm, sourceFilter, topicFilter, sortKey]);
+  }, [type, searchTerm, topicFilter, sortKey]);
 
   useEffect(() => {
     if (!type || typeof window === 'undefined') return;
@@ -753,26 +739,12 @@ export default function EmotionPage() {
               </div>
             </div>
 
-            <div className="mx-auto mb-5 max-w-5xl space-y-4 rounded-[30px] bg-white/86 p-5 shadow-[0_18px_40px_rgba(35,34,33,0.06)] ring-1 ring-white/80">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <select
-                value={sourceFilter}
-                onChange={(e) => setSourceFilter(e.target.value)}
-                className="h-14 rounded-[20px] bg-white/94 px-4 text-sm text-gray-800 shadow-[0_10px_22px_rgba(35,34,33,0.05)] focus:outline-none focus:ring-2 focus:ring-black/10"
-                data-testid="select-news-source"
-              >
-                <option value="all">모든 출처</option>
-                {sourceOptions.map((source) => (
-                  <option key={source} value={source}>
-                    {source}
-                  </option>
-                ))}
-              </select>
-
+            <div className="mx-auto mb-5 max-w-5xl rounded-[30px] bg-white/86 p-5 shadow-[0_18px_40px_rgba(35,34,33,0.06)] ring-1 ring-white/80">
+            <div className="flex justify-end">
               <select
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-                className="h-14 rounded-[20px] bg-white/94 px-4 text-sm text-gray-800 shadow-[0_10px_22px_rgba(35,34,33,0.05)] focus:outline-none focus:ring-2 focus:ring-black/10"
+                className="h-14 w-full max-w-[520px] rounded-[20px] bg-white/94 px-4 text-sm text-gray-800 shadow-[0_10px_22px_rgba(35,34,33,0.05)] focus:outline-none focus:ring-2 focus:ring-black/10"
                 data-testid="select-news-sort"
               >
                 <option value="latest">최신순</option>
@@ -822,7 +794,6 @@ export default function EmotionPage() {
                   onClick={() => {
                     setSearchTerm('');
                     setTopicFilter('all');
-                    setSourceFilter('all');
                     setSortKey('latest');
                   }}
                 >
