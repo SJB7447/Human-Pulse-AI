@@ -404,51 +404,6 @@ export function HueBot() {
             aria-label="Hue Bot 채팅 패널"
             aria-modal="false"
           >
-            <motion.span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-[-28px] -z-10 rounded-[32px]"
-              style={{
-                background:
-                  'radial-gradient(circle at 50% 18%, rgba(255,176,82,0.20) 0%, rgba(244,96,107,0.16) 38%, rgba(66,117,229,0.12) 66%, rgba(94,213,196,0.04) 82%, rgba(255,255,255,0) 100%)',
-                filter: 'blur(16px)',
-              }}
-              animate={
-                prefersReducedMotion
-                  ? { opacity: 0.42, scale: 1 }
-                  : {
-                      opacity: [0.26, 0.58, 0.3],
-                      scale: [0.98, 1.06, 1.01],
-                    }
-              }
-              transition={{
-                duration: 3.2,
-                repeat: Infinity,
-                ease: 'easeInOut',
-              }}
-            />
-            <motion.span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-[-52px] -z-10 rounded-[42px]"
-              style={{
-                background:
-                  'radial-gradient(circle at 52% 20%, rgba(66,117,229,0.18) 0%, rgba(167,115,249,0.12) 42%, rgba(94,213,196,0.08) 60%, rgba(255,255,255,0) 86%)',
-                filter: 'blur(24px)',
-              }}
-              animate={
-                prefersReducedMotion
-                  ? { opacity: 0.24, scale: 1 }
-                  : {
-                      opacity: [0.16, 0.38, 0.18],
-                      scale: [0.96, 1.12, 1.02],
-                    }
-              }
-              transition={{
-                duration: 4.1,
-                repeat: Infinity,
-                ease: 'easeInOut',
-                delay: 0.18,
-              }}
-            />
             <div
               className="p-4 flex items-center justify-between"
               style={{
