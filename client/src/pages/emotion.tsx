@@ -2,7 +2,7 @@
 import { useParams, useLocation } from 'wouter';
 import { motion, AnimatePresence, LayoutGroup, useReducedMotion } from 'framer-motion';
 import { createPortal } from 'react-dom';
-import { Clock, Heart, AlertCircle, CloudRain, Shield, Sparkles, Loader2, ArrowRight, User, Home, BookOpen, Users, HelpCircle, Search, Video } from 'lucide-react';
+import { Clock, Heart, Shield, Loader2, ArrowRight, User, Home, BookOpen, Users, Search, Video, Flame, Brain, Leaf, SunMedium, Blend } from 'lucide-react';
 import { EMOTION_CONFIG, EmotionType, useEmotionStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -19,30 +19,21 @@ import {
 } from '@/lib/peripheralNudge';
 
 const EMOTION_ICONS: Record<EmotionType, typeof Heart> = {
-  vibrance: Sparkles,
-  immersion: AlertCircle,
-  clarity: CloudRain,
+  vibrance: SunMedium,
+  immersion: Flame,
+  clarity: Brain,
   gravity: Shield,
-  serenity: Heart,
-  spectrum: HelpCircle,
+  serenity: Leaf,
+  spectrum: Blend,
 };
 
 const EMOTION_FILTER_COPY: Record<EmotionType, { label: string; hint: string }> = {
-  vibrance: { label: '노랑 · 설렘· 기쁨', hint: '기쁨과 활력을 주는 뉴스' },
-  immersion: { label: '빨강 · 긴장· 열정', hint: '긴장감과 열정이 느껴지는 뉴스' },
-  clarity: { label: '파랑 · 냉철· 이성적', hint: '이성적이고 차분하게 읽히는 뉴스' },
-  gravity: { label: '회색 · 묵직함· 성찰', hint: '무겁고 깊은 성찰을 유도하는 뉴스' },
-  serenity: { label: '초록 · 힐링· 안정', hint: '마음이 회복되고 안정되는 뉴스' },
-  spectrum: { label: '스펙트럼', hint: '여러 감정 결의 뉴스를 함께 보기' },
-};
-
-const EMOTION_NEWS_TONE_COPY: Record<EmotionType, string> = {
-  vibrance: '읽는 순간 기분이 밝아지는 결',
-  immersion: '긴장감과 열기가 크게 느껴지는 결',
-  clarity: '차분하게 분석하며 읽게 되는 결',
-  gravity: '가볍게 넘기기 어려운 깊은 결',
-  serenity: '회복과 안정을 천천히 주는 결',
-  spectrum: '다양한 감정 층위를 함께 보는 결',
+  vibrance: { label: '노랑 · 설렘· 기쁨', hint: '읽는 순간 기분이 밝아지는 결' },
+  immersion: { label: '빨강 · 긴장· 열정', hint: '긴장감과 열기가 크게 느껴지는 결' },
+  clarity: { label: '파랑 · 냉철· 이성적', hint: '차분하게 분석하며 읽게 되는 결' },
+  gravity: { label: '회색 · 묵직함· 성찰', hint: '가볍게 넘기기 어려운 깊은 결' },
+  serenity: { label: '초록 · 힐링· 안정', hint: '회복과 안정을 천천히 주는 결' },
+  spectrum: { label: '민트 · 스펙트럼', hint: '다양한 감정 층위를 함께 보는 결' },
 };
 
 const MOCK_AUTHORS = [
@@ -501,14 +492,12 @@ export default function EmotionPage() {
   const emotionQuickLinks = useMemo(() => {
     return EMOTION_CONFIG.map((emotion) => {
       const copy = EMOTION_FILTER_COPY[emotion.type];
-      const tone = EMOTION_NEWS_TONE_COPY[emotion.type];
       const { h, s } = hexToHsl(emotion.color);
       const isGravity = emotion.type === 'gravity';
 
       return {
         ...emotion,
         copy,
-        tone,
         chipColor: isGravity ? '#898989' : emotion.color,
         labelColor: isGravity ? '#3A3A3A' : emotion.color,
         hintColor: isGravity ? '#787674' : undefined,
@@ -672,17 +661,25 @@ export default function EmotionPage() {
                     >
                       <span className="mb-2 inline-flex items-center gap-2">
                         <span
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-full"
-                          style={{ backgroundColor: hexToRgba(emotion.chipColor, isActive ? 0.18 : 0.12) }}
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                          style={{
+                            backgroundColor: hexToRgba(emotion.chipColor, isActive ? 0.16 : 0.1),
+                            boxShadow: `inset 0 0 0 1px ${hexToRgba(emotion.chipColor, isActive ? 0.14 : 0.08)}`,
+                          }}
                         >
-                          <EmotionIcon className="h-3.5 w-3.5" style={{ color: emotion.chipColor }} />
+                          <EmotionIcon className="h-3 w-3" strokeWidth={2.1} style={{ color: emotion.chipColor }} />
                         </span>
-                        <span className="text-[13px] font-semibold tracking-[-0.01em] sm:text-[14px]">
+                        <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] sm:text-[14px]">
+                          <span
+                            aria-hidden="true"
+                            className="inline-block h-2 w-2 rounded-full"
+                            style={{ backgroundColor: emotion.chipColor }}
+                          />
                           {emotion.copy.label}
                         </span>
                       </span>
                       <p className="text-[14px] font-semibold leading-tight opacity-95 sm:text-[15px]" style={{ color: emotion.labelColor }}>
-                        {emotion.tone}
+                        {emotion.copy.hint}
                       </p>
                     </button>
                   );

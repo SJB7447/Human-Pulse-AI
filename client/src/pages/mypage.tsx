@@ -6,6 +6,7 @@ import { Header } from '@/components/Header';
 import { GlassButton } from '@/components/ui/glass-button';
 import { Button } from '@/components/ui/button';
 import { PushNotificationSettingsPanel } from '@/components/PushNotificationSettingsPanel';
+import { NotificationSettingsPage } from '@/components/notifications/NotificationSettingsPage';
 import { EMOTION_CONFIG, useEmotionStore } from '@/lib/store';
 import { DBService, type UserComposedArticleRecord, type UserInsightRecord, type UserSocialConnections } from '@/services/DBService';
 import { useToast } from '@/hooks/use-toast';
@@ -82,6 +83,11 @@ const createEmptySocialConnections = (): UserSocialConnections => ({
   updatedAt: '',
 });
 
+type MyPageSettingsAuth = {
+  userId: string;
+  role: 'general' | 'journalist' | 'admin';
+};
+
 export default function MyPage() {
   const { user } = useEmotionStore();
   const [currentLocation] = useLocation();
@@ -107,6 +113,8 @@ export default function MyPage() {
   const [insightCategoryFilter, setInsightCategoryFilter] = useState<InsightCategoryKey>('all');
   const [insightPage, setInsightPage] = useState(1);
   const [hoveredInsightTag, setHoveredInsightTag] = useState<string | null>(null);
+  const [settingsAuth, setSettingsAuth] = useState<MyPageSettingsAuth | null>(null);
+  const [settingsAuthLoading, setSettingsAuthLoading] = useState(true);
 
   const socialOwnerId = String(user?.id || 'guest');
 
@@ -121,6 +129,29 @@ export default function MyPage() {
 
   useEffect(() => {
     let mounted = true;
+
+    const loadSettingsAuth = async () => {
+      try {
+        const ctx = await DBService.getAuthContext();
+        if (!mounted) return;
+        if (ctx?.userId) {
+          setSettingsAuth({
+            userId: ctx.userId,
+            role: (ctx.role as MyPageSettingsAuth['role']) || 'general',
+          });
+        } else {
+          setSettingsAuth(null);
+        }
+      } catch {
+        if (!mounted) return;
+        setSettingsAuth(null);
+      } finally {
+        if (mounted) setSettingsAuthLoading(false);
+      }
+    };
+
+    void loadSettingsAuth();
+
     const loadSocialConnections = async () => {
       setSocialLoading(true);
       try {
@@ -877,9 +908,32 @@ export default function MyPage() {
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">프로필 설정</h3>
               <div className="space-y-4">
-                <div style={{ marginBottom: 24 }}>
+                <div className="rounded-2xl border border-gray-100 bg-slate-50/70 p-4" style={{ marginBottom: 24 }}>
                   <PushNotificationSettingsPanel userId={user?.id ?? null} />
                 </div>
+
+                <div className="space-y-3 rounded-2xl border border-gray-100 bg-slate-50/70 p-4">
+                  <div>
+                    <h4 className="text-base font-semibold text-gray-900">알림 세부 설정</h4>
+                    <p className="mt-1 text-sm text-gray-600">
+                      받고 싶은 알림만 골라서 켜고 끌 수 있어요. 마이페이지에서 바로 설정이 저장됩니다.
+                    </p>
+                  </div>
+
+                  {settingsAuthLoading ? (
+                    <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-5 text-sm text-gray-600">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      알림 설정을 불러오는 중...
+                    </div>
+                  ) : settingsAuth ? (
+                    <NotificationSettingsPage userId={settingsAuth.userId} role={settingsAuth.role} />
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-5 text-sm text-gray-600">
+                      로그인한 사용자만 알림 항목별 설정을 저장할 수 있어요.
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
                   <input
