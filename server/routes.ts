@@ -5872,6 +5872,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         sourceEmotion,
         sourceCategory,
       });
+
+      if (submissionStatus === "pending") {
+        notifyAdmins({
+          type: "admin_report",
+          title: "독자 기사 검증 요청 도착",
+          body: `${generatedTitle.slice(0, 60)} 검증 요청이 독자 기사 대기열에 등록되었습니다.`,
+          url: "/admin",
+          icon: "/favicon.png",
+        }).catch(() => {});
+      }
       return res.status(201).json(row);
     } catch (error) {
       console.error("[API] /api/mypage/composed-articles create failed:", error);
@@ -5936,6 +5946,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!updated) {
         return res.status(404).json({ error: "Resubmit target not found or not rejected." });
       }
+
+      notifyAdmins({
+        type: "admin_report",
+        title: "독자 기사 재검증 요청 도착",
+        body: `${String((updated as any)?.generatedTitle || "독자 기사").slice(0, 60)} 재검증 요청이 접수되었습니다.`,
+        url: "/admin",
+        icon: "/favicon.png",
+      }).catch(() => {});
+
       return res.json(updated);
     } catch (error) {
       console.error("[API] /api/mypage/composed-articles/:id/resubmit failed:", error);

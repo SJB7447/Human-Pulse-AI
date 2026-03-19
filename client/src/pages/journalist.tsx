@@ -3347,7 +3347,7 @@ export default function JournalistPage() {
                           href={draftSourceCitation.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex max-w-full truncate text-[11px] text-blue-600 hover:text-blue-700"
+                          className="block max-w-full break-all text-[11px] text-blue-600 hover:text-blue-700"
                         >
                           {draftSourceCitation.url}
                         </a>
@@ -3911,7 +3911,7 @@ export default function JournalistPage() {
                               href={draftSourceCitation.url}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex max-w-full truncate text-[11px] text-blue-600 hover:text-blue-700"
+                              className="block max-w-full break-all text-[11px] text-blue-600 hover:text-blue-700"
                             >
                               {draftSourceCitation.url}
                             </a>

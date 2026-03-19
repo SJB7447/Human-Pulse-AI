@@ -2523,13 +2523,27 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
                               <p className="text-xs text-[#6b6254] mb-1">참고 출처</p>
                               <ul className="space-y-1">
                                 {composedDraft.references.map((ref, idx) => (
-                                  <li key={`${ref.title}-${idx}`} className="text-xs text-[#4e463b]">
-                                    - {ref.title || ref.source || '출처'} {ref.url ? `(${ref.url})` : ''}
+                                  <li key={`${ref.title}-${idx}`} className="break-words text-xs text-[#4e463b]">
+                                    <span className="font-medium">{ref.title || ref.source || '출처'}</span>
+                                    {ref.url ? (
+                                      <a
+                                        href={ref.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="ml-1 break-all text-blue-700 underline-offset-2 hover:underline"
+                                      >
+                                        ({ref.url})
+                                      </a>
+                                    ) : null}
                                   </li>
                                 ))}
                               </ul>
                             </div>
                           )}
+                          <div className="rounded-lg border border-[#e6dcc8] bg-[#f8f1e4] px-3 py-2 text-[11px] leading-5 text-[#6b6254]">
+                            저장한 나만의 기사는 마이페이지에 보관되고, 커뮤니티 검증 대기열에도 함께 등록됩니다.
+                            승인 후 커뮤니티 또는 서비스 흐름에서 확인할 수 있습니다.
+                          </div>
                           <Button
                             onClick={handleSaveComposedArticle}
                             disabled={isSavingComposedDraft}
