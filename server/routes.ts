@@ -4743,6 +4743,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const opsAlerts: OpsAlert[] = [];
   const alertCooldownMs = 5 * 60 * 1000;
   const lastAlertAtByType = new Map<AlertType, number>();
+  const keywordUsageWindow = new Map<string, number[]>();
+  const signupRequestWindow: number[] = [];
 
   const resolveActor = (req: any): { actorId: string | null; actorRole: string; actorName: string; actorEmail: string } => {
     const actorIdHeader = req.headers?.["x-actor-id"];
@@ -4765,6 +4767,40 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   const normalizeOwnerToken = (value: unknown): string =>
     String(value || "").trim().toLowerCase();
+
+  const getAdminRecipientIds = async (): Promise<string[]> => {
+    const { data: adminRows } = await supabase.from("profiles").select("id").eq("role", "admin");
+    return Array.from(new Set([
+      ...((adminRows || []).map((item: any) => String(item?.id || "").trim()).filter(Boolean)),
+      ...roleRequestFallback
+        .filter((item) => item.requestedRole === "admin" && item.status === "approved")
+        .map((item) => item.userId)
+        .filter(Boolean),
+    ]));
+  };
+
+  const notifyAdmins = async (payload: {
+    type:
+      | "admin_report"
+      | "admin_new_reporter"
+      | "admin_signup_spike"
+      | "admin_push_fail"
+      | "admin_edge_error"
+      | "admin_daily_stats"
+      | "admin_keyword_abuse";
+    title: string;
+    body: string;
+    url: string;
+    icon?: string;
+  }) => {
+    const adminIds = await getAdminRecipientIds();
+    if (!adminIds.length) return;
+    await Promise.allSettled(
+      adminIds.map((adminId) =>
+        sendPushToUser(adminId, payload).catch(() => {}),
+      ),
+    );
+  };
 
   const writeAdminActionLog = async (
     req: any,
@@ -4828,6 +4864,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       targetType: "ops",
       targetId: row.id,
       detail: `${row.type}:${row.metric.value}${row.metric.unit}`,
+    });
+
+    const mappedType =
+      alert.type === "failure_rate"
+        ? "admin_push_fail"
+        : alert.type === "latency"
+          ? "admin_edge_error"
+          : "admin_report";
+
+    await notifyAdmins({
+      type: mappedType,
+      title: alert.title,
+      body: alert.message,
+      url: "/admin",
+      icon: "/favicon.png",
     });
   };
 
@@ -4925,6 +4976,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         targetType: "export",
         targetId: job.id,
         detail: `${format}:${mode}`,
+      });
+      await notifyAdmins({
+        type: "admin_daily_stats",
+        title: "운영 리포트가 생성됐어요",
+        body: `${format.toUpperCase()} 리포트가 생성되었습니다. 기사 ${articles.length}건 기준입니다.`,
+        url: "/admin",
+        icon: "/favicon.png",
       });
       return job;
     } catch (error: any) {
@@ -5935,21 +5993,28 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     };
     roleRequestFallback.push(row);
     if (requestedRole === "journalist") {
-      const { data: adminRows } = await supabase.from("profiles").select("id").eq("role", "admin");
-      const adminIds = Array.from(new Set([
-        ...((adminRows || []).map((item: any) => String(item?.id || "").trim()).filter(Boolean)),
-        ...roleRequestFallback
-          .filter((item) => item.requestedRole === "admin" && item.status === "approved")
-          .map((item) => item.userId)
-          .filter(Boolean),
-      ]));
-      await Promise.allSettled(adminIds.map((adminId) => sendPushToUser(adminId, {
+      await notifyAdmins({
         type: "admin_new_reporter",
         title: "기자 가입 신청이 들어왔어요",
         body: `${String(email || "새 사용자")} 님이 기자 계정 가입을 요청했어요.`,
         url: "/admin",
         icon: "/favicon.png",
-      })));
+      });
+
+      const now = Date.now();
+      const recentSignupRequests = signupRequestWindow.filter((ts) => now - ts <= 10 * 60 * 1000);
+      recentSignupRequests.push(now);
+      signupRequestWindow.length = 0;
+      signupRequestWindow.push(...recentSignupRequests);
+      if (recentSignupRequests.length >= 3) {
+        await notifyAdmins({
+          type: "admin_signup_spike",
+          title: "기자 가입 요청이 급증하고 있어요",
+          body: `최근 10분 동안 기자 가입 요청이 ${recentSignupRequests.length}건 접수되었습니다.`,
+          url: "/admin",
+          icon: "/favicon.png",
+        });
+      }
     }
     res.status(201).json({ id: row.id, status: row.status, createdAt: row.createdAt });
   });
@@ -6074,6 +6139,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         createdAt: nowIso,
       });
       if (userEmotionLogsFallback.length > 1000) userEmotionLogsFallback.length = 1000;
+
+      sendPushToUser(actorId, {
+        type: "emotion",
+        title: "감정 맞춤 뉴스가 준비됐어요",
+        body: `${emotion} 흐름에 맞춘 뉴스 큐레이션을 확인해 보세요.`,
+        url: `/emotion?emotion=${emotion}`,
+        icon: "/favicon.png",
+      }).catch(() => {});
     }
 
     return res.status(201).json({
@@ -7138,6 +7211,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/ai/search-keyword-news", async (req, res) => {
     const keyword = String(req.body?.keyword || "").trim();
     if (!keyword) return res.status(400).json({ error: "keyword is required." });
+    const actor = resolveActor(req);
+    const actorId = String(actor.actorId || "").trim();
     const fetched = await fetchKeywordNewsArticles(keyword, 5, 7000);
     const resolvedArticles = await Promise.all(
       (fetched.articles || []).map(async (article) => ({
@@ -7145,6 +7220,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         url: await resolveReferenceUrl(String(article.url || "")),
       })),
     );
+
+    if (actorId) {
+      sendPushToUser(actorId, {
+        type: "keyword",
+        title: "키워드 뉴스가 준비됐어요",
+        body: `${keyword} 관련 기사 ${resolvedArticles.length}건을 확인해 보세요.`,
+        url: "/emotion",
+        icon: "/favicon.png",
+      }).catch(() => {});
+    }
+
+    const keywordKey = keyword.toLowerCase();
+    const now = Date.now();
+    const history = (keywordUsageWindow.get(keywordKey) || []).filter((ts) => now - ts <= 10 * 60 * 1000);
+    history.push(now);
+    keywordUsageWindow.set(keywordKey, history);
+    if (history.length >= 5) {
+      notifyAdmins({
+        type: "admin_keyword_abuse",
+        title: "키워드 사용 급증 감지",
+        body: `${keyword} 키워드 요청이 최근 10분 동안 ${history.length}회 발생했습니다.`,
+        url: "/admin",
+        icon: "/favicon.png",
+      }).catch(() => {});
+    }
+
     return res.json({
       ...fetched,
       articles: resolvedArticles,
@@ -9235,7 +9336,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       } as any);
 
       broadcastPush({
-        type: "new_news",
+        type: "breaking",
         title: "새 뉴스가 도착했어요",
         body: created.title,
         url: "/",

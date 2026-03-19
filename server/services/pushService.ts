@@ -26,11 +26,19 @@ export type PushNotificationType =
   | "admin_action"
   | "article_publish"
   | "breaking"
+  | "emotion"
+  | "keyword"
+  | "digest"
   | "reporter_edit_requested"
   | "reporter_comment"
   | "reporter_article_published"
   | "admin_new_reporter"
-  | "admin_report";
+  | "admin_report"
+  | "admin_signup_spike"
+  | "admin_push_fail"
+  | "admin_edge_error"
+  | "admin_daily_stats"
+  | "admin_keyword_abuse";
 
 export interface PushPayload {
   type: PushNotificationType;

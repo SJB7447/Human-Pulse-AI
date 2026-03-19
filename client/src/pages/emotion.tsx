@@ -617,7 +617,7 @@ export default function EmotionPage() {
               <span className="mb-5 inline-flex items-center rounded-full bg-white/92 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.34em] text-slate-500 shadow-[0_10px_24px_rgba(35,34,33,0.06)]">
                 Emotional News Flow
               </span>
-              <div className="flex w-full max-w-5xl flex-wrap items-stretch justify-center gap-3">
+              <div className="grid w-full max-w-[1120px] grid-cols-2 justify-center gap-3 sm:grid-cols-3 lg:grid-cols-6">
                 {emotionQuickLinks.map((emotion) => {
                   const isActive = emotion.type === type;
                   const EmotionIcon = EMOTION_ICONS[emotion.type];
@@ -627,7 +627,7 @@ export default function EmotionPage() {
                       key={emotion.type}
                       type="button"
                       onClick={() => handleEmotionCategorySelect(emotion.type)}
-                      className="group min-w-[180px] rounded-2xl px-5 py-4 text-left transition-all duration-200 sm:min-w-[208px]"
+                      className="group flex h-[68px] w-full items-center justify-center rounded-2xl px-3 py-3 text-center transition-all duration-200 sm:h-[72px] sm:px-4"
                       style={{
                         backgroundColor: isActive ? emotion.activeBackground : emotion.baseBackground,
                         boxShadow: isActive
@@ -637,22 +637,17 @@ export default function EmotionPage() {
                       }}
                       data-testid={`button-emotion-quick-${emotion.type}`}
                     >
-                      <span className="inline-flex items-center gap-2.5">
+                      <span className="inline-flex items-center justify-center gap-2 whitespace-nowrap">
                         <span
-                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+                          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full sm:h-[18px] sm:w-[18px]"
                           style={{
                             backgroundColor: hexToRgba(emotion.chipColor, isActive ? 0.14 : 0.1),
                             boxShadow: `inset 0 0 0 1px ${hexToRgba(emotion.chipColor, isActive ? 0.18 : 0.1)}`,
                           }}
                         >
-                          <EmotionIcon className="h-3 w-3" strokeWidth={2.1} style={{ color: emotion.chipColor }} />
+                          <EmotionIcon className="h-2.5 w-2.5 sm:h-3 sm:w-3" strokeWidth={2.1} style={{ color: emotion.chipColor }} />
                         </span>
-                        <span className="inline-flex items-center gap-2 text-[14px] font-semibold tracking-[-0.01em] sm:text-[15px]">
-                          <span
-                            aria-hidden="true"
-                            className="inline-block h-2.5 w-2.5 rounded-full"
-                            style={{ backgroundColor: emotion.chipColor }}
-                          />
+                        <span className="inline-flex items-center text-[13px] font-semibold tracking-[-0.01em] sm:text-[14px] lg:text-[13px] xl:text-[14px]">
                           <span style={{ color: emotion.labelColor }}>{emotion.copy.label}</span>
                         </span>
                       </span>
