@@ -6,6 +6,7 @@ import {
   BellOff,
   BellRing,
   BookOpenText,
+  ChevronDown,
   Clock3,
   Flame,
   KeyRound,
@@ -21,6 +22,7 @@ import {
   READER_NOTIFICATION_KEYS,
   READER_NOTIFICATION_TOGGLES,
   REPORTER_NOTIFICATION_KEYS,
+  REPORTER_NOTIFICATION_TOGGLES,
   type NotificationPrefKey,
   type NotificationPrefs,
   type NotificationSettingsRole,
@@ -31,12 +33,19 @@ import { usePushNotification } from '@/hooks/usePushNotification';
 import { useToast } from '@/hooks/use-toast';
 import { DBService } from '@/services/DBService';
 import { PermissionStatusBanner } from './PermissionStatusBanner';
-import { ReporterNotificationSection } from './ReporterNotificationSection';
 import { ToggleRow } from './ToggleRow';
 import { WarnIfOffModal } from './WarnIfOffModal';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 type TogglePrefKey = Exclude<NotificationPrefKey, 'quiet_hours_start' | 'quiet_hours_end'>;
+type SectionKey =
+  | 'base'
+  | 'reporter'
+  | 'quiet'
+  | 'test'
+  | 'admin-critical'
+  | 'admin-operations'
+  | 'admin-reports';
 
 type NotificationSettingsPageProps = {
   userId: string;
@@ -48,6 +57,16 @@ const READER_ICONS = {
   emotion: Flame,
   keyword: KeyRound,
   digest: BookOpenText,
+} as const;
+
+const REPORTER_ICONS = {
+  reporter_comment: BellRing,
+  reporter_reply: BellRing,
+  reporter_share_spike: BellRing,
+  reporter_view_milestone: BarChart3,
+  reporter_article_published: Newspaper,
+  reporter_edit_requested: AlertTriangle,
+  reporter_weekly_summary: BookOpenText,
 } as const;
 
 const ADMIN_ICONS = {
@@ -72,22 +91,68 @@ function roleLabel(role: NotificationSettingsRole): string {
 
 function roleDescription(role: NotificationSettingsRole): string {
   if (role === 'admin') {
-    return '서비스 운영 이상 징후와 승인 흐름을 빠르게 감지할 수 있도록 관리자 전용 알림만 보여줍니다.';
+    return '서비스 운영 이상 징후와 승인 흐름을 빠르게 확인할 수 있도록 관리자 전용 알림만 보여줍니다.';
   }
   if (role === 'reporter') {
     return '독자용 개인화 알림과 기사 운영 알림을 함께 설정할 수 있습니다.';
   }
-  return '읽고 싶은 뉴스만 골라서 받고, 브라우저 실시간 알림까지 연결할 수 있습니다.';
+  return '받고 싶은 뉴스만 골라서 받고, 브라우저 실시간 알림까지 연결할 수 있습니다.';
 }
 
 function getVisibleKeys(role: NotificationSettingsRole): TogglePrefKey[] {
-  if (role === 'admin') {
-    return [...ADMIN_NOTIFICATION_KEYS] as TogglePrefKey[];
-  }
+  if (role === 'admin') return [...ADMIN_NOTIFICATION_KEYS] as TogglePrefKey[];
   if (role === 'reporter') {
     return [...READER_NOTIFICATION_KEYS, ...REPORTER_NOTIFICATION_KEYS] as TogglePrefKey[];
   }
   return [...READER_NOTIFICATION_KEYS] as TogglePrefKey[];
+}
+
+function CollapsibleSection({
+  title,
+  description,
+  badge,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  description: string;
+  badge?: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-start justify-between gap-4 text-left"
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+            {badge ? (
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                {badge}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-sm text-gray-600">{description}</p>
+        </div>
+        <span
+          className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition-transform ${
+            open ? 'rotate-180' : ''
+          }`}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </span>
+      </button>
+
+      {open ? <div className="mt-4">{children}</div> : null}
+    </section>
+  );
 }
 
 export function NotificationSettingsPage({ userId, role }: NotificationSettingsPageProps) {
@@ -101,6 +166,15 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
   const [warnOpen, setWarnOpen] = useState(false);
   const [pendingReporterToggle, setPendingReporterToggle] = useState<boolean | null>(null);
   const [sendingTest, setSendingTest] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
+    base: true,
+    reporter: false,
+    quiet: false,
+    test: false,
+    'admin-critical': true,
+    'admin-operations': false,
+    'admin-reports': false,
+  });
   const saveTimerRef = useRef<number | null>(null);
   const {
     permission,
@@ -123,16 +197,11 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
             window.setTimeout(() => reject(new Error('알림 설정 응답이 지연되고 있습니다.')), 4000);
           }),
         ]);
-
-        if (mounted) {
-          setPrefs(result.prefs);
-        }
+        if (mounted) setPrefs(result.prefs);
       } catch {
-        // 기본값으로 먼저 렌더링하고, 로드 실패 시에도 화면은 유지합니다.
+        // 기본값으로 먼저 렌더링합니다.
       } finally {
-        if (mounted) {
-          setHydrating(false);
-        }
+        if (mounted) setHydrating(false);
       }
     };
 
@@ -140,11 +209,17 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
 
     return () => {
       mounted = false;
-      if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
-      }
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     };
   }, []);
+
+  const visibleKeys = useMemo(() => getVisibleKeys(normalizedRole), [normalizedRole]);
+  const enabledVisibleCount = useMemo(
+    () => visibleKeys.filter((key) => Boolean(prefs[key])).length,
+    [prefs, visibleKeys],
+  );
+
+  const globalEnabled = enabledVisibleCount > 0;
 
   const statusLabel = useMemo(() => {
     if (saveState === 'saving') return '저장 중...';
@@ -154,30 +229,20 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
     return '';
   }, [hydrating, saveState]);
 
-  const visibleKeys = useMemo(() => getVisibleKeys(normalizedRole), [normalizedRole]);
-
-  const enabledVisibleCount = useMemo(
-    () => visibleKeys.filter((key) => Boolean(prefs[key])).length,
-    [prefs, visibleKeys],
-  );
-
-  const globalEnabled = enabledVisibleCount > 0;
-  const pushReady = permission === 'granted' && isSubscribed;
+  const toggleSection = (key: SectionKey) => {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const commitPatch = async (patch: Partial<NotificationPrefs>) => {
     const snapshot = prefs;
-    const next = { ...prefs, ...patch };
-
-    setPrefs(next);
+    setPrefs({ ...prefs, ...patch });
     setSaveState('saving');
 
     try {
       const result = await DBService.updateNotificationPrefs(patch);
       setPrefs(result.prefs);
       setSaveState('saved');
-      if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
-      }
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = window.setTimeout(() => setSaveState('idle'), 2000);
     } catch (error: any) {
       setPrefs(snapshot);
@@ -187,9 +252,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
         description: error?.message || '변경 사항을 저장하지 못했습니다.',
         variant: 'destructive',
       });
-      if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
-      }
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = window.setTimeout(() => setSaveState('idle'), 2000);
     }
   };
@@ -225,9 +288,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
       }
     }
 
-    if (isSubscribed) {
-      return true;
-    }
+    if (isSubscribed) return true;
 
     const ok = await subscribe();
     if (!ok) {
@@ -264,11 +325,6 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
   };
 
   const handleToggle = async (key: NotificationPrefKey, checked: boolean) => {
-    if (checked && !pushReady) {
-      const ready = await ensurePushReady();
-      if (!ready) return;
-    }
-
     if (key === 'reporter_edit_requested' && !checked) {
       setPendingReporterToggle(false);
       setWarnOpen(true);
@@ -278,26 +334,19 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
     void commitPatch({ [key]: checked } as Partial<NotificationPrefs>);
   };
 
+  const handleGlobalToggle = async (checked: boolean) => {
+    const patch: Partial<NotificationPrefs> = {};
+    visibleKeys.forEach((key) => {
+      patch[key] = checked ? DEFAULT_NOTIFICATION_PREFS[key] : false;
+    });
+    void commitPatch(patch);
+  };
+
   const handleQuietHoursCommit = () => {
     void commitPatch({
       quiet_hours_start: prefs.quiet_hours_start,
       quiet_hours_end: prefs.quiet_hours_end,
     });
-  };
-
-  const handleGlobalToggle = async (checked: boolean) => {
-    if (checked && !pushReady) {
-      const ready = await ensurePushReady();
-      if (!ready) return;
-    }
-
-    const patch: Partial<NotificationPrefs> = {};
-
-    visibleKeys.forEach((key) => {
-      patch[key] = checked ? DEFAULT_NOTIFICATION_PREFS[key] : false;
-    });
-
-    void commitPatch(patch);
   };
 
   const handleSendTest = async () => {
@@ -345,34 +394,42 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
         roleLabel={roleLabel(normalizedRole)}
       />
 
-      <section className="rounded-[28px] border border-[#E3E8F4] bg-white p-5 shadow-[0_18px_40px_rgba(43,51,69,0.06)]">
-        <div className="flex items-start justify-between gap-4 rounded-2xl border border-[#E8ECF8] bg-[#F7F9FF] px-4 py-4">
-          <div className="flex items-start gap-3">
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#EEF1FF] text-[#4F46FF]">
-              {globalEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
-            </span>
-            <div>
-              <p className="text-base font-semibold text-gray-900">{roleLabel(normalizedRole)} 알림 활성화</p>
-              <p className="mt-1 text-sm text-gray-600">
-                현재 이 역할에서 사용 가능한 {visibleKeys.length}개 항목 중 {enabledVisibleCount}개가 켜져 있습니다.
-              </p>
+      <CollapsibleSection
+        title={`${roleLabel(normalizedRole)} 기본 알림`}
+        description={`현재 사용 가능한 ${visibleKeys.length}개 항목 중 ${enabledVisibleCount}개가 켜져 있습니다.`}
+        badge={globalEnabled ? '활성화됨' : '비활성화'}
+        open={openSections.base}
+        onToggle={() => toggleSection('base')}
+      >
+        <div className="rounded-2xl border border-[#E8ECF8] bg-[#F7F9FF] px-4 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#EEF1FF] text-[#4F46FF]">
+                {globalEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+              </span>
+              <div>
+                <p className="text-base font-semibold text-gray-900">{roleLabel(normalizedRole)} 알림 활성화</p>
+                <p className="mt-1 text-sm text-gray-600">
+                  한 번에 켜거나 끄고, 아래 세부 항목은 개별로 조정할 수 있습니다.
+                </p>
+              </div>
             </div>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={globalEnabled}
-            onClick={() => void handleGlobalToggle(!globalEnabled)}
-            className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors ${
-              globalEnabled ? 'bg-[#4F46FF]' : 'bg-[#D8DEEC]'
-            }`}
-          >
-            <span
-              className={`inline-block h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
-                globalEnabled ? 'translate-x-7' : 'translate-x-1'
+            <button
+              type="button"
+              role="switch"
+              aria-checked={globalEnabled}
+              onClick={() => void handleGlobalToggle(!globalEnabled)}
+              className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors ${
+                globalEnabled ? 'bg-[#4F46FF]' : 'bg-[#D8DEEC]'
               }`}
-            />
-          </button>
+            >
+              <span
+                className={`inline-block h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
+                  globalEnabled ? 'translate-x-7' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
         </div>
 
         {!isAdmin ? (
@@ -405,59 +462,69 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
             ))}
           </div>
         )}
-      </section>
+      </CollapsibleSection>
 
       {isReporter ? (
-        <ReporterNotificationSection prefs={prefs} onToggle={(key, checked) => void handleToggle(key, checked)} />
+        <CollapsibleSection
+          title="기자단 알림"
+          description="내 기사 반응과 운영 피드백을 빠르게 확인할 수 있는 기자 전용 항목입니다."
+          badge="REPORTER"
+          open={openSections.reporter}
+          onToggle={() => toggleSection('reporter')}
+        >
+          <div className="space-y-3">
+            {REPORTER_NOTIFICATION_TOGGLES.map((item) => (
+              <ToggleRow
+                key={item.key}
+                title={item.title}
+                description={item.description}
+                badge={item.badge}
+                icon={REPORTER_ICONS[item.key]}
+                checked={prefs[item.key]}
+                onCheckedChange={(checked) => void handleToggle(item.key, checked)}
+              />
+            ))}
+          </div>
+        </CollapsibleSection>
       ) : null}
 
       {isAdmin ? (
         <div className="space-y-5">
-          {ADMIN_NOTIFICATION_GROUPS.map((group) => (
-            <section key={group.id} className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-semibold text-gray-900">{group.title}</h2>
-                    {group.badge ? (
-                      <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-red-700">
-                        {group.badge}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-sm text-gray-600">{group.description}</p>
+          {ADMIN_NOTIFICATION_GROUPS.map((group) => {
+            const sectionKey = `admin-${group.id}` as SectionKey;
+            return (
+              <CollapsibleSection
+                key={group.id}
+                title={group.title}
+                description={group.description}
+                badge={group.badge}
+                open={openSections[sectionKey]}
+                onToggle={() => toggleSection(sectionKey)}
+              >
+                <div className="space-y-3">
+                  {group.keys.map((item) => (
+                    <ToggleRow
+                      key={item.key}
+                      title={item.title}
+                      description={item.description}
+                      icon={ADMIN_ICONS[item.key]}
+                      checked={prefs[item.key]}
+                      onCheckedChange={(checked) => void handleToggle(item.key, checked)}
+                    />
+                  ))}
                 </div>
-                {group.id === 'critical' ? <AlertTriangle className="h-5 w-5 text-red-500" /> : null}
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {group.keys.map((item) => (
-                  <ToggleRow
-                    key={item.key}
-                    title={item.title}
-                    description={item.description}
-                    badge={item.badge}
-                    icon={ADMIN_ICONS[item.key]}
-                    checked={prefs[item.key]}
-                    onCheckedChange={(checked) => void handleToggle(item.key, checked)}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
+              </CollapsibleSection>
+            );
+          })}
         </div>
       ) : null}
 
-      <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2">
-          <Clock3 className="h-4 w-4 text-gray-400" />
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">방해금지 시간</h2>
-            <p className="mt-1 text-sm text-gray-600">
-              기본값은 22:00부터 07:00까지이며, 긴급 알림은 예외로 발송됩니다.
-            </p>
-          </div>
-        </div>
+      <CollapsibleSection
+        title="방해금지 시간"
+        description="기본값은 22:00부터 07:00까지이며, 긴급 알림은 예외로 발송됩니다."
+        open={openSections.quiet}
+        onToggle={() => toggleSection('quiet')}
+      >
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">시작</label>
@@ -480,21 +547,27 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
             />
           </div>
         </div>
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Clock3 className="h-4 w-4 text-gray-400" />
+            저장 후부터 새 알림에 즉시 반영됩니다.
+          </div>
           <Button variant="outline" onClick={handleQuietHoursCommit}>
             방해금지 시간 저장
           </Button>
         </div>
-      </section>
+      </CollapsibleSection>
 
-      <section className="rounded-3xl border border-[#E3E8F4] bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">실시간 알림 테스트</h2>
-            <p className="mt-1 text-sm text-gray-600">
-              지금 계정으로 테스트 알림을 보내서 브라우저 푸시와 알림함 반영 여부를 바로 확인할 수 있습니다.
-            </p>
-          </div>
+      <CollapsibleSection
+        title="실시간 알림 테스트"
+        description="테스트 알림을 보내서 브라우저 푸시와 알림함 반영 여부를 바로 확인할 수 있습니다."
+        open={openSections.test}
+        onToggle={() => toggleSection('test')}
+      >
+        <div className="rounded-2xl bg-[#F8FAFF] px-4 py-3 text-sm text-gray-600">
+          브라우저 권한이 허용되지 않았더라도 알림함 기록은 함께 생성됩니다.
+        </div>
+        <div className="mt-4 flex justify-end">
           <Button
             type="button"
             className="rounded-xl bg-[#4F46FF] hover:bg-[#4338CA]"
@@ -504,10 +577,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
             {sendingTest ? '발송 중...' : '테스트 알림 보내기'}
           </Button>
         </div>
-        <div className="mt-3 rounded-2xl bg-[#F8FAFF] px-4 py-3 text-xs leading-5 text-gray-600">
-          브라우저 권한이 허용되어 있지 않으면 푸시 배너는 보이지 않을 수 있지만, 알림함 기록은 함께 생성됩니다.
-        </div>
-      </section>
+      </CollapsibleSection>
 
       <WarnIfOffModal
         open={warnOpen}
