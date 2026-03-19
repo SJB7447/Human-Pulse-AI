@@ -6000,6 +6000,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         reviewedBy,
       });
       if (!updated) return res.status(404).json({ error: "Reader article not found." });
+
+      const ownerUserId = String((updated as any)?.userId || "").trim();
+      const articleTitle = String((updated as any)?.generatedTitle || "나만의 기사").trim();
+      const trimmedMemo = moderationMemo.slice(0, 120);
+      if (ownerUserId) {
+        const isApproved = submissionStatusRaw === "approved";
+        const title = isApproved ? "내 기사 검증이 승인됐어요" : "내 기사 검증 결과가 도착했어요";
+        const memoSuffix = trimmedMemo ? ` ${trimmedMemo}` : "";
+        const body = isApproved
+          ? `${articleTitle.slice(0, 60)} 글이 승인되어 커뮤니티에서 확인할 수 있어요.${memoSuffix}`.trim()
+          : `${articleTitle.slice(0, 60)} 글이 반려되었어요. 마이페이지에서 사유를 확인하고 다시 요청해 주세요.${memoSuffix}`.trim();
+
+        sendPushToUser(ownerUserId, {
+          type: "admin_action",
+          title,
+          body,
+          url: "/mypage",
+          icon: "/favicon.png",
+        }).catch(() => {});
+      }
+
       return res.json(updated);
     } catch (error) {
       console.error("[API] /api/admin/reader-articles/:id/decision failed:", error);
