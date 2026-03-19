@@ -22,7 +22,8 @@ export function WarnIfOffModal({ open, onConfirm, onCancel }: WarnIfOffModalProp
         <AlertDialogHeader>
           <AlertDialogTitle>수정 요청 알림을 끄시겠어요?</AlertDialogTitle>
           <AlertDialogDescription>
-            수정 요청 알림을 끄면 기사 반려나 보완 요청을 늦게 확인할 수 있어요. 정말 끌지 한 번 더 확인해 주세요.
+            수정 요청 알림을 끄면 기사 반려나 보완 요청을 바로 확인하지 못할 수 있습니다.
+            정말로 끄려는 경우에만 진행해 주세요.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

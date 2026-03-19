@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   BarChart3,
@@ -91,12 +91,12 @@ function roleLabel(role: NotificationSettingsRole): string {
 
 function roleDescription(role: NotificationSettingsRole): string {
   if (role === 'admin') {
-    return '서비스 운영 이상 징후와 승인 흐름을 빠르게 확인할 수 있도록 관리자 전용 알림만 보여줍니다.';
+    return '운영 이상 징후와 검토가 필요한 이벤트를 빠르게 확인할 수 있도록 관리자 전용 알림을 제공합니다.';
   }
   if (role === 'reporter') {
-    return '독자용 개인화 알림과 기사 운영 알림을 함께 설정할 수 있습니다.';
+    return '독자 반응 알림과 기사 운영 알림을 역할에 맞게 직접 조정할 수 있습니다.';
   }
-  return '받고 싶은 뉴스만 골라서 받고, 브라우저 실시간 알림까지 연결할 수 있습니다.';
+  return '받고 싶은 알림만 골라 저장할 수 있고, 브라우저 권한을 허용하면 실시간 브라우저 알림도 함께 받을 수 있습니다.';
 }
 
 function getVisibleKeys(role: NotificationSettingsRole): TogglePrefKey[] {
@@ -120,7 +120,7 @@ function CollapsibleSection({
   badge?: string;
   open: boolean;
   onToggle: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -194,12 +194,15 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
         const result = await Promise.race([
           DBService.getNotificationPrefs(),
           new Promise<never>((_, reject) => {
-            window.setTimeout(() => reject(new Error('알림 설정 응답이 지연되고 있습니다.')), 4000);
+            window.setTimeout(
+              () => reject(new Error('알림 설정 응답이 지연되고 있습니다.')),
+              4000,
+            );
           }),
         ]);
         if (mounted) setPrefs(result.prefs);
       } catch {
-        // 기본값으로 먼저 렌더링합니다.
+        // 기본 설정값으로 먼저 화면을 유지합니다.
       } finally {
         if (mounted) setHydrating(false);
       }
@@ -218,7 +221,6 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
     () => visibleKeys.filter((key) => Boolean(prefs[key])).length,
     [prefs, visibleKeys],
   );
-
   const globalEnabled = enabledVisibleCount > 0;
 
   const statusLabel = useMemo(() => {
@@ -234,33 +236,39 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
   };
 
   const commitPatch = async (patch: Partial<NotificationPrefs>) => {
-    const snapshot = prefs;
-    setPrefs({ ...prefs, ...patch });
-    setSaveState('saving');
+    setPrefs((current) => {
+      const snapshot = current;
+      const optimisticNext = { ...current, ...patch };
 
-    try {
-      const result = await DBService.updateNotificationPrefs(patch);
-      setPrefs(result.prefs);
-      setSaveState('saved');
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = window.setTimeout(() => setSaveState('idle'), 2000);
-    } catch (error: any) {
-      setPrefs(snapshot);
-      setSaveState('error');
-      toast({
-        title: '알림 설정 저장에 실패했습니다.',
-        description: error?.message || '변경 사항을 저장하지 못했습니다.',
-        variant: 'destructive',
-      });
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = window.setTimeout(() => setSaveState('idle'), 2000);
-    }
+      void (async () => {
+        setSaveState('saving');
+        try {
+          const result = await DBService.updateNotificationPrefs(patch);
+          setPrefs(result.prefs);
+          setSaveState('saved');
+          if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = window.setTimeout(() => setSaveState('idle'), 2000);
+        } catch (error: any) {
+          setPrefs(snapshot);
+          setSaveState('error');
+          toast({
+            title: '알림 설정 저장에 실패했습니다.',
+            description: error?.message || '변경 사항을 저장하지 못했습니다.',
+            variant: 'destructive',
+          });
+          if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = window.setTimeout(() => setSaveState('idle'), 2000);
+        }
+      })();
+
+      return optimisticNext;
+    });
   };
 
   const ensurePushReady = async (): Promise<boolean> => {
     if (!isSupported) {
       toast({
-        title: '이 브라우저는 알림을 지원하지 않습니다.',
+        title: '이 브라우저에서는 알림을 지원하지 않습니다.',
         description: 'Chrome 또는 Edge 최신 버전에서 다시 시도해 주세요.',
         variant: 'destructive',
       });
@@ -281,7 +289,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
       if (nextPermission !== 'granted') {
         toast({
           title: '알림 권한이 필요합니다.',
-          description: '실시간 알림을 받으려면 브라우저 알림 권한을 허용해 주세요.',
+          description: '브라우저 알림을 받으려면 알림 권한을 허용해 주세요.',
           variant: 'destructive',
         });
         return false;
@@ -292,9 +300,19 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
 
     const ok = await subscribe();
     if (!ok) {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        toast({
+          title: '브라우저 권한은 연결되었습니다.',
+          description:
+            '웹푸시 구독은 실패했지만, 로그인 상태에서는 알림함 동기화와 브라우저 알림으로 계속 받을 수 있습니다.',
+        });
+        return true;
+      }
+
       toast({
         title: '실시간 알림 연결에 실패했습니다.',
-        description: '브라우저 구독 등록이 완료되지 않았습니다. 잠시 후 다시 시도해 주세요.',
+        description:
+          '브라우저 구독 등록이 완료되지 않았습니다. 잠시 후 다시 시도해 주세요.',
         variant: 'destructive',
       });
       return false;
@@ -302,7 +320,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
 
     toast({
       title: '실시간 알림 연결 완료',
-      description: '이제 HueBrief 실시간 알림을 브라우저에서 받을 수 있습니다.',
+      description: '이제 HueBrief 알림을 브라우저에서도 함께 받을 수 있습니다.',
     });
     return true;
   };
@@ -311,8 +329,8 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
     const ok = await unsubscribe();
     if (!ok) {
       toast({
-        title: '알림 연결 해제에 실패했습니다.',
-        description: '브라우저 구독을 정리하지 못했습니다.',
+        title: '브라우저 연결 해제에 실패했습니다.',
+        description: '브라우저 구독 상태를 정리하지 못했습니다.',
         variant: 'destructive',
       });
       return;
@@ -320,11 +338,11 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
 
     toast({
       title: '브라우저 알림 연결이 해제되었습니다.',
-      description: '알림함 기록은 남아 있지만 실시간 푸시는 더 이상 발송되지 않습니다.',
+      description: '로그인 알림함 저장은 유지되지만 브라우저 실시간 알림은 중단됩니다.',
     });
   };
 
-  const handleToggle = async (key: NotificationPrefKey, checked: boolean) => {
+  const handleToggle = (key: NotificationPrefKey, checked: boolean) => {
     if (key === 'reporter_edit_requested' && !checked) {
       setPendingReporterToggle(false);
       setWarnOpen(true);
@@ -334,7 +352,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
     void commitPatch({ [key]: checked } as Partial<NotificationPrefs>);
   };
 
-  const handleGlobalToggle = async (checked: boolean) => {
+  const handleGlobalToggle = (checked: boolean) => {
     const patch: Partial<NotificationPrefs> = {};
     visibleKeys.forEach((key) => {
       patch[key] = checked ? DEFAULT_NOTIFICATION_PREFS[key] : false;
@@ -352,6 +370,14 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
   const handleSendTest = async () => {
     setSendingTest(true);
     try {
+      if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+        const granted = await ensurePushReady();
+        if (!granted) {
+          setSendingTest(false);
+          return;
+        }
+      }
+
       const result = await DBService.sendNotificationTest();
       toast({
         title: result.delivered ? '테스트 알림을 발송했습니다.' : '알림함 테스트를 만들었습니다.',
@@ -397,7 +423,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
       <CollapsibleSection
         title={`${roleLabel(normalizedRole)} 기본 알림`}
         description={`현재 사용 가능한 ${visibleKeys.length}개 항목 중 ${enabledVisibleCount}개가 켜져 있습니다.`}
-        badge={globalEnabled ? '활성화됨' : '비활성화'}
+        badge={globalEnabled ? '활성화' : '비활성화'}
         open={openSections.base}
         onToggle={() => toggleSection('base')}
       >
@@ -408,9 +434,11 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
                 {globalEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
               </span>
               <div>
-                <p className="text-base font-semibold text-gray-900">{roleLabel(normalizedRole)} 알림 활성화</p>
+                <p className="text-base font-semibold text-gray-900">
+                  {roleLabel(normalizedRole)} 알림 활성화
+                </p>
                 <p className="mt-1 text-sm text-gray-600">
-                  한 번에 켜거나 끄고, 아래 세부 항목은 개별로 조정할 수 있습니다.
+                  한 번에 켜고 끌 수 있고, 아래 항목은 개별적으로 조정할 수 있습니다.
                 </p>
               </div>
             </div>
@@ -418,7 +446,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
               type="button"
               role="switch"
               aria-checked={globalEnabled}
-              onClick={() => void handleGlobalToggle(!globalEnabled)}
+              onClick={() => handleGlobalToggle(!globalEnabled)}
               className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors ${
                 globalEnabled ? 'bg-[#4F46FF]' : 'bg-[#D8DEEC]'
               }`}
@@ -441,7 +469,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
                 description={item.description}
                 icon={READER_ICONS[item.key]}
                 checked={prefs[item.key]}
-                onCheckedChange={(checked) => void handleToggle(item.key, checked)}
+                onCheckedChange={(checked) => handleToggle(item.key, checked)}
               />
             ))}
           </div>
@@ -466,8 +494,8 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
 
       {isReporter ? (
         <CollapsibleSection
-          title="기자단 알림"
-          description="내 기사 반응과 운영 피드백을 빠르게 확인할 수 있는 기자 전용 항목입니다."
+          title="기자단 전용 알림"
+          description="내 기사 반응과 운영 피드백을 빠르게 확인할 수 있는 기자단 전용 항목입니다."
           badge="REPORTER"
           open={openSections.reporter}
           onToggle={() => toggleSection('reporter')}
@@ -481,7 +509,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
                 badge={item.badge}
                 icon={REPORTER_ICONS[item.key]}
                 checked={prefs[item.key]}
-                onCheckedChange={(checked) => void handleToggle(item.key, checked)}
+                onCheckedChange={(checked) => handleToggle(item.key, checked)}
               />
             ))}
           </div>
@@ -509,7 +537,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
                       description={item.description}
                       icon={ADMIN_ICONS[item.key]}
                       checked={prefs[item.key]}
-                      onCheckedChange={(checked) => void handleToggle(item.key, checked)}
+                      onCheckedChange={(checked) => handleToggle(item.key, checked)}
                     />
                   ))}
                 </div>
@@ -550,7 +578,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
         <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <Clock3 className="h-4 w-4 text-gray-400" />
-            저장 후부터 새 알림에 즉시 반영됩니다.
+            저장하면 즉시 모든 알림 시간에 반영됩니다.
           </div>
           <Button variant="outline" onClick={handleQuietHoursCommit}>
             방해금지 시간 저장
@@ -560,12 +588,13 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
 
       <CollapsibleSection
         title="실시간 알림 테스트"
-        description="테스트 알림을 보내서 브라우저 푸시와 알림함 반영 여부를 바로 확인할 수 있습니다."
+        description="테스트 알림을 보내 브라우저 알림과 알림함 반영 여부를 바로 확인할 수 있습니다."
         open={openSections.test}
         onToggle={() => toggleSection('test')}
       >
         <div className="rounded-2xl bg-[#F8FAFF] px-4 py-3 text-sm text-gray-600">
-          브라우저 권한이 허용되지 않았더라도 알림함 기록은 함께 생성됩니다.
+          웹푸시 연결이 완전히 되지 않아도 로그인 상태에서는 알림함 저장과 브라우저 권한 기반 알림
+          확인이 가능합니다.
         </div>
         <div className="mt-4 flex justify-end">
           <Button

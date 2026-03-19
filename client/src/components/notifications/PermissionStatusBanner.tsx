@@ -17,9 +17,15 @@ function permissionLabel(permission: NotificationPermission): string {
   return '요청 전';
 }
 
-function subscriptionLabel(isSupported: boolean, isSubscribed: boolean): string {
+function connectionLabel(
+  isSupported: boolean,
+  permission: NotificationPermission,
+  isSubscribed: boolean,
+): string {
   if (!isSupported) return '미지원';
-  return isSubscribed ? '연결됨' : '미연결';
+  if (isSubscribed) return '웹푸시 연결됨';
+  if (permission === 'granted') return '브라우저 알림 활성';
+  return '미연결';
 }
 
 export function PermissionStatusBanner({
@@ -32,7 +38,8 @@ export function PermissionStatusBanner({
   roleLabel,
 }: PermissionStatusBannerProps) {
   const isDenied = permission === 'denied';
-  const isReady = permission === 'granted' && isSubscribed;
+  const isReady = permission === 'granted';
+  const canDisable = permission === 'granted' || isSubscribed;
 
   return (
     <section className="rounded-[28px] border border-[#E3E8F4] bg-white p-5 shadow-[0_18px_40px_rgba(43,51,69,0.06)]">
@@ -45,29 +52,34 @@ export function PermissionStatusBanner({
             <div>
               <h2 className="text-base font-semibold text-gray-900">브라우저 알림 연결</h2>
               <p className="mt-1 text-sm text-gray-600">
-                {roleLabel} 알림을 실시간으로 받으려면 브라우저 권한과 기기 구독이 모두 연결되어야 합니다.
+                {roleLabel} 알림은 로그인 상태에서 알림함으로 바로 저장됩니다. 브라우저 권한까지
+                허용하면 화면이 열려 있을 때 브라우저 알림으로도 함께 받을 수 있습니다.
               </p>
             </div>
           </div>
 
           <div className="grid gap-3 pt-1 sm:grid-cols-3">
             <div className="rounded-2xl border border-[#E8ECF8] bg-[#F8FAFF] px-4 py-3">
-              <p className="text-[11px] font-medium text-gray-500">기기 지원</p>
-              <p className="mt-1 text-sm font-semibold text-gray-900">{isSupported ? '지원됨' : '미지원'}</p>
+              <p className="text-[11px] font-medium text-gray-500">브라우저 지원</p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">
+                {isSupported ? '지원됨' : '미지원'}
+              </p>
             </div>
             <div className="rounded-2xl border border-[#E8ECF8] bg-[#F8FAFF] px-4 py-3">
               <p className="text-[11px] font-medium text-gray-500">브라우저 권한</p>
               <p className="mt-1 text-sm font-semibold text-gray-900">{permissionLabel(permission)}</p>
             </div>
             <div className="rounded-2xl border border-[#E8ECF8] bg-[#F8FAFF] px-4 py-3">
-              <p className="text-[11px] font-medium text-gray-500">현재 구독 상태</p>
-              <p className="mt-1 text-sm font-semibold text-gray-900">{subscriptionLabel(isSupported, isSubscribed)}</p>
+              <p className="text-[11px] font-medium text-gray-500">현재 수신 방식</p>
+              <p className="mt-1 text-sm font-semibold text-gray-900">
+                {connectionLabel(isSupported, permission, isSubscribed)}
+              </p>
             </div>
           </div>
         </div>
 
         <div className="shrink-0">
-          {isReady ? (
+          {canDisable ? (
             <Button
               type="button"
               variant="outline"
@@ -75,7 +87,7 @@ export function PermissionStatusBanner({
               disabled={loading}
               onClick={() => void onDisable()}
             >
-              {loading ? '처리 중...' : '알림 끄기'}
+              {loading ? '처리 중...' : '브라우저 연결 해제'}
             </Button>
           ) : (
             <Button
@@ -84,7 +96,7 @@ export function PermissionStatusBanner({
               disabled={loading || !isSupported}
               onClick={() => void onEnable()}
             >
-              {loading ? '연결 중...' : permission === 'granted' ? '알림 연결하기' : '권한 요청하기'}
+              {loading ? '연결 중...' : '알림 연결하기'}
             </Button>
           )}
         </div>
@@ -93,14 +105,27 @@ export function PermissionStatusBanner({
       {!isSupported ? (
         <div className="mt-4 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <Smartphone className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>현재 브라우저는 웹 푸시를 지원하지 않습니다. Chrome 또는 Edge 최신 버전에서 다시 확인해 주세요.</p>
+          <p>
+            현재 브라우저에서는 알림 기능을 지원하지 않습니다. Chrome 또는 Edge 최신 버전에서
+            다시 확인해 주세요.
+          </p>
+        </div>
+      ) : null}
+
+      {permission === 'granted' && !isSubscribed ? (
+        <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          웹푸시 구독이 실패해도 로그인 상태에서는 알림함 동기화와 브라우저 알림으로 계속 받을 수
+          있습니다.
         </div>
       ) : null}
 
       {isDenied ? (
         <div className="mt-4 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>브라우저에서 알림 권한이 차단되어 있습니다. 주소창의 사이트 권한 설정에서 HueBrief 알림을 허용으로 바꿔 주세요.</p>
+          <p>
+            브라우저에서 알림 권한이 차단되어 있습니다. 주소창의 사이트 권한 설정에서 HueBrief
+            알림을 허용으로 바꿔 주세요.
+          </p>
         </div>
       ) : null}
     </section>

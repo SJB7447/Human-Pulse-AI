@@ -3,6 +3,7 @@ import { supabase } from "@/services/supabaseClient";
 
 export function usePushNotification(userId: string | null) {
   const [isSupported, setIsSupported] = useState(false);
+  const [isPushCapable, setIsPushCapable] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>(() =>
@@ -10,7 +11,8 @@ export function usePushNotification(userId: string | null) {
   );
 
   useEffect(() => {
-    setIsSupported("serviceWorker" in navigator && "PushManager" in window);
+    setIsSupported(typeof Notification !== "undefined");
+    setIsPushCapable("serviceWorker" in navigator && "PushManager" in window);
     if (typeof Notification !== "undefined") {
       setPermission(Notification.permission);
     }
@@ -35,6 +37,12 @@ export function usePushNotification(userId: string | null) {
       const { data } = await supabase.auth.getSession();
       const accessToken = String(data?.session?.access_token || "");
 
+      if (!isPushCapable) {
+        setPermission(typeof Notification !== "undefined" ? Notification.permission : "granted");
+        setIsSubscribed(false);
+        return true;
+      }
+
       const keyRes = await fetch("/api/push/vapid-public-key");
       if (!keyRes.ok) {
         throw new Error("VAPID 공개 키를 불러오지 못했습니다.");
@@ -45,7 +53,8 @@ export function usePushNotification(userId: string | null) {
       }
 
       const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({
+      const existingSubscription = await reg.pushManager.getSubscription();
+      const sub = existingSubscription || await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });

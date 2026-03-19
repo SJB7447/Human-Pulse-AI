@@ -19,9 +19,9 @@ export function useNotifications() {
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
-  const fetch = useCallback(async () => {
+  const fetch = useCallback(async (silent = false) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const { data } = await supabase.auth.getSession();
       const accessToken = String(data?.session?.access_token || "");
@@ -31,10 +31,32 @@ export function useNotifications() {
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
       });
-      if (res.ok) setNotifications(await res.json());
+      if (res.ok) {
+        const nextItems = await res.json();
+        setNotifications((prev) => {
+          const knownIds = new Set(prev.map((item) => item.id));
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            nextItems
+              .filter((item: NotificationItem) => !item.is_read && !knownIds.has(item.id))
+              .forEach((item: NotificationItem) => {
+                const notification = new Notification(item.title, {
+                  body: item.body,
+                  icon: "/icon-192.png?v=20260317",
+                  tag: item.id,
+                });
+                notification.onclick = () => {
+                  window.focus();
+                  if (item.url) window.location.href = item.url;
+                  notification.close();
+                };
+              });
+          }
+          return nextItems;
+        });
+      }
     } catch {}
     finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [user?.id]);
 
@@ -44,7 +66,13 @@ export function useNotifications() {
       if (e.data?.type === "NAVIGATE") fetch();
     };
     navigator.serviceWorker?.addEventListener("message", handler);
-    return () => navigator.serviceWorker?.removeEventListener("message", handler);
+    const poll = window.setInterval(() => {
+      void fetch(true);
+    }, 15000);
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", handler);
+      window.clearInterval(poll);
+    };
   }, [fetch]);
 
   const markRead = async (id: string) => {
