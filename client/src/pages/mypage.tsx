@@ -949,16 +949,8 @@ export default function MyPage() {
               </div>
               <div className="mt-4 rounded-2xl border border-gray-100 bg-slate-50/80 p-4">
                 <p className="text-sm text-gray-700">
-                  이름, 이메일, 자기소개 수정과 비밀번호 변경은 전용 설정 페이지에서 이어서 진행할 수 있습니다.
+                  이름, 이메일, 자기소개 수정과 비밀번호 변경은 상단의 프로필 수정 버튼에서 이어서 진행할 수 있습니다.
                 </p>
-                <div className="mt-4">
-                  <Link href="/settings">
-                    <Button variant="outline" className="w-full" data-testid="button-open-settings-page">
-                      <Settings className="w-4 h-4 mr-2" />
-                      프로필 설정 페이지 열기
-                    </Button>
-                  </Link>
-                </div>
               </div>
             </div>
           )}

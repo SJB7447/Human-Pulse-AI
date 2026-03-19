@@ -5,7 +5,6 @@ import { getSupabase } from '@/services/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
-import { PushNotificationSettingsPanel } from '@/components/PushNotificationSettingsPanel';
 
 type RoleRequest = {
   id: string;
@@ -487,14 +486,6 @@ export default function SettingsPage() {
             <Button onClick={handleChangePassword} disabled={changingPassword}>
               {changingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : '비밀번호 변경'}
             </Button>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-gray-200 bg-white p-5">
-          <h2 className="text-lg font-semibold text-gray-900">알림 설정</h2>
-          <p className="text-sm text-gray-600 mt-1">받고 싶은 알림과 브라우저 실시간 알림 연결 상태를 관리합니다.</p>
-          <div className="mt-4">
-            <PushNotificationSettingsPanel userId={auth?.userId ?? null} />
           </div>
         </section>
 
