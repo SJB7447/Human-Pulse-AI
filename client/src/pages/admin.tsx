@@ -277,6 +277,19 @@ type OpsAlertSummary = {
   alertCount: number;
 };
 
+type AdminLoadFailure = {
+  label: string;
+  message: string;
+};
+
+type AdminLoadErrorState = {
+  global: AdminLoadFailure[];
+  opsExports: AdminLoadFailure[];
+  opsAlerts: AdminLoadFailure[];
+  articleManagement: AdminLoadFailure[];
+  readerArticles: AdminLoadFailure[];
+};
+
 type AdminReportPayload = {
   id: string;
   articleId: string;
@@ -446,6 +459,13 @@ export default function AdminPage() {
   const [opsAlerts, setOpsAlerts] = useState<OpsAlert[]>([]);
   const [opsAlertSummary, setOpsAlertSummary] = useState<OpsAlertSummary | null>(null);
   const [apiHealth, setApiHealth] = useState<ApiHealthPayload | null>(null);
+  const [loadErrors, setLoadErrors] = useState<AdminLoadErrorState>({
+    global: [],
+    opsExports: [],
+    opsAlerts: [],
+    articleManagement: [],
+    readerArticles: [],
+  });
   const [triggeringAlertTest, setTriggeringAlertTest] = useState(false);
   const [aiNewsTimeoutMs, setAiNewsTimeoutMs] = useState<number>(24000);
   const [savingAiNewsSettings, setSavingAiNewsSettings] = useState(false);
@@ -505,6 +525,13 @@ export default function AdminPage() {
 
   const fetchData = async (targetTab: AdminTabKey = activeTab) => {
     try {
+      setLoadErrors({
+        global: [],
+        opsExports: [],
+        opsAlerts: [],
+        articleManagement: [],
+        readerArticles: [],
+      });
       setStatsLoading(true);
       if (targetTab === 'ops') {
         setOpsLoading(true);
@@ -542,6 +569,13 @@ export default function AdminPage() {
 
       const settled = [...coreSettled, ...tabSettled];
       const rejected = settled.filter((entry): entry is PromiseRejectedResult => entry.status === 'rejected');
+      const nextLoadErrors: AdminLoadErrorState = {
+        global: [],
+        opsExports: [],
+        opsAlerts: [],
+        articleManagement: [],
+        readerArticles: [],
+      };
       const authRejection = rejected.find((entry) => {
         const status = (entry.reason as any)?.status;
         return status === 401 || status === 403;
@@ -558,12 +592,42 @@ export default function AdminPage() {
       }
 
       const statsData = statsResult.status === 'fulfilled' ? statsResult.value : null;
+      if (statsResult.status === 'rejected') {
+        nextLoadErrors.global.push({
+          label: '관리자 통계',
+          message: (statsResult.reason as any)?.message || '관리자 통계 API 호출에 실패했습니다.',
+        });
+      }
       setStats((statsData || null) as AdminStatsPayload | null);
       const timeoutFromStats = Number((statsData as AdminStatsPayload | null)?.aiNewsSettings?.values?.modelTimeoutMs ?? 24000);
       setAiNewsTimeoutMs(Number.isFinite(timeoutFromStats) ? timeoutFromStats : 24000);
 
       if (targetTab === 'ops') {
         const [exportHistoryResult, exportScheduleResult, opsAlertsResult, opsAlertSummaryResult] = tabSettled;
+        if (exportHistoryResult.status === 'rejected') {
+          nextLoadErrors.opsExports.push({
+            label: '내보내기 이력',
+            message: (exportHistoryResult.reason as any)?.message || '내보내기 이력 API 호출에 실패했습니다.',
+          });
+        }
+        if (exportScheduleResult.status === 'rejected') {
+          nextLoadErrors.opsExports.push({
+            label: '내보내기 스케줄',
+            message: (exportScheduleResult.reason as any)?.message || '내보내기 스케줄 API 호출에 실패했습니다.',
+          });
+        }
+        if (opsAlertsResult.status === 'rejected') {
+          nextLoadErrors.opsAlerts.push({
+            label: '운영 알림 목록',
+            message: (opsAlertsResult.reason as any)?.message || '운영 알림 목록 API 호출에 실패했습니다.',
+          });
+        }
+        if (opsAlertSummaryResult.status === 'rejected') {
+          nextLoadErrors.opsAlerts.push({
+            label: '운영 알림 요약',
+            message: (opsAlertSummaryResult.reason as any)?.message || '운영 알림 요약 API 호출에 실패했습니다.',
+          });
+        }
         const exportHistoryData = exportHistoryResult.status === 'fulfilled' ? exportHistoryResult.value : [];
         const exportScheduleData = exportScheduleResult.status === 'fulfilled' ? exportScheduleResult.value : exportSchedule;
         const opsAlertsData = opsAlertsResult.status === 'fulfilled' ? opsAlertsResult.value : [];
@@ -574,6 +638,30 @@ export default function AdminPage() {
         setOpsAlertSummary((opsAlertSummaryData || null) as OpsAlertSummary | null);
       } else {
         const [articlesResult, reviewsResult, reportsResult, readerArticlesResult] = tabSettled;
+        if (articlesResult.status === 'rejected') {
+          nextLoadErrors.articleManagement.push({
+            label: '기사 목록',
+            message: (articlesResult.reason as any)?.message || '기사 목록 API 호출에 실패했습니다.',
+          });
+        }
+        if (reviewsResult.status === 'rejected') {
+          nextLoadErrors.articleManagement.push({
+            label: '검수 상태',
+            message: (reviewsResult.reason as any)?.message || '검수 상태 API 호출에 실패했습니다.',
+          });
+        }
+        if (reportsResult.status === 'rejected') {
+          nextLoadErrors.articleManagement.push({
+            label: '신고 목록',
+            message: (reportsResult.reason as any)?.message || '신고 목록 API 호출에 실패했습니다.',
+          });
+        }
+        if (readerArticlesResult.status === 'rejected') {
+          nextLoadErrors.readerArticles.push({
+            label: '독자 기사 대기열',
+            message: (readerArticlesResult.reason as any)?.message || '독자 기사 API 호출에 실패했습니다.',
+          });
+        }
         const articlesData = articlesResult.status === 'fulfilled' ? articlesResult.value : null;
         const reviewsData = reviewsResult.status === 'fulfilled' ? reviewsResult.value : [];
         const reportsData = reportsResult.status === 'fulfilled' ? reportsResult.value : [];
@@ -586,18 +674,32 @@ export default function AdminPage() {
         setReaderArticles(((readerArticlesData || []) as UserComposedArticleRecord[]).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
       }
 
+      setLoadErrors(nextLoadErrors);
+
       if (rejected.length > 0) {
         const healthAfterFailure = await DBService.getApiHealth().catch(() => null);
         setApiHealth((healthAfterFailure || baseHealth || null) as ApiHealthPayload | null);
+        const failedLabels = [
+          ...nextLoadErrors.global,
+          ...nextLoadErrors.opsExports,
+          ...nextLoadErrors.opsAlerts,
+          ...nextLoadErrors.articleManagement,
+          ...nextLoadErrors.readerArticles,
+        ].map((entry) => entry.label);
+        const failedSummary = failedLabels.slice(0, 3).join(', ');
         if ((healthAfterFailure as ApiHealthPayload | null)?.mode === 'fallback') {
           toast({
             title: 'Fallback 모드 감지',
-            description: '일부 관리자 API가 제한되어 기본 데이터만 표시됩니다. 상단 API 상태를 확인해 주세요.',
+            description: failedSummary
+              ? `일부 관리자 API가 제한되었습니다: ${failedSummary}${failedLabels.length > 3 ? ' 외' : ''}`
+              : '일부 관리자 API가 제한되어 기본 데이터만 표시됩니다. 상단 API 상태를 확인해 주세요.',
           });
         } else {
           toast({
             title: '일부 데이터 로딩 실패',
-            description: '일부 운영 패널이 비어 있을 수 있습니다. 새로고침 후 다시 확인해 주세요.',
+            description: failedSummary
+              ? `실패 API: ${failedSummary}${failedLabels.length > 3 ? ' 외' : ''}. 화면의 섹션 오류 메시지를 확인해 주세요.`
+              : '일부 운영 패널이 비어 있을 수 있습니다. 새로고침 후 다시 확인해 주세요.',
           });
         }
       }
@@ -1702,6 +1804,8 @@ export default function AdminPage() {
   const selectedReview = selectedArticle ? reviewMap[selectedArticle.id] : null;
   const showOpsSkeleton = showOpsTab && bootstrapping && !stats;
   const showArticlesSkeleton = showArticlesTab && bootstrapping && articles.length === 0;
+  const hasReaderArticleError = loadErrors.readerArticles.length > 0;
+  const hasArticleManagementError = loadErrors.articleManagement.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50/50">
@@ -1770,6 +1874,9 @@ export default function AdminPage() {
         className={`p-4 sm:p-6 lg:p-8 ${showOpsTab ? '' : 'pt-28 sm:pt-32 lg:pt-36'} pb-[100px] space-y-8`}
         style={showOpsTab ? { paddingTop: `${headerHeightPx + opsAnchorHeightPx + 18}px` } : undefined}
       >
+      {loadErrors.global.length > 0 ? (
+        <AdminInlineError title="상단 공통 데이터 로딩 실패" failures={loadErrors.global} />
+      ) : null}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">관리자 대시보드</h1>
@@ -2525,6 +2632,8 @@ export default function AdminPage() {
             Array.from({ length: 3 }).map((_, index) => (
               <AdminSkeletonCard key={`reader-pending-skeleton-${index}`} className="h-40" />
             ))
+          ) : hasReaderArticleError ? (
+            <AdminInlineError title="독자 기사 검증 대기열 로딩 실패" failures={loadErrors.readerArticles} />
           ) : pendingReaderArticles.length === 0 ? (
             <p className="text-sm text-gray-500">검증 대기 중인 독자 기사가 없습니다.</p>
           ) : pendingReaderArticles.slice(0, 20).map((item) => (
@@ -2604,6 +2713,8 @@ export default function AdminPage() {
             Array.from({ length: 2 }).map((_, index) => (
               <AdminSkeletonCard key={`reader-history-skeleton-${index}`} className="h-32" />
             ))
+          ) : hasReaderArticleError ? (
+            <AdminInlineError title="독자 기사 처리 이력 로딩 실패" failures={loadErrors.readerArticles} />
           ) : recentReaderArticleHistory.length === 0 ? (
             <p className="text-sm text-gray-500">최근 7일 처리 이력이 없습니다.</p>
           ) : recentReaderArticleHistory.map((item) => (
@@ -2777,6 +2888,10 @@ export default function AdminPage() {
                 <AdminSkeletonCard key={`article-table-skeleton-${index}`} className="h-20" />
               ))}
             </div>
+          </div>
+        ) : hasArticleManagementError && pagedArticles.length === 0 ? (
+          <div className="p-4 sm:p-6">
+            <AdminInlineError title="기사 관리 데이터 로딩 실패" failures={loadErrors.articleManagement} />
           </div>
         ) : (
         <>
@@ -3608,5 +3723,27 @@ function AdminSectionLoading({ label }: { label: string }) {
     <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 animate-pulse">
       {label}
     </span>
+  );
+}
+
+function AdminInlineError({
+  title,
+  failures,
+}: {
+  title: string;
+  failures: AdminLoadFailure[];
+}) {
+  return (
+    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+      <p className="text-sm font-semibold text-rose-900">{title}</p>
+      <div className="mt-2 space-y-1">
+        {failures.map((failure) => (
+          <p key={`${failure.label}-${failure.message}`} className="text-xs text-rose-800">
+            {failure.label}: {failure.message}
+          </p>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] text-rose-700">빈 상태와 별개로 실제 API 호출이 실패한 경우에만 표시됩니다.</p>
+    </div>
   );
 }
