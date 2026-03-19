@@ -148,6 +148,15 @@ async function authenticateNotificationActor(
 ): Promise<{ userId: string; role: NotificationSettingsRole }> {
   const authHeader = typeof req.headers?.authorization === "string" ? req.headers.authorization.trim() : "";
   const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+  const requestedUserId = String(
+    req.headers?.["x-actor-id"] || req.query?.userId || req.body?.userId || "",
+  ).trim();
+  const requestedRole = normalizeNotificationRole(
+    req.headers?.["x-actor-role"] || req.query?.role || req.body?.role || fallbackRole,
+  );
+  if (!token && requestedUserId.startsWith("demo-")) {
+    return { userId: requestedUserId, role: requestedRole };
+  }
   if (!token) {
     const error: any = new Error("로그인이 필요합니다.");
     error.status = 401;
@@ -162,9 +171,6 @@ async function authenticateNotificationActor(
     throw error;
   }
 
-  const requestedUserId = String(
-    req.headers?.["x-actor-id"] || req.query?.userId || req.body?.userId || "",
-  ).trim();
   if (requestedUserId && requestedUserId !== authUserId) {
     const error: any = new Error("다른 사용자의 알림 데이터에는 접근할 수 없습니다.");
     error.status = 403;

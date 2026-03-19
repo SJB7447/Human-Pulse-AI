@@ -172,6 +172,32 @@ export default async function handler(req: any, res: any) {
     if (normalizedPath === "/api/notification-prefs") {
       const authHeader = typeof req?.headers?.authorization === "string" ? req.headers.authorization.trim() : "";
       const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+      const requestedActorId = String(req?.headers?.["x-actor-id"] || query.get("userId") || "").trim();
+      const requestedRole = normalizeNotificationRole(req?.headers?.["x-actor-role"] || query.get("role"));
+      if (!token && requestedActorId.startsWith("demo-")) {
+        const existing = lightweightNotificationPrefs.get(requestedActorId) || {
+          role: requestedRole,
+          prefs: createDefaultNotificationPrefs(),
+        };
+
+        if (method === "GET") {
+          return sendJson(res, 200, existing);
+        }
+
+        if (method === "PATCH") {
+          const body = await parseJsonBody(req);
+          const patch = sanitizeNotificationPrefsPatch(body || {}, requestedRole);
+          const next = {
+            role: requestedRole,
+            prefs: {
+              ...existing.prefs,
+              ...patch,
+            },
+          };
+          lightweightNotificationPrefs.set(requestedActorId, next);
+          return sendJson(res, 200, { ...next, updatedKeys: Object.keys(patch) });
+        }
+      }
       if (!token) {
         return sendJson(res, 401, { error: "로그인이 필요합니다." });
       }

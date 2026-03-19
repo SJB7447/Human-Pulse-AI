@@ -1,3 +1,4 @@
+import { BarChart3, BellDot, FileCheck2, MessageCircleMore, PencilLine, Reply, Share2 } from 'lucide-react';
 import { REPORTER_NOTIFICATION_TOGGLES, type NotificationPrefs } from '@shared/notification.types';
 import { ToggleRow } from './ToggleRow';
 
@@ -6,6 +7,16 @@ type ReporterNotificationSectionProps = {
   disabled?: boolean;
   onToggle: (key: keyof NotificationPrefs, checked: boolean) => void;
 };
+
+const REPORTER_ICONS = {
+  reporter_comment: MessageCircleMore,
+  reporter_reply: Reply,
+  reporter_share_spike: Share2,
+  reporter_view_milestone: BarChart3,
+  reporter_article_published: FileCheck2,
+  reporter_edit_requested: PencilLine,
+  reporter_weekly_summary: BellDot,
+} as const;
 
 export function ReporterNotificationSection({
   prefs,
@@ -18,7 +29,7 @@ export function ReporterNotificationSection({
         <div>
           <h2 className="text-base font-semibold text-gray-900">기자 알림</h2>
           <p className="mt-1 text-sm text-gray-600">
-            내 기사 반응과 에디터 피드백을 빠르게 확인할 수 있어요.
+            내 기사 반응과 편집 피드백을 빠르게 확인할 수 있도록 기자용 항목만 모아두었습니다.
           </p>
         </div>
         <span className="inline-flex items-center rounded-full bg-gray-900 px-3 py-1 text-[11px] font-semibold tracking-[0.16em] text-white">
@@ -33,6 +44,7 @@ export function ReporterNotificationSection({
             title={item.title}
             description={item.description}
             badge={item.badge}
+            icon={REPORTER_ICONS[item.key]}
             checked={prefs[item.key]}
             disabled={disabled}
             onCheckedChange={(checked) => onToggle(item.key, checked)}

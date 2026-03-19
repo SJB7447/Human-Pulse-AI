@@ -60,7 +60,7 @@ export function PermissionStatusBanner({ userId }: PermissionStatusBannerProps) 
             <div>
               <p className="text-sm font-semibold">알림 권한이 아직 허용되지 않았어요</p>
               <p className="mt-1 text-xs leading-5 text-amber-800/90">
-                속보와 기자 알림을 받으려면 브라우저 권한을 허용해 주세요.
+                속보, 맞춤 뉴스, 댓글 알림을 받으려면 브라우저 알림 권한을 먼저 허용해 주세요.
               </p>
             </div>
           </div>
@@ -81,7 +81,7 @@ export function PermissionStatusBanner({ userId }: PermissionStatusBannerProps) 
             <div>
               <p className="text-sm font-semibold">브라우저 알림이 차단되어 있어요</p>
               <p className="mt-1 text-xs leading-5 text-red-800/90">
-                사이트 권한 설정에서 알림을 다시 허용하면 뉴스와 운영 알림을 받을 수 있어요.
+                사이트 권한 설정에서 알림을 다시 허용하면 뉴스와 운영 알림을 정상적으로 받을 수 있어요.
               </p>
             </div>
           </div>
@@ -101,12 +101,12 @@ export function PermissionStatusBanner({ userId }: PermissionStatusBannerProps) 
           <DialogHeader>
             <DialogTitle>알림 허용 방법</DialogTitle>
             <DialogDescription>
-              브라우저 주소창 왼쪽의 사이트 정보 버튼을 눌러 알림 권한을 다시 허용해 주세요.
+              브라우저 주소창 왼쪽의 사이트 정보 버튼에서 HueBrief 알림 권한을 다시 허용해 주세요.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 text-sm leading-6 text-gray-700">
-            <p>1. 주소창 왼쪽 자물쇠 또는 사이트 정보 버튼을 누릅니다.</p>
-            <p>2. 알림 권한을 찾습니다.</p>
+            <p>1. 주소창 왼쪽의 자물쇠 또는 사이트 정보 버튼을 누릅니다.</p>
+            <p>2. 알림 권한 항목을 찾습니다.</p>
             <p>3. 차단을 허용으로 바꾼 뒤 페이지를 새로고침합니다.</p>
           </div>
         </DialogContent>

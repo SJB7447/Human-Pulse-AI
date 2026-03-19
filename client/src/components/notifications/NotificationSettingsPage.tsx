@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, Clock3, Loader2 } from 'lucide-react';
 import {
+  Bell,
+  BellOff,
+  BookOpenText,
+  Clock3,
+  Flame,
+  KeyRound,
+  Newspaper,
+} from 'lucide-react';
+import {
+  createDefaultNotificationPrefs,
+  DEFAULT_NOTIFICATION_PREFS,
+  READER_NOTIFICATION_KEYS,
   READER_NOTIFICATION_TOGGLES,
   type NotificationPrefs,
   type NotificationSettingsRole,
@@ -21,11 +32,18 @@ type NotificationSettingsPageProps = {
   role: NotificationSettingsRole | 'journalist';
 };
 
+const READER_ICONS = {
+  breaking: Newspaper,
+  emotion: Flame,
+  keyword: KeyRound,
+  digest: BookOpenText,
+} as const;
+
 export function NotificationSettingsPage({ userId, role }: NotificationSettingsPageProps) {
   const reporterMode = role === 'reporter' || role === 'journalist';
   const { toast } = useToast();
-  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [prefs, setPrefs] = useState<NotificationPrefs>(() => createDefaultNotificationPrefs());
+  const [hydrating, setHydrating] = useState(true);
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [warnOpen, setWarnOpen] = useState(false);
   const [pendingReporterToggle, setPendingReporterToggle] = useState<boolean | null>(null);
@@ -35,23 +53,23 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
     let mounted = true;
 
     const load = async () => {
-      setLoading(true);
+      setHydrating(true);
       try {
-        const result = await DBService.getNotificationPrefs();
+        const result = await Promise.race([
+          DBService.getNotificationPrefs(),
+          new Promise<never>((_, reject) => {
+            window.setTimeout(() => reject(new Error('알림 설정 응답이 지연되고 있습니다.')), 4000);
+          }),
+        ]);
+
         if (mounted) {
           setPrefs(result.prefs);
         }
-      } catch (error: any) {
-        if (mounted) {
-          toast({
-            title: '알림 설정을 불러오지 못했어요',
-            description: error?.message || '잠시 후 다시 시도해 주세요.',
-            variant: 'destructive',
-          });
-        }
+      } catch {
+        // Keep rendering defaults instead of blocking the whole card with a loader.
       } finally {
         if (mounted) {
-          setLoading(false);
+          setHydrating(false);
         }
       }
     };
@@ -64,17 +82,17 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, [toast]);
+  }, []);
 
   const statusLabel = useMemo(() => {
     if (saveState === 'saving') return '저장 중...';
     if (saveState === 'saved') return '저장됨';
     if (saveState === 'error') return '저장 실패';
+    if (hydrating) return '동기화 중...';
     return '';
-  }, [saveState]);
+  }, [hydrating, saveState]);
 
   const commitPatch = async (patch: Partial<NotificationPrefs>) => {
-    if (!prefs) return;
     const snapshot = prefs;
     const next = { ...prefs, ...patch };
 
@@ -114,23 +132,42 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
   };
 
   const handleQuietHoursCommit = () => {
-    if (!prefs) return;
     void commitPatch({
       quiet_hours_start: prefs.quiet_hours_start,
       quiet_hours_end: prefs.quiet_hours_end,
     });
   };
 
-  if (loading || !prefs) {
-    return (
-      <div className="rounded-3xl border border-gray-200 bg-white p-6 text-gray-600">
-        <div className="flex items-center gap-2 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          알림 설정을 불러오는 중...
-        </div>
-      </div>
-    );
-  }
+  const globalEnabled = useMemo(() => {
+    const keys = reporterMode
+      ? [...READER_NOTIFICATION_KEYS, 'reporter_comment', 'reporter_reply', 'reporter_share_spike', 'reporter_view_milestone', 'reporter_article_published', 'reporter_edit_requested', 'reporter_weekly_summary'] as const
+      : READER_NOTIFICATION_KEYS;
+    return keys.some((key) => Boolean(prefs[key]));
+  }, [prefs, reporterMode]);
+
+  const activeReaderCount = useMemo(() => {
+    return READER_NOTIFICATION_KEYS.filter((key) => prefs[key]).length;
+  }, [prefs]);
+
+  const handleGlobalToggle = (checked: boolean) => {
+    const patch: Partial<NotificationPrefs> = {};
+
+    READER_NOTIFICATION_KEYS.forEach((key) => {
+      patch[key] = checked ? DEFAULT_NOTIFICATION_PREFS[key] : false;
+    });
+
+    if (reporterMode) {
+      patch.reporter_comment = checked ? DEFAULT_NOTIFICATION_PREFS.reporter_comment : false;
+      patch.reporter_reply = checked ? DEFAULT_NOTIFICATION_PREFS.reporter_reply : false;
+      patch.reporter_share_spike = checked ? DEFAULT_NOTIFICATION_PREFS.reporter_share_spike : false;
+      patch.reporter_view_milestone = checked ? DEFAULT_NOTIFICATION_PREFS.reporter_view_milestone : false;
+      patch.reporter_article_published = checked ? DEFAULT_NOTIFICATION_PREFS.reporter_article_published : false;
+      patch.reporter_edit_requested = checked ? DEFAULT_NOTIFICATION_PREFS.reporter_edit_requested : false;
+      patch.reporter_weekly_summary = checked ? DEFAULT_NOTIFICATION_PREFS.reporter_weekly_summary : false;
+    }
+
+    void commitPatch(patch);
+  };
 
   return (
     <div className="space-y-5">
@@ -138,19 +175,11 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
         <div>
           <h1 className="text-2xl font-bold text-gray-900">알림 설정</h1>
           <p className="mt-1 text-sm text-gray-600">
-            받고 싶은 알림만 선택하고 방해금지 시간을 조정할 수 있어요.
+            HueBrief에서 받고 싶은 알림만 선택하고 방해금지 시간도 함께 조정할 수 있어요.
           </p>
         </div>
         {statusLabel ? (
-          <span
-            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-              saveState === 'error'
-                ? 'bg-red-50 text-red-700'
-                : saveState === 'saved'
-                  ? 'bg-emerald-50 text-emerald-700'
-                  : 'bg-slate-100 text-slate-600'
-            }`}
-          >
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
             {statusLabel}
           </span>
         ) : null}
@@ -158,20 +187,51 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
 
       <PermissionStatusBanner userId={userId} />
 
-      {READER_NOTIFICATION_TOGGLES.map((item) => (
-        <section key={item.key} className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center gap-2">
-            <Bell className="h-4 w-4 text-gray-400" />
-            <h2 className="text-base font-semibold text-gray-900">{item.title}</h2>
+      <section className="rounded-[28px] border border-[#E3E8F4] bg-white p-5 shadow-[0_18px_40px_rgba(43,51,69,0.06)]">
+        <div className="flex items-start justify-between gap-4 rounded-2xl border border-[#E8ECF8] bg-[#F7F9FF] px-4 py-4">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#EEF1FF] text-[#4F46FF]">
+              {globalEnabled ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+            </span>
+            <div>
+              <p className="text-base font-semibold text-gray-900">알림 활성화</p>
+              <p className="mt-1 text-sm text-gray-600">
+                {globalEnabled
+                  ? `현재 기본 알림 ${activeReaderCount}개가 켜져 있습니다.`
+                  : '현재 모든 알림이 꺼져 있습니다.'}
+              </p>
+            </div>
           </div>
-          <ToggleRow
-            title={item.title}
-            description={item.description}
-            checked={prefs[item.key]}
-            onCheckedChange={(checked) => handleToggle(item.key, checked)}
-          />
-        </section>
-      ))}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={globalEnabled}
+            onClick={() => handleGlobalToggle(!globalEnabled)}
+            className={`relative inline-flex h-9 w-16 shrink-0 items-center rounded-full transition-colors ${
+              globalEnabled ? 'bg-[#4F46FF]' : 'bg-[#D8DEEC]'
+            }`}
+          >
+            <span
+              className={`inline-block h-7 w-7 rounded-full bg-white shadow-sm transition-transform ${
+                globalEnabled ? 'translate-x-8' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {READER_NOTIFICATION_TOGGLES.map((item) => (
+            <ToggleRow
+              key={item.key}
+              title={item.title}
+              description={item.description}
+              icon={READER_ICONS[item.key]}
+              checked={prefs[item.key]}
+              onCheckedChange={(checked) => handleToggle(item.key, checked)}
+            />
+          ))}
+        </div>
+      </section>
 
       <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center gap-2">
@@ -190,7 +250,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
               type="time"
               value={prefs.quiet_hours_start}
               onChange={(event) =>
-                setPrefs((prev) => (prev ? { ...prev, quiet_hours_start: event.target.value } : prev))
+                setPrefs((prev) => ({ ...prev, quiet_hours_start: event.target.value }))
               }
             />
           </div>
@@ -200,7 +260,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
               type="time"
               value={prefs.quiet_hours_end}
               onChange={(event) =>
-                setPrefs((prev) => (prev ? { ...prev, quiet_hours_end: event.target.value } : prev))
+                setPrefs((prev) => ({ ...prev, quiet_hours_end: event.target.value }))
               }
             />
           </div>

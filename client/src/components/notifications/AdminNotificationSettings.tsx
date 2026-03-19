@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle, BarChart3, BellRing, Siren, UserRoundPlus } from 'lucide-react';
 import { ADMIN_NOTIFICATION_GROUPS, type NotificationPrefs } from '@shared/notification.types';
 import { useToast } from '@/hooks/use-toast';
 import { DBService } from '@/services/DBService';
 import { ToggleRow } from './ToggleRow';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
+
+const ADMIN_ICONS = {
+  admin_report: AlertTriangle,
+  admin_new_reporter: UserRoundPlus,
+  admin_signup_spike: BellRing,
+  admin_push_fail: Siren,
+  admin_edge_error: Siren,
+  admin_daily_stats: BarChart3,
+  admin_keyword_abuse: AlertTriangle,
+} as const;
 
 export function AdminNotificationSettings() {
   const { toast } = useToast();
@@ -79,7 +89,6 @@ export function AdminNotificationSettings() {
     return (
       <div className="rounded-3xl border border-gray-200 bg-white p-6 text-gray-600">
         <div className="flex items-center gap-2 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />
           관리자 알림 설정을 불러오는 중...
         </div>
       </div>
@@ -133,6 +142,7 @@ export function AdminNotificationSettings() {
                 key={item.key}
                 title={item.title}
                 description={item.description}
+                icon={ADMIN_ICONS[item.key]}
                 checked={prefs[item.key]}
                 onCheckedChange={(checked) =>
                   void commitPatch({ [item.key]: checked } as Partial<NotificationPrefs>)

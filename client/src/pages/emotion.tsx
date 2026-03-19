@@ -490,13 +490,12 @@ export default function EmotionPage() {
         copy,
         chipColor: isGravity ? '#898989' : emotion.color,
         labelColor: isGravity ? '#3A3A3A' : emotion.color,
-        hintColor: isGravity ? '#787674' : undefined,
         baseBackground: isGravity
-          ? 'linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(243,243,243,0.98) 42%, rgba(229,229,229,0.96) 100%)'
-          : `linear-gradient(135deg, hsla(${h}, ${Math.max(42, s - 12)}%, 97%, 0.98) 0%, hsla(${h}, ${Math.max(48, s - 6)}%, 92%, 0.94) 100%)`,
+          ? 'rgba(137,137,137,0.14)'
+          : `hsla(${h}, ${Math.max(50, s - 10)}%, 88%, 0.36)`,
         activeBackground: isGravity
-          ? 'linear-gradient(135deg, rgba(250,250,250,0.99) 0%, rgba(229,229,229,0.98) 55%, rgba(209,209,209,0.96) 100%)'
-          : `linear-gradient(135deg, hsla(${h}, ${Math.min(94, s)}%, 94%, 0.98) 0%, hsla(${h}, ${Math.min(96, s + 4)}%, 84%, 0.96) 100%)`,
+          ? 'rgba(137,137,137,0.2)'
+          : `hsla(${h}, ${Math.min(96, s + 2)}%, 84%, 0.48)`,
       };
     });
   }, []);
@@ -630,43 +629,35 @@ export default function EmotionPage() {
                       key={emotion.type}
                       type="button"
                       onClick={() => handleEmotionCategorySelect(emotion.type)}
-                      className="group min-w-[126px] rounded-[26px] px-4 py-4 text-left transition-all duration-200 sm:min-w-[138px]"
+                      className="group min-w-[180px] rounded-2xl px-5 py-4 text-left transition-all duration-200 sm:min-w-[208px]"
                       style={{
-                        background: isActive
-                          ? `linear-gradient(180deg, ${hexToRgba(emotion.chipColor, 0.14)} 0%, ${hexToRgba(emotion.chipColor, 0.22)} 100%)`
-                          : 'linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,248,248,0.92) 100%)',
-                        color: emotion.labelColor,
+                        backgroundColor: isActive ? emotion.activeBackground : emotion.baseBackground,
                         boxShadow: isActive
-                          ? `0 14px 30px ${hexToRgba(emotion.chipColor, 0.16)}`
-                          : '0 10px 24px rgba(35,34,33,0.06)',
-                        border: isActive
-                          ? `1px solid ${hexToRgba(emotion.chipColor, 0.24)}`
-                          : '1px solid rgba(255,255,255,0.92)',
+                          ? `0 12px 26px ${hexToRgba(emotion.chipColor, 0.16)}`
+                          : '0 10px 24px rgba(35,34,33,0.05)',
+                        border: `1px solid ${hexToRgba(emotion.chipColor, isActive ? 0.42 : 0.28)}`,
                       }}
                       data-testid={`button-emotion-quick-${emotion.type}`}
                     >
-                      <span className="mb-2 inline-flex items-center gap-2">
+                      <span className="inline-flex items-center gap-2.5">
                         <span
-                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
                           style={{
-                            backgroundColor: hexToRgba(emotion.chipColor, isActive ? 0.16 : 0.1),
-                            boxShadow: `inset 0 0 0 1px ${hexToRgba(emotion.chipColor, isActive ? 0.14 : 0.08)}`,
+                            backgroundColor: hexToRgba(emotion.chipColor, isActive ? 0.14 : 0.1),
+                            boxShadow: `inset 0 0 0 1px ${hexToRgba(emotion.chipColor, isActive ? 0.18 : 0.1)}`,
                           }}
                         >
                           <EmotionIcon className="h-3 w-3" strokeWidth={2.1} style={{ color: emotion.chipColor }} />
                         </span>
-                        <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] sm:text-[14px]">
+                        <span className="inline-flex items-center gap-2 text-[14px] font-semibold tracking-[-0.01em] sm:text-[15px]">
                           <span
                             aria-hidden="true"
-                            className="inline-block h-2 w-2 rounded-full"
+                            className="inline-block h-2.5 w-2.5 rounded-full"
                             style={{ backgroundColor: emotion.chipColor }}
                           />
-                          {emotion.copy.label}
+                          <span style={{ color: emotion.labelColor }}>{emotion.copy.label}</span>
                         </span>
                       </span>
-                      <p className="text-[14px] font-semibold leading-tight opacity-95 sm:text-[15px]" style={{ color: emotion.labelColor }}>
-                        {emotion.copy.hint}
-                      </p>
                     </button>
                   );
                 })}
@@ -681,7 +672,7 @@ export default function EmotionPage() {
                 {emotionConfig.subLabel}
               </p>
               <div className="mb-8">
-                <div className="mx-auto flex max-w-4xl gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="mx-auto flex max-w-4xl flex-wrap justify-center gap-2 pb-2">
                   {isTopicsLoading ? (
                     Array.from({ length: 3 }).map((_, index) => (
                       <span
