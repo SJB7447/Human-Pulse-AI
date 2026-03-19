@@ -4755,6 +4755,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const lastAlertAtByType = new Map<AlertType, number>();
   const keywordUsageWindow = new Map<string, number[]>();
   const signupRequestWindow: number[] = [];
+  const DEMO_ADMIN_IDS = ["demo-admin-123"];
 
   const resolveActor = (req: any): { actorId: string | null; actorRole: string; actorName: string; actorEmail: string } => {
     const actorIdHeader = req.headers?.["x-actor-id"];
@@ -4781,6 +4782,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const getAdminRecipientIds = async (): Promise<string[]> => {
     const { data: adminRows } = await supabase.from("profiles").select("id").eq("role", "admin");
     return Array.from(new Set([
+      ...DEMO_ADMIN_IDS,
       ...((adminRows || []).map((item: any) => String(item?.id || "").trim()).filter(Boolean)),
       ...roleRequestFallback
         .filter((item) => item.requestedRole === "admin" && item.status === "approved")
