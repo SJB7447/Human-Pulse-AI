@@ -3,7 +3,7 @@ import { Link, useLocation } from 'wouter';
 import { Header } from '@/components/Header';
 import { ADMIN_EMOTION_OPTIONS, getCategoryFieldLabel } from '@/lib/articleFilters';
 import { EMOTION_CONFIG, type EmotionType, useEmotionStore } from '@/lib/store';
-import { BookOpen, ChevronDown, ChevronUp, ExternalLink, Heart, Loader2, Pencil, Send } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronUp, ExternalLink, Heart, Loader2, MessageCircle, Pencil, Send } from 'lucide-react';
 import { DBService, type CommunityCommentRecord } from '@/services/DBService';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -22,6 +22,8 @@ interface CommunityItem {
   sourceArticleId?: string;
   sourceTitle?: string;
   sourceUrl?: string;
+  commentCount?: number;
+  likeCount?: number;
   createdAt: string | null;
   updatedAt?: string | null;
 }
@@ -749,8 +751,20 @@ export default function CommunityPage() {
                   </button>
 
                   <div className="mt-4 pt-3 border-t border-gray-100 text-xs text-gray-500">
-                    <div className="flex items-center justify-between gap-2">
-                      <span>작성자: {item.author}</span>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span>작성자: {item.author}</span>
+                        <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
+                          <span className="inline-flex items-center gap-1">
+                            <MessageCircle className="h-3.5 w-3.5" />
+                            {Number(item.commentCount || 0)}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Heart className="h-3.5 w-3.5" />
+                            {Number(item.likeCount || 0)}
+                          </span>
+                        </div>
+                      </div>
                       {canEditItem(item) ? (
                         <Button
                           size="sm"

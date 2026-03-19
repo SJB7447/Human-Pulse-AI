@@ -5097,18 +5097,28 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const limit = Math.min(Number(req.query.limit || 30), 100);
       const feedFromFallback = [...communityFallback]
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        .map((row) => ({
-          id: row.id,
-          title: "Community Story",
-          emotion: row.emotion,
-          content: row.userOpinion,
-          excerpt: row.userOpinion.slice(0, 300),
-          author: row.username,
-          ownerId: row.userId,
-          sourceType: "community_post",
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt || row.createdAt,
-        }));
+        .map((row) => {
+          const postComments = communityCommentsFallback.filter((comment) => comment.postId === row.id);
+          const commentCount = postComments.length;
+          const likeCount = postComments.reduce((sum, comment) => {
+            return sum + (communityCommentLikes.get(comment.id)?.size || 0);
+          }, 0);
+
+          return {
+            id: row.id,
+            title: "Community Story",
+            emotion: row.emotion,
+            content: row.userOpinion,
+            excerpt: row.userOpinion.slice(0, 300),
+            author: row.username,
+            ownerId: row.userId,
+            sourceType: "community_post",
+            commentCount,
+            likeCount,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt || row.createdAt,
+          };
+        });
 
       const approvedReaderArticles = (await storage.getReaderComposedArticles("approved"))
         .map((row: any) => ({
@@ -5124,6 +5134,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           sourceArticleId: String(row.sourceArticleId || ""),
           sourceTitle: String(row.sourceTitle || ""),
           sourceUrl: String(row.sourceUrl || ""),
+          commentCount: 0,
+          likeCount: 0,
           createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
           updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : (row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString()),
         }));
@@ -9155,11 +9167,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         return res.json({ role, prefs, updatedKeys: [] });
       }
 
+      const currentPrefs = await ensureNotificationPrefs(supabaseAdmin, userId, role);
       const { data, error } = await supabaseAdmin
         .from("notification_prefs")
         .upsert({
           user_id: userId,
-          ...createDefaultNotificationPrefs(),
+          ...currentPrefs,
           ...patch,
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id" })

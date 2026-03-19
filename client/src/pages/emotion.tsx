@@ -693,8 +693,8 @@ export default function EmotionPage() {
               </div>
             </div>
 
-            <div className="mb-6 flex justify-center">
-              <div className="relative w-full max-w-3xl">
+            <div className="mx-auto mb-5 flex w-full max-w-5xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-center">
+              <div className="relative w-full max-w-3xl flex-1">
                 <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   value={searchTerm}
@@ -704,20 +704,19 @@ export default function EmotionPage() {
                   data-testid="input-news-search-top"
                 />
               </div>
+              <div className="w-full lg:w-auto">
+                <div className="w-full rounded-[26px] bg-white/86 p-3 shadow-[0_18px_40px_rgba(35,34,33,0.06)] ring-1 ring-white/80 lg:min-w-[260px]">
+                  <select
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+                    className="h-14 w-full rounded-[20px] bg-white/94 px-4 text-sm text-gray-800 shadow-[0_10px_22px_rgba(35,34,33,0.05)] focus:outline-none focus:ring-2 focus:ring-black/10"
+                    data-testid="select-news-sort"
+                  >
+                    <option value="latest">최신순</option>
+                  </select>
+                </div>
+              </div>
             </div>
-
-            <div className="mx-auto mb-5 max-w-5xl rounded-[30px] bg-white/86 p-5 shadow-[0_18px_40px_rgba(35,34,33,0.06)] ring-1 ring-white/80">
-            <div className="flex justify-center">
-              <select
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-                className="h-14 w-full max-w-[520px] rounded-[20px] bg-white/94 px-4 text-sm text-gray-800 shadow-[0_10px_22px_rgba(35,34,33,0.05)] focus:outline-none focus:ring-2 focus:ring-black/10"
-                data-testid="select-news-sort"
-              >
-                <option value="latest">최신순</option>
-              </select>
-            </div>
-          </div>
           <p className="pt-2 text-center text-sm font-medium text-human-sub">
             {filteredNews.length}/{topicFilter === 'all' ? totalEmotionArticleCount : news.length}개의 기사
           </p>
