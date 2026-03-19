@@ -7,7 +7,13 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleGenAI, type GenerateVideosOperation, type GenerateVideosSource, type Image } from "@google/genai";
 import { storage } from "./storage.js";
 import { supabase } from "./supabase.js";
-import { sendPushToUser, broadcastPush } from "./services/pushService.js";
+import {
+  sendPushToUser,
+  broadcastPush,
+  getDemoNotifications,
+  markDemoNotificationRead,
+  markAllDemoNotificationsRead,
+} from "./services/pushService.js";
 import { runAutoNewsUpdate } from "./services/newsCron.js";
 import { emotionTypes, type EmotionType, type NewsItem } from "../shared/schema.js";
 import { buildDraftGenerationPrompt, normalizeDraftMode, type DraftMode } from "./services/articlePrompt.js";
@@ -9322,6 +9328,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (error: any) {
       return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "알림 목록 조회 실패") });
     }
+    if (userId.startsWith("demo-")) {
+      return res.json(getDemoNotifications(userId));
+    }
     const { data, error } = await supabaseAdmin
       .from("notification_inbox")
       .select("*")
@@ -9346,6 +9355,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (error: any) {
       return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "알림 읽음 처리 실패") });
     }
+    if (userId.startsWith("demo-")) {
+      markDemoNotificationRead(userId, String(id || ""));
+      return res.json({ success: true });
+    }
     await supabaseAdmin
       .from("notification_inbox")
       .update({ is_read: true })
@@ -9365,6 +9378,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       ({ userId } = await authenticateNotificationActor(req, supabaseAdmin, req.headers["x-actor-role"] || req.body?.role));
     } catch (error: any) {
       return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "알림 읽음 처리 실패") });
+    }
+    if (userId.startsWith("demo-")) {
+      markAllDemoNotificationsRead(userId);
+      return res.json({ success: true });
     }
     await supabaseAdmin
       .from("notification_inbox")

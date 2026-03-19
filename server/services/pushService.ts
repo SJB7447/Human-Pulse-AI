@@ -48,12 +48,71 @@ export interface PushPayload {
   icon?: string;
 }
 
+export type DemoNotificationInboxItem = {
+  id: string;
+  user_id: string;
+  type: PushNotificationType;
+  title: string;
+  body: string;
+  url: string;
+  is_read: boolean;
+  created_at: string;
+};
+
 type NotificationPrefsRow = {
   user_id: string;
   quiet_hours_start?: string | null;
   quiet_hours_end?: string | null;
   [key: string]: unknown;
 };
+
+const demoNotificationInbox = new Map<string, DemoNotificationInboxItem[]>();
+
+function isDemoUserId(userId: string): boolean {
+  return String(userId || "").trim().startsWith("demo-");
+}
+
+function buildDemoNotificationItem(userId: string, payload: PushPayload): DemoNotificationInboxItem {
+  return {
+    id: `demo-notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    user_id: userId,
+    type: payload.type,
+    title: payload.title,
+    body: payload.body,
+    url: payload.url || "/",
+    is_read: false,
+    created_at: new Date().toISOString(),
+  };
+}
+
+export function addDemoNotification(userId: string, payload: PushPayload): DemoNotificationInboxItem {
+  const item = buildDemoNotificationItem(userId, payload);
+  const current = demoNotificationInbox.get(userId) || [];
+  demoNotificationInbox.set(userId, [item, ...current].slice(0, 50));
+  return item;
+}
+
+export function getDemoNotifications(userId: string): DemoNotificationInboxItem[] {
+  return [...(demoNotificationInbox.get(userId) || [])].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+}
+
+export function markDemoNotificationRead(userId: string, notificationId: string): void {
+  const current = demoNotificationInbox.get(userId) || [];
+  demoNotificationInbox.set(
+    userId,
+    current.map((item) => (item.id === notificationId ? { ...item, is_read: true } : item)),
+  );
+}
+
+export function markAllDemoNotificationsRead(userId: string): void {
+  const current = demoNotificationInbox.get(userId) || [];
+  demoNotificationInbox.set(
+    userId,
+    current.map((item) => ({ ...item, is_read: true })),
+  );
+}
 
 function parseMinutes(value: string | null | undefined, fallback: string): number {
   const source = String(value || fallback || "").trim();
@@ -155,6 +214,12 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
     .select("*")
     .eq("user_id", userId)
     .eq("is_active", true);
+
+  if (isDemoUserId(userId)) {
+    addDemoNotification(userId, payload);
+    await logNotificationAttempt(userId, payload, true, "demo inbox fallback");
+    return;
+  }
 
   if (error) return;
 
