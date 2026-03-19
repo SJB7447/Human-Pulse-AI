@@ -950,14 +950,22 @@ export default function CommunityPage() {
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
                   {String(selectedPost?.content || selectedPost?.excerpt || '')}
                 </p>
-                {selectedPost ? (
-                  <div className="mt-4 flex items-center justify-end border-t border-[#eee4d5] pt-3">
+              </div>
+              {selectedPost ? (
+                <div className="rounded-lg border border-[#ebe3d3] bg-white/90 p-4">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">이 글에 공감하셨나요?</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        댓글 공감과 별도로, 게시글 자체에 대한 공감 수입니다.
+                      </p>
+                    </div>
                     <button
                       type="button"
-                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                         selectedPost.likedByMe
                           ? 'bg-rose-50 text-rose-600'
-                          : 'bg-white text-gray-500 hover:bg-rose-50 hover:text-rose-500'
+                          : 'bg-white text-gray-600 hover:bg-rose-50 hover:text-rose-500'
                       }`}
                       onClick={() => void handleTogglePostLike(selectedPost)}
                       disabled={likingPostId === selectedPost.id}
@@ -968,8 +976,8 @@ export default function CommunityPage() {
                       <span>공감 {Number(selectedPost.likeCount || 0)}</span>
                     </button>
                   </div>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
               <div className="rounded-lg border border-[#ebe3d3] bg-white/90 p-4">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-3">
