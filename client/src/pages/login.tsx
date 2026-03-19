@@ -784,9 +784,9 @@ export default function LoginPage() {
     });
   };
 
-  const handleDemoLogin = (roleOverride?: UserRole) => {
+  const handleDemoLogin = async (roleOverride?: UserRole) => {
     setIsLoading(true);
-    window.setTimeout(() => {
+    try {
       const inferredRole: UserRole = roleOverride || (
         redirectPath.startsWith('/admin')
           ? 'admin'
@@ -794,19 +794,49 @@ export default function LoginPage() {
             ? 'journalist'
             : 'general'
       );
-      const demoTarget = redirectPath === '/'
-        ? (inferredRole === 'admin' ? '/admin' : inferredRole === 'journalist' ? '/journalist' : '/')
-        : redirectPath;
+
+      const demoEmail = `demo-${inferredRole}@example.com`;
+      const demoPassword = String(password || '').trim() || 'demo1234';
+      const demoResponse = await fetch('/api/auth/demo-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: demoEmail, password: demoPassword }),
+      });
+      const demoPayload = await demoResponse.json().catch(() => ({}));
+      if (!demoResponse.ok || !demoPayload?.user) {
+        const fallbackMessage = locale === 'ko'
+          ? '데모 비밀번호가 변경된 경우 이메일/비밀번호 로그인으로 확인해 주세요.'
+          : 'If the demo password was changed, please use email/password login.';
+        throw new Error(demoPayload?.error || fallbackMessage);
+      }
+
+      const resolvedRole = demoPayload.user.role as UserRole;
+      const defaultTarget = resolvedRole === 'admin'
+        ? '/admin'
+        : resolvedRole === 'journalist'
+          ? '/journalist'
+          : '/';
+      const requestedTarget = redirectPath === '/' ? defaultTarget : redirectPath;
+      const targetRequiresAdmin = requestedTarget.startsWith('/admin');
+      const targetRequiresJournalist = requestedTarget.startsWith('/journalist') || requestedTarget.startsWith('/reporter');
+      const canOpenRequestedTarget =
+        (!targetRequiresAdmin && !targetRequiresJournalist)
+        || resolvedRole === 'admin'
+        || (targetRequiresJournalist && resolvedRole === 'journalist');
+
       setUser({
-        id: `demo-${inferredRole}-123`,
-        email: `demo-${inferredRole}@example.com`,
-        name: `Demo ${inferredRole === 'admin' ? 'Admin' : inferredRole === 'journalist' ? 'Journalist' : 'User'}`,
-        role: inferredRole,
+        id: demoPayload.user.userId,
+        email: demoPayload.user.email,
+        name: demoPayload.user.name,
+        role: resolvedRole,
       });
       toast({ title: t.demoLoginDoneTitle, description: t.demoLoginDoneDesc });
-      setLocation(demoTarget);
+      setLocation(canOpenRequestedTarget ? requestedTarget : defaultTarget);
+    } catch (error: any) {
+      toast({ title: t.authErrorTitle, description: error?.message || t.authErrorDesc, variant: 'destructive' });
+    } finally {
       setIsLoading(false);
-    }, 500);
+    }
   };
 
   return (

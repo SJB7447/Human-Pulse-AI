@@ -4694,13 +4694,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const resolveDemoAccount = (emailValue: unknown) => {
     const email = normalizeDemoPasswordKey(emailValue);
     if (email === "demo-admin@example.com") {
-      return { userId: "demo-admin-123", email, name: "데모 관리자", role: "admin" as const };
+      return { userId: "demo-admin-123", email, name: "데모 관리자", role: resolveDemoRole("demo-admin-123") };
     }
     if (email === "demo-journalist@example.com") {
-      return { userId: "demo-journalist-123", email, name: "데모 기자", role: "journalist" as const };
+      return { userId: "demo-journalist-123", email, name: "데모 기자", role: resolveDemoRole("demo-journalist-123") };
     }
     if (email === "demo-general@example.com") {
-      return { userId: "demo-general-123", email, name: "데모 독자", role: "general" as const };
+      return { userId: "demo-general-123", email, name: "데모 독자", role: resolveDemoRole("demo-general-123") };
     }
     return null;
   };
@@ -6063,6 +6063,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/admin/reader-articles", async (req, res) => {
     try {
+      ensureAdminActor(req);
       const statusRaw = String(req.query.status || "").trim().toLowerCase();
       const status = ["pending", "approved", "rejected"].includes(statusRaw)
         ? (statusRaw as "pending" | "approved" | "rejected")
@@ -6077,6 +6078,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.post("/api/admin/reader-articles/:id/decision", async (req, res) => {
     try {
+      ensureAdminActor(req);
       const articleId = String(req.params.id || "").trim();
       if (!articleId) return res.status(400).json({ error: "articleId is required." });
       const submissionStatusRaw = String(req.body?.submissionStatus || "").trim().toLowerCase();
@@ -6121,6 +6123,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.delete("/api/admin/reader-articles/:id", async (req, res) => {
     try {
+      ensureAdminActor(req);
       const articleId = String(req.params.id || "").trim();
       if (!articleId) return res.status(400).json({ error: "articleId is required." });
 
