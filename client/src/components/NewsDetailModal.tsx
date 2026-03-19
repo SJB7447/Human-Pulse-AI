@@ -12,6 +12,7 @@ import { DBService } from '@/services/DBService';
 import { AIServiceError, GeminiService, type OpinionComposeResult } from '@/services/gemini';
 import type { InteractiveArticle } from '@shared/interactiveArticle';
 import { selectRecommendationMix } from '@shared/recommendationMix';
+import { createToastLinkAction } from '@/lib/toastLinkAction';
 
 const LazyStoryRenderer = lazy(() =>
   import('@/components/StoryRenderer').then((module) => ({ default: module.StoryRenderer }))
@@ -1119,7 +1120,7 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
       setEditableComposedContent(initialEditableContent);
       toast({
         title: generated.fallbackUsed ? "기사 초안 생성 완료(안정 모드)" : "기사 초안 생성 완료",
-        description: "원문을 수정하지 않고 의견 기반 신규 기사 초안을 만들었습니다.",
+        description: "원문을 수정하지 않고 의견 기반 신규 기사 초안을 만들었습니다. 아래 편집 영역에서 바로 다듬을 수 있습니다.",
       });
     } catch (e: any) {
       const aiError = e as AIServiceError;
@@ -1167,7 +1168,11 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
       });
       toast({
         title: "내가 쓴 기사 저장 완료",
-        description: "마이페이지에 저장되었고, 커뮤니티 검증 대기열에도 등록되었습니다.",
+        description: "마이페이지 나만의 기사에 저장되었고, 커뮤니티 검증 대기열에도 등록되었습니다.",
+        action: createToastLinkAction({
+          href: "/mypage?tab=custom",
+          label: "내 기사 보기",
+        }),
       });
       setShowOpinionComposer(false);
       setComposedDraft(null);

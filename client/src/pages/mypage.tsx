@@ -6,6 +6,7 @@ import { Header } from '@/components/Header';
 import { GlassButton } from '@/components/ui/glass-button';
 import { Button } from '@/components/ui/button';
 import { NotificationSettingsPage } from '@/components/notifications/NotificationSettingsPage';
+import { createToastLinkAction } from '@/lib/toastLinkAction';
 import { EMOTION_CONFIG, useEmotionStore } from '@/lib/store';
 import { DBService, type UserComposedArticleRecord, type UserInsightRecord, type UserSocialConnections } from '@/services/DBService';
 import { useToast } from '@/hooks/use-toast';
@@ -219,7 +220,11 @@ export default function MyPage() {
       setSocialConnections(saved);
       toast({
         title: 'SNS 연결 설정 저장 완료',
-        description: '현재는 목업 저장이며 추후 실제 연동으로 확장됩니다.',
+        description: '마이페이지 프로필 영역에 저장되었습니다. 아래 SNS 연결 카드에서 바로 확인할 수 있습니다.',
+        action: createToastLinkAction({
+          href: '/mypage?tab=profile',
+          label: '프로필 보기',
+        }),
       });
     } catch (error: any) {
       toast({
@@ -242,6 +247,11 @@ export default function MyPage() {
     setCuratedInsights((prev) => prev.filter((row) => row.id !== insightId));
     toast({
       title: '인사이트 삭제 완료',
+      description: '마이페이지 인사이트 목록에서 제거되었습니다.',
+      action: createToastLinkAction({
+        href: '/mypage?tab=insight',
+        label: '인사이트 보기',
+      }),
     });
   };
 
@@ -274,7 +284,14 @@ export default function MyPage() {
       });
       setComposedArticles((prev) => [updated, ...prev.filter((row) => row.id !== updated.id)]);
       setEditingComposedArticleId(null);
-      toast({ title: '내 기사 수정 완료' });
+      toast({
+        title: '내 기사 수정 완료',
+        description: '마이페이지 나만의 기사 목록에 수정 내용이 반영되었습니다.',
+        action: createToastLinkAction({
+          href: '/mypage?tab=custom',
+          label: '내 기사 보기',
+        }),
+      });
     } catch (error: any) {
       toast({
         title: '수정 실패',
@@ -292,7 +309,11 @@ export default function MyPage() {
       setComposedArticles((prev) => [updated, ...prev.filter((row) => row.id !== updated.id)]);
       toast({
         title: '재승인 요청 완료',
-        description: '관리자 검증 대기열로 다시 전달되었습니다.',
+        description: '관리자 검증 대기열로 다시 전달되었습니다. 마이페이지 나만의 기사 탭에서 상태를 확인할 수 있습니다.',
+        action: createToastLinkAction({
+          href: '/mypage?tab=custom',
+          label: '상태 확인',
+        }),
       });
     } catch (error: any) {
       toast({

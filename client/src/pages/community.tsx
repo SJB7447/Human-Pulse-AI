@@ -8,6 +8,7 @@ import { DBService, type CommunityCommentRecord } from '@/services/DBService';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { createToastLinkAction } from '@/lib/toastLinkAction';
 
 interface CommunityItem {
   id: string;
@@ -277,7 +278,16 @@ export default function CommunityPage() {
       setOpinion('');
       toast({
         title: '등록 완료',
-        description: '커뮤니티 피드에 반영되었습니다.',
+        description: '커뮤니티 피드에 반영되었습니다. 방금 작성한 글은 커뮤니티 목록에서 바로 확인할 수 있습니다.',
+        action: publishedId
+          ? createToastLinkAction({
+              href: `/community#post-${publishedId}`,
+              label: '글 확인',
+            })
+          : createToastLinkAction({
+              href: '/community',
+              label: '피드 보기',
+            }),
       });
 
       await loadFeed();

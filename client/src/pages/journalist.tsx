@@ -46,6 +46,7 @@ import type { KeywordNewsArticle } from '@/services/gemini';
 import { getSupabase } from '@/services/supabaseClient';
 import { DBService } from '@/services/DBService';
 import { useToast } from '@/hooks/use-toast';
+import { createToastLinkAction } from '@/lib/toastLinkAction';
 
 type GeminiModule = typeof import('@/services/gemini');
 type ImageCropModule = typeof import('@/lib/imageCrop');
@@ -2870,7 +2871,14 @@ export default function JournalistPage() {
               intensity: publishIntensity,
               ...(selectedImage ? { image: selectedImage } : {})
             });
-            toast({ title: "기사 수정 완료" });
+            toast({
+              title: "기사 수정 완료",
+              description: "기자 워크스페이스에 수정본이 반영되었습니다. 기사 목록에서 바로 확인할 수 있습니다.",
+              action: createToastLinkAction({
+                href: "/journalist",
+                label: "기사 목록 보기",
+              }),
+            });
           } else {
             // Create New Article
             data = await DBService.saveArticle({
@@ -2883,7 +2891,14 @@ export default function JournalistPage() {
               emotionLabel: emotionLabel,
               intensity: publishIntensity,
             });
-            toast({ title: "기사 발행 완료" });
+            toast({
+              title: "기사 발행 완료",
+              description: "감정 뉴스 페이지에 게시되었고, 배포 결과는 기사 목록과 감정 페이지에서 확인할 수 있습니다.",
+              action: createToastLinkAction({
+                href: `/emotion/${emotionLabel}?id=${data.id}`,
+                label: "발행 기사 보기",
+              }),
+            });
           }
 
           setPublishingStatus(prev => ({ ...prev, [platformId]: 'success' }));
