@@ -35,7 +35,7 @@ export function AdminNotificationSettings() {
       } catch (error: any) {
         if (mounted) {
           toast({
-            title: '관리자 알림 설정을 불러오지 못했어요',
+            title: '관리자 알림 설정을 불러오지 못했습니다.',
             description: error?.message || '잠시 후 다시 시도해 주세요.',
             variant: 'destructive',
           });
@@ -76,8 +76,8 @@ export function AdminNotificationSettings() {
       setPrefs(snapshot);
       setSaveState('error');
       toast({
-        title: '관리자 알림 설정 저장에 실패했어요',
-        description: error?.message || '변경 사항을 저장하지 못했어요.',
+        title: '관리자 알림 설정 저장에 실패했습니다.',
+        description: error?.message || '변경 사항을 저장하지 못했습니다.',
         variant: 'destructive',
       });
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
@@ -88,9 +88,7 @@ export function AdminNotificationSettings() {
   if (loading || !prefs) {
     return (
       <div className="rounded-3xl border border-gray-200 bg-white p-6 text-gray-600">
-        <div className="flex items-center gap-2 text-sm">
-          관리자 알림 설정을 불러오는 중...
-        </div>
+        <div className="flex items-center gap-2 text-sm">관리자 알림 설정을 불러오는 중...</div>
       </div>
     );
   }
@@ -101,7 +99,7 @@ export function AdminNotificationSettings() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">관리자 알림 설정</h1>
           <p className="mt-1 text-sm text-gray-600">
-            운영 이상 징후와 정기 리포트 알림을 역할에 맞게 조정할 수 있어요.
+            운영 이상 징후와 정기 리포트를 필요한 만큼만 받아보도록 조정할 수 있습니다.
           </p>
         </div>
         {statusLabel ? (

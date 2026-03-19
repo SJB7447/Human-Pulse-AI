@@ -769,13 +769,6 @@ export default function CommunityPage() {
             })}
           </div>
         )}
-
-        <div className="mt-10">
-          <Link href="/" className="text-sm text-blue-600 hover:text-blue-800">
-            홈으로 돌아가기
-          </Link>
-        </div>
-
         <Dialog open={Boolean(selectedPost)} onOpenChange={(open) => { if (!open) setSelectedPost(null); }}>
           <DialogContent className="max-w-3xl max-h-[88vh] overflow-hidden bg-[#fffdf7] border border-[#ece4d4]">
             <DialogHeader>

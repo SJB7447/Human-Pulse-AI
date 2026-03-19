@@ -26,9 +26,11 @@ export type PushNotificationType =
   | "admin_action"
   | "article_publish"
   | "breaking"
+  | "reporter_edit_requested"
   | "reporter_comment"
   | "reporter_article_published"
-  | "admin_new_reporter";
+  | "admin_new_reporter"
+  | "admin_report";
 
 export interface PushPayload {
   type: PushNotificationType;
@@ -133,7 +135,7 @@ async function logNotificationAttempt(userId: string, payload: PushPayload, succ
 }
 
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
-  if (!hasVapidConfig || !userId) return;
+  if (!userId) return;
 
   const prefsMap = await fetchNotificationPrefs([userId]);
   const pref = prefsMap.get(userId) || null;
@@ -163,6 +165,11 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
     return;
   }
 
+  if (!hasVapidConfig) {
+    await logNotificationAttempt(userId, payload, true, "web push not configured");
+    return;
+  }
+
   await Promise.allSettled(
     subs.map(async (sub) => {
       const subscription = {
@@ -188,7 +195,6 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
 }
 
 export async function broadcastPush(payload: PushPayload): Promise<void> {
-  if (!hasVapidConfig) return;
   const { data: subs, error } = await supabase
     .from("push_subscriptions")
     .select("*")
@@ -231,6 +237,10 @@ export async function broadcastPush(payload: PushPayload): Promise<void> {
         keys: { p256dh: sub.p256dh, auth: sub.auth },
       };
       try {
+        if (!hasVapidConfig) {
+          await logNotificationAttempt(userId, payload, true, "web push not configured");
+          return;
+        }
         await webpush.sendNotification(subscription, JSON.stringify(payload));
         await logNotificationAttempt(userId, payload, true);
       } catch (err: any) {

@@ -9077,6 +9077,61 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
   });
 
+  app.post("/api/notifications/test", async (req, res) => {
+    const supabaseModule = await import("./supabase.js");
+    const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;
+    if (!supabaseAdmin) return res.status(500).json({ error: "DB 연결 실패" });
+
+    try {
+      const { userId, role } = await authenticateNotificationActor(
+        req,
+        supabaseAdmin,
+        req.headers["x-actor-role"] || req.body?.role,
+      );
+
+      const payload =
+        role === "admin"
+          ? {
+              type: "admin_report" as const,
+              title: "관리자 테스트 알림",
+              body: "운영 알림 체계와 브라우저 푸시 연결을 확인하는 테스트 메시지입니다.",
+              url: "/mypage?tab=settings",
+            }
+          : role === "reporter"
+            ? {
+                type: "reporter_edit_requested" as const,
+                title: "기자단 테스트 알림",
+                body: "기사 운영 알림과 브라우저 푸시 연결을 확인하는 테스트 메시지입니다.",
+                url: "/mypage?tab=settings",
+              }
+            : {
+                type: "breaking" as const,
+                title: "독자 테스트 알림",
+                body: "개인화 알림과 브라우저 푸시 연결을 확인하는 테스트 메시지입니다.",
+                url: "/mypage?tab=settings",
+              };
+
+      const { count } = await supabaseAdmin
+        .from("push_subscriptions")
+        .select("endpoint", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("is_active", true);
+
+      await sendPushToUser(userId, payload);
+
+      return res.status(201).json({
+        success: true,
+        delivered: Number(count || 0) > 0,
+        message:
+          Number(count || 0) > 0
+            ? "알림함 기록과 브라우저 푸시 전송을 시도했습니다."
+            : "활성 브라우저 구독이 없어 알림함 기록만 생성했습니다.",
+      });
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || "테스트 알림 발송 실패") });
+    }
+  });
+
   app.get("/api/notifications", async (req, res) => {
     const supabaseModule = await import("./supabase.js");
     const supabaseAdmin = (supabaseModule as any).getSupabaseAdmin?.() || (supabaseModule as any).supabase || null;

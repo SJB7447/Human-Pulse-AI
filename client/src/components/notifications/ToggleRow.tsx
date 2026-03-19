@@ -40,7 +40,12 @@ export function ToggleRow({
         <p className="mt-1 text-xs leading-5 text-gray-600">{description}</p>
       </div>
       </div>
-      <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+      <Switch
+        size="sm"
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onCheckedChange}
+      />
     </div>
   );
 }

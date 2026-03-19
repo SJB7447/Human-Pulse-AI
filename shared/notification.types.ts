@@ -134,20 +134,65 @@ export type NotificationToggleMeta<T extends NotificationType = NotificationType
 };
 
 export const READER_NOTIFICATION_TOGGLES: NotificationToggleMeta<ReaderNotificationType>[] = [
-  { key: "breaking", title: "속보 알림", description: "중요 속보나 긴급 기사 업데이트를 바로 받아봅니다." },
-  { key: "emotion", title: "감정 맞춤 알림", description: "내가 자주 보는 감정 흐름과 어울리는 뉴스를 추천받습니다." },
-  { key: "keyword", title: "키워드 알림", description: "관심 키워드가 포함된 기사나 이슈를 놓치지 않게 알려줍니다." },
-  { key: "digest", title: "요약 브리핑", description: "하루 또는 주간 단위로 핵심 뉴스만 모아서 전달합니다." },
+  {
+    key: "breaking",
+    title: "속보 알림",
+    description: "중요 속보나 긴급 기사 업데이트를 바로 받아볼 수 있습니다.",
+  },
+  {
+    key: "emotion",
+    title: "감정 맞춤 알림",
+    description: "내가 자주 보는 감정 흐름과 어울리는 뉴스를 추천받습니다.",
+  },
+  {
+    key: "keyword",
+    title: "키워드 알림",
+    description: "관심 키워드가 포함된 기사나 이슈를 놓치지 않게 알려줍니다.",
+  },
+  {
+    key: "digest",
+    title: "요약 브리핑",
+    description: "하루 또는 주간 단위로 핵심 뉴스만 모아서 전달합니다.",
+  },
 ];
 
 export const REPORTER_NOTIFICATION_TOGGLES: NotificationToggleMeta<ReporterNotificationType>[] = [
-  { key: "reporter_comment", title: "기사 댓글", description: "내 기사에 새 댓글이 달리면 바로 확인할 수 있습니다." },
-  { key: "reporter_reply", title: "댓글 답글", description: "내 기사 댓글에 답글이 달리면 알려줍니다." },
-  { key: "reporter_share_spike", title: "공유 급증", description: "짧은 시간 안에 공유 수가 급증한 기사를 빠르게 파악합니다." },
-  { key: "reporter_view_milestone", title: "조회수 마일스톤", description: "조회수 1만, 5만, 10만 같은 주요 구간 도달 시 알려줍니다." },
-  { key: "reporter_article_published", title: "기사 발행 완료", description: "승인된 기사가 실제 서비스에 발행되면 즉시 알림을 받습니다." },
-  { key: "reporter_edit_requested", title: "수정 요청", description: "관리자가 기사 수정을 요청하면 놓치지 않도록 바로 알려줍니다.", badge: "중요" },
-  { key: "reporter_weekly_summary", title: "주간 성과 리포트", description: "한 주 동안의 조회, 공유, 반응 요약을 정리해서 전달합니다." },
+  {
+    key: "reporter_comment",
+    title: "기사 댓글",
+    description: "내 기사에 새 댓글이 달리면 바로 확인할 수 있습니다.",
+  },
+  {
+    key: "reporter_reply",
+    title: "댓글 답글",
+    description: "내 기사 댓글에 답글이 달리면 알려줍니다.",
+  },
+  {
+    key: "reporter_share_spike",
+    title: "공유 급증",
+    description: "짧은 시간 안에 공유 수가 급증한 기사를 빠르게 파악합니다.",
+  },
+  {
+    key: "reporter_view_milestone",
+    title: "조회수 마일스톤",
+    description: "조회수 1만, 5만, 10만 같은 주요 구간 도달 시 알려줍니다.",
+  },
+  {
+    key: "reporter_article_published",
+    title: "기사 발행 완료",
+    description: "승인된 기사가 실제 서비스에 발행되면 즉시 알림을 받습니다.",
+  },
+  {
+    key: "reporter_edit_requested",
+    title: "수정 요청",
+    description: "관리자가 기사 수정을 요청하면 놓치지 않도록 바로 알려줍니다.",
+    badge: "중요",
+  },
+  {
+    key: "reporter_weekly_summary",
+    title: "주간 성과 리포트",
+    description: "한 주 동안의 조회, 공유, 반응 요약을 정리해서 전달합니다.",
+  },
 ];
 
 export const ADMIN_NOTIFICATION_GROUPS: Array<{
@@ -159,31 +204,59 @@ export const ADMIN_NOTIFICATION_GROUPS: Array<{
 }> = [
   {
     id: "critical",
-    title: "긴급 알림",
-    description: "장애나 신고 누적처럼 즉시 확인이 필요한 이벤트입니다.",
+    title: "긴급 운영 알림",
+    description: "장애, 신고 급증, 발송 실패처럼 즉시 대응이 필요한 이벤트입니다.",
     badge: "긴급",
     keys: [
-      { key: "admin_report", title: "콘텐츠 신고 누적", description: "단일 기사 신고가 빠르게 누적되면 즉시 확인합니다." },
-      { key: "admin_push_fail", title: "푸시 발송 실패", description: "푸시 알림 실패율이 높아졌을 때 즉시 알려줍니다." },
-      { key: "admin_edge_error", title: "서버/엣지 오류", description: "핵심 함수에서 오류가 반복되면 바로 대응할 수 있습니다." },
+      {
+        key: "admin_report",
+        title: "콘텐츠 신고 누적",
+        description: "단일 기사 신고가 빠르게 누적되면 즉시 확인합니다.",
+      },
+      {
+        key: "admin_push_fail",
+        title: "푸시 발송 실패",
+        description: "푸시 알림 실패율이 높아졌을 때 즉시 알려줍니다.",
+      },
+      {
+        key: "admin_edge_error",
+        title: "서버/엣지 오류",
+        description: "핵심 함수에서 오류가 반복되면 바로 대응할 수 있습니다.",
+      },
     ],
   },
   {
     id: "operations",
-    title: "운영 알림",
-    description: "기자 승인이나 비정상 패턴처럼 운영 흐름을 관리하는 알림입니다.",
+    title: "운영 흐름 알림",
+    description: "승인 요청이나 비정상 패턴처럼 서비스 운영 흐름을 점검하는 알림입니다.",
     keys: [
-      { key: "admin_new_reporter", title: "기자 승인 요청", description: "새 기자 계정 승인 요청이 들어오면 알립니다." },
-      { key: "admin_signup_spike", title: "가입자 급증", description: "짧은 시간 내 가입자 수가 급증하면 알려줍니다." },
-      { key: "admin_keyword_abuse", title: "키워드 남용 감지", description: "동일 키워드가 비정상적으로 반복 등록되면 알립니다." },
+      {
+        key: "admin_new_reporter",
+        title: "기자 승인 요청",
+        description: "새 기자 계정 승인 요청이 들어오면 알려줍니다.",
+      },
+      {
+        key: "admin_signup_spike",
+        title: "가입자 급증",
+        description: "짧은 시간 내 가입자 수가 급증하면 알려줍니다.",
+      },
+      {
+        key: "admin_keyword_abuse",
+        title: "키워드 남용 감지",
+        description: "동일 키워드가 비정상적으로 반복 등록되면 알립니다.",
+      },
     ],
   },
   {
     id: "reports",
-    title: "정기 리포트",
-    description: "운영 지표를 요약해서 받아보는 리포트성 알림입니다.",
+    title: "정기 운영 리포트",
+    description: "운영 현황과 핵심 수치를 요약해서 전달하는 리포트 알림입니다.",
     keys: [
-      { key: "admin_daily_stats", title: "일일 운영 리포트", description: "하루 운영 현황과 핵심 수치를 요약해서 전달합니다." },
+      {
+        key: "admin_daily_stats",
+        title: "일일 운영 리포트",
+        description: "하루 운영 현황과 핵심 수치를 요약해서 전달합니다.",
+      },
     ],
   },
 ];

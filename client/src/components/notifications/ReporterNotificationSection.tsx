@@ -27,9 +27,9 @@ export function ReporterNotificationSection({
     <section className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">기자 알림</h2>
+          <h2 className="text-base font-semibold text-gray-900">기자단 알림</h2>
           <p className="mt-1 text-sm text-gray-600">
-            내 기사 반응과 편집 피드백을 빠르게 확인할 수 있도록 기자용 항목만 모아두었습니다.
+            내 기사 반응과 운영 피드백을 빠르게 확인할 수 있도록 기자 전용 항목만 모았습니다.
           </p>
         </div>
         <span className="inline-flex items-center rounded-full bg-gray-900 px-3 py-1 text-[11px] font-semibold tracking-[0.16em] text-white">

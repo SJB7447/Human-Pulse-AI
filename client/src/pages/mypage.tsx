@@ -5,7 +5,6 @@ import { User, Bookmark, Sparkles, Edit, Trash2, Eye, Settings, Heart, Lightbulb
 import { Header } from '@/components/Header';
 import { GlassButton } from '@/components/ui/glass-button';
 import { Button } from '@/components/ui/button';
-import { PushNotificationSettingsPanel } from '@/components/PushNotificationSettingsPanel';
 import { NotificationSettingsPage } from '@/components/notifications/NotificationSettingsPage';
 import { EMOTION_CONFIG, useEmotionStore } from '@/lib/store';
 import { DBService, type UserComposedArticleRecord, type UserInsightRecord, type UserSocialConnections } from '@/services/DBService';
@@ -908,10 +907,6 @@ export default function MyPage() {
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">프로필 설정</h3>
               <div className="space-y-4">
-                <div className="rounded-2xl border border-gray-100 bg-slate-50/70 p-4" style={{ marginBottom: 24 }}>
-                  <PushNotificationSettingsPanel userId={user?.id ?? null} />
-                </div>
-
                 <div className="space-y-3 rounded-2xl border border-gray-100 bg-slate-50/70 p-4">
                   <div>
                     <h4 className="text-base font-semibold text-gray-900">알림 세부 설정</h4>

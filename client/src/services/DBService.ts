@@ -1217,6 +1217,28 @@ export const DBService = {
         return await response.json();
     },
 
+    async sendNotificationTest(): Promise<{ success: boolean; delivered: boolean; message: string }> {
+        const auth = await this.getAuthContext();
+        if (!auth?.userId) {
+            throw new Error('테스트 알림을 보내려면 로그인이 필요합니다.');
+        }
+        const authHeaders = await buildAuthHeaders();
+
+        const response = await fetch('/api/notifications/test', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...authHeaders,
+                ...buildActorHeaders(),
+                'x-actor-id': auth.userId,
+                'x-actor-role': normalizeActorRole(auth.role),
+            },
+            body: JSON.stringify({}),
+        });
+        if (!response.ok) throw await createApiError(response, '테스트 알림 발송에 실패했습니다.');
+        return await response.json();
+    },
+
     async subscribePremium(userId: string) {
         const response = await fetch('/api/billing/subscribe', {
             method: 'POST',

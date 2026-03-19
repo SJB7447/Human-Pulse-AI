@@ -5,10 +5,17 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useEmotionStore } from "@/lib/store";
 
 const TYPE_ICON: Record<string, string> = {
-  new_news: "📰",
-  new_comment: "💬",
-  admin_action: "🔔",
-  article_publish: "✅",
+  breaking: "속보",
+  emotion: "감정",
+  keyword: "키워드",
+  digest: "브리핑",
+  reporter_comment: "댓글",
+  reporter_reply: "답글",
+  reporter_edit_requested: "수정",
+  reporter_article_published: "발행",
+  admin_report: "신고",
+  admin_action: "운영",
+  article_publish: "발행",
 };
 
 function timeAgo(iso: string): string {
@@ -129,10 +136,12 @@ export function NotificationDropdown() {
           </div>
 
           {loading ? (
-            <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "hsl(var(--muted-foreground))" }}>불러오는 중...</div>
+            <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "hsl(var(--muted-foreground))" }}>
+              알림을 불러오는 중...
+            </div>
           ) : notifications.length === 0 ? (
             <div style={{ padding: 32, textAlign: "center", fontSize: 13, color: "hsl(var(--muted-foreground))" }}>
-              아직 알림이 없어요
+              아직 도착한 알림이 없습니다.
             </div>
           ) : (
             notifications.map((n) => (
@@ -153,14 +162,26 @@ export function NotificationDropdown() {
                   transition: "background 0.1s",
                 }}
               >
-                <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>
-                  {TYPE_ICON[n.type] || "🔔"}
+                <span
+                  style={{
+                    minWidth: 38,
+                    padding: "3px 8px",
+                    borderRadius: 999,
+                    background: "hsl(var(--muted))",
+                    color: "hsl(var(--foreground))",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    lineHeight: 1.4,
+                    textAlign: "center",
+                  }}
+                >
+                  {TYPE_ICON[n.type] || "알림"}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: n.is_read ? 400 : 500, color: "hsl(var(--foreground))", lineHeight: 1.4 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: n.is_read ? 400 : 600, color: "hsl(var(--foreground))", lineHeight: 1.4 }}>
                     {n.title}
                   </p>
-                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "hsl(var(--muted-foreground))", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "hsl(var(--muted-foreground))", lineHeight: 1.4 }}>
                     {n.body}
                   </p>
                   <p style={{ margin: "4px 0 0", fontSize: 11, color: "hsl(var(--muted-foreground))" }}>

@@ -490,9 +490,7 @@ export default function EmotionPage() {
         copy,
         chipColor: isGravity ? '#898989' : emotion.color,
         labelColor: isGravity ? '#3A3A3A' : emotion.color,
-        baseBackground: isGravity
-          ? 'rgba(137,137,137,0.14)'
-          : `hsla(${h}, ${Math.max(50, s - 10)}%, 88%, 0.36)`,
+        baseBackground: 'rgba(255,255,255,0.96)',
         activeBackground: isGravity
           ? 'rgba(137,137,137,0.2)'
           : `hsla(${h}, ${Math.min(96, s + 2)}%, 84%, 0.48)`,

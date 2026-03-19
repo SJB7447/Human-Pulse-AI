@@ -36,7 +36,13 @@ export function usePushNotification(userId: string | null) {
       const accessToken = String(data?.session?.access_token || "");
 
       const keyRes = await fetch("/api/push/vapid-public-key");
+      if (!keyRes.ok) {
+        throw new Error("VAPID 공개 키를 불러오지 못했습니다.");
+      }
       const { publicKey } = await keyRes.json();
+      if (!publicKey) {
+        throw new Error("푸시 공개 키가 설정되지 않았습니다.");
+      }
 
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({
@@ -45,10 +51,11 @@ export function usePushNotification(userId: string | null) {
       });
 
       const json = sub.toJSON();
-      await fetch("/api/push/subscribe", {
+      const response = await fetch("/api/push/subscribe", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-actor-id": userId,
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
         body: JSON.stringify({
@@ -58,6 +65,9 @@ export function usePushNotification(userId: string | null) {
           auth: (json.keys as any)?.auth,
         }),
       });
+      if (!response.ok) {
+        throw new Error("푸시 구독 저장에 실패했습니다.");
+      }
 
       setPermission(typeof Notification !== "undefined" ? Notification.permission : "granted");
       setIsSubscribed(true);
@@ -83,14 +93,18 @@ export function usePushNotification(userId: string | null) {
         return true;
       }
 
-      await fetch("/api/push/subscribe", {
+      const response = await fetch("/api/push/subscribe", {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
+          "x-actor-id": userId || "",
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         },
         body: JSON.stringify({ endpoint: sub.endpoint }),
       });
+      if (!response.ok) {
+        throw new Error("푸시 구독 해제에 실패했습니다.");
+      }
 
       await sub.unsubscribe();
       setPermission(typeof Notification !== "undefined" ? Notification.permission : "default");

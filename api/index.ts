@@ -13,6 +13,15 @@ type ApiMode = "full" | "lightweight";
 const EMOTION_TYPES = ["vibrance", "immersion", "clarity", "gravity", "serenity", "spectrum"] as const;
 type EmotionType = typeof EMOTION_TYPES[number];
 const lightweightNotificationPrefs = new Map<string, { role: string; prefs: ReturnType<typeof createDefaultNotificationPrefs> }>();
+const lightweightNotifications = new Map<string, Array<{
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  url: string;
+  is_read: boolean;
+  created_at: string;
+}>>();
 
 function getRequestPath(url: unknown): string {
   const raw = String(url || "/");
@@ -98,6 +107,41 @@ async function parseJsonBody(req: any): Promise<any> {
   }
 }
 
+async function resolveLightweightActor(req: any, query: URLSearchParams): Promise<{ userId: string; role: string } | null> {
+  const requestedActorId = String(req?.headers?.["x-actor-id"] || query.get("userId") || "").trim();
+  const requestedRole = normalizeNotificationRole(req?.headers?.["x-actor-role"] || query.get("role"));
+  const authHeader = typeof req?.headers?.authorization === "string" ? req.headers.authorization.trim() : "";
+  const token = authHeader.toLowerCase().startsWith("bearer ") ? authHeader.slice(7).trim() : "";
+
+  if (!token && requestedActorId.startsWith("demo-")) {
+    return { userId: requestedActorId, role: requestedRole };
+  }
+
+  if (!token) return null;
+
+  const config = getSupabaseConfig();
+  if (!config) return null;
+
+  const authResponse = await fetch(`${config.url.replace(/\/+$/, "")}/auth/v1/user`, {
+    method: "GET",
+    headers: {
+      apikey: config.key,
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    },
+  }).catch(() => null);
+
+  if (!authResponse || !authResponse.ok) return null;
+  const authPayload = await authResponse.json().catch(() => null);
+  const authUserId = String(authPayload?.id || "").trim();
+  if (!authUserId) return null;
+  if (requestedActorId && requestedActorId !== authUserId) return null;
+  return {
+    userId: authUserId,
+    role: normalizeNotificationRole(req?.headers?.["x-actor-role"] || query.get("role") || authPayload?.user_metadata?.role),
+  };
+}
+
 export default async function handler(req: any, res: any) {
   await ensureFullApi();
 
@@ -162,10 +206,60 @@ export default async function handler(req: any, res: any) {
     }
 
     if (method === "GET" && normalizedPath === "/api/notifications") {
-      return sendJson(res, 200, []);
+      const actor = await resolveLightweightActor(req, query);
+      if (!actor) {
+        return sendJson(res, 401, { error: "로그인이 필요합니다." });
+      }
+      return sendJson(res, 200, lightweightNotifications.get(actor.userId) || []);
     }
 
-    if (method === "PATCH" && (normalizedPath === "/api/notifications/read-all" || normalizedPath.startsWith("/api/notifications/"))) {
+    if (method === "POST" && normalizedPath === "/api/notifications/test") {
+      const actor = await resolveLightweightActor(req, query);
+      if (!actor) {
+        return sendJson(res, 401, { error: "로그인이 필요합니다." });
+      }
+      const item = {
+        id: `lightweight-notice-${Date.now()}`,
+        type: actor.role === "admin" ? "admin_report" : actor.role === "reporter" ? "reporter_edit_requested" : "breaking",
+        title: actor.role === "admin" ? "관리자 테스트 알림" : actor.role === "reporter" ? "기자단 테스트 알림" : "독자 테스트 알림",
+        body: "라이트웨이트 모드에서 생성된 테스트 알림입니다.",
+        url: "/mypage?tab=settings",
+        is_read: false,
+        created_at: new Date().toISOString(),
+      };
+      const existing = lightweightNotifications.get(actor.userId) || [];
+      lightweightNotifications.set(actor.userId, [item, ...existing].slice(0, 50));
+      return sendJson(res, 201, {
+        success: true,
+        delivered: false,
+        message: "브라우저 푸시는 제한될 수 있지만 알림함 기록은 생성했습니다.",
+      });
+    }
+
+    if (method === "PATCH" && normalizedPath === "/api/notifications/read-all") {
+      const actor = await resolveLightweightActor(req, query);
+      if (!actor) {
+        return sendJson(res, 401, { error: "로그인이 필요합니다." });
+      }
+      const existing = lightweightNotifications.get(actor.userId) || [];
+      lightweightNotifications.set(
+        actor.userId,
+        existing.map((item) => ({ ...item, is_read: true })),
+      );
+      return sendJson(res, 200, { success: true, mode: "lightweight" as ApiMode });
+    }
+
+    if (method === "PATCH" && normalizedPath.startsWith("/api/notifications/")) {
+      const actor = await resolveLightweightActor(req, query);
+      if (!actor) {
+        return sendJson(res, 401, { error: "로그인이 필요합니다." });
+      }
+      const notificationId = normalizedPath.split("/").slice(-2, -1)[0];
+      const existing = lightweightNotifications.get(actor.userId) || [];
+      lightweightNotifications.set(
+        actor.userId,
+        existing.map((item) => item.id === notificationId ? { ...item, is_read: true } : item),
+      );
       return sendJson(res, 200, { success: true, mode: "lightweight" as ApiMode });
     }
 

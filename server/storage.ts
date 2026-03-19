@@ -1167,47 +1167,31 @@ export class SupabaseStorage implements IStorage {
     const cacheKey = `adminArticles:${includeHidden ? "all" : "published"}:${safePage}:${safePageSize}:${safeEmotion}:${safeCategory.toLowerCase()}:${safeSearch.toLowerCase()}`;
 
     return this.getOrLoadCached(cacheKey, NEWS_LIST_CACHE_TTL_MS, async () => {
+      const normalizedSearch = safeSearch.toLowerCase();
+      const allRows = await this.getAllNews(includeHidden);
+      const filtered = allRows
+        .filter((row: any) => !safeEmotion || String(row.emotion || "").trim().toLowerCase() === safeEmotion)
+        .filter((row: any) => !safeCategory || mapAdminCategoryPreset(row.emotion, row.category).toLowerCase() === safeCategory.toLowerCase())
+        .filter((row: any) => {
+          if (!normalizedSearch) return true;
+          const haystack = [row.title, row.summary, row.source, row.id, row.category].join(" ").toLowerCase();
+          return haystack.includes(normalizedSearch);
+        });
+
       const availableCategories = Array.from(
         new Set(
-          (await this.getAllNews(includeHidden))
-            .filter((item) => !safeEmotion || String(item.emotion || "").trim().toLowerCase() === safeEmotion)
-            .filter((item) => {
-              if (!safeSearch) return true;
-              const haystack = [item.title, item.summary, item.source, item.id, item.category].join(" ").toLowerCase();
-              return haystack.includes(safeSearch.toLowerCase());
-            })
+          filtered
             .map((item) => mapAdminCategoryPreset(item.emotion, item.category))
             .filter(Boolean),
         ),
       ).sort((a, b) => a.localeCompare(b, "ko"));
 
-      let query = supabase
-        .from('news_items')
-        .select(NEWS_LIST_SELECT, { count: 'exact' })
-        .order('created_at', { ascending: false });
-
-      if (!includeHidden) {
-        query = query.eq('is_published', true);
-      }
-      if (safeEmotion) {
-        query = query.eq('emotion', safeEmotion);
-      }
-      if (safeSearch) {
-        const escaped = safeSearch.replace(/[%_,]/g, (match) => `\\${match}`);
-        query = query.or(`title.ilike.%${escaped}%,summary.ilike.%${escaped}%,source.ilike.%${escaped}%,category.ilike.%${escaped}%`);
-      }
-
-      const from = (safePage - 1) * safePageSize;
-      const to = from + safePageSize - 1;
-      const { data, count } = await query.range(from, to);
-      const items = (data || []).map((row) => this.mapNewsItemRow(row));
-      const merged = this.mergeWithFallback(items)
-        .filter((row: any) => includeHidden || isPublishedVisible(row))
-        .filter((row: any) => !safeCategory || mapAdminCategoryPreset(row.emotion, row.category).toLowerCase() === safeCategory);
+      const start = (safePage - 1) * safePageSize;
+      const pageItems = filtered.slice(start, start + safePageSize);
 
       return {
-        items: merged,
-        total: Math.max(Number(count || 0), merged.length),
+        items: pageItems,
+        total: filtered.length,
         page: safePage,
         pageSize: safePageSize,
         availableCategories,

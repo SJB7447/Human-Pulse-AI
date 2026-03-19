@@ -48,11 +48,15 @@ export function useNotifications() {
   }, [fetch]);
 
   const markRead = async (id: string) => {
+    if (!user?.id) return;
     const { data } = await supabase.auth.getSession();
     const accessToken = String(data?.session?.access_token || "");
     await window.fetch(`/api/notifications/${id}/read`, {
       method: "PATCH",
-      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      headers: {
+        "x-actor-id": user.id,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
     });
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, is_read: true } : n));
   };
