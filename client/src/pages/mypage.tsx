@@ -1,14 +1,13 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useLocation } from 'wouter';
-import { User, Bookmark, Sparkles, Edit, Trash2, Eye, Settings, Heart, Lightbulb, Share2, MessageSquare, Loader2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { User, Bookmark, Sparkles, Edit, Trash2, Eye, Settings, Lightbulb, Share2, MessageSquare, Loader2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { GlassButton } from '@/components/ui/glass-button';
 import { Button } from '@/components/ui/button';
-import { NotificationSettingsPage } from '@/components/notifications/NotificationSettingsPage';
 import { createToastLinkAction } from '@/lib/toastLinkAction';
 import { EMOTION_CONFIG, useEmotionStore } from '@/lib/store';
-import { DBService, type SavedArticleRecord, type UserComposedArticleRecord, type UserInsightRecord, type UserProfileRecord, type UserSocialConnections } from '@/services/DBService';
+import { DBService, type SavedArticleRecord, type UserComposedArticleRecord, type UserInsightRecord, type UserProfileRecord } from '@/services/DBService';
 import { useToast } from '@/hooks/use-toast';
 import { ResponsiveContainer, PieChart, Pie, Tooltip as RechartsTooltip, Cell } from 'recharts';
 
@@ -62,22 +61,9 @@ const INSIGHT_GROUP_COLOR: Record<Exclude<InsightCategoryKey, 'all' | 'untagged'
   action: '#4f89de',
 };
 
-const createEmptySocialConnections = (): UserSocialConnections => ({
-  webUrl: '',
-  instagramHandle: '',
-  threadsHandle: '',
-  youtubeChannelUrl: '',
-  updatedAt: '',
-});
-
-type MyPageSettingsAuth = {
-  userId: string;
-  role: 'general' | 'journalist' | 'admin';
-};
-
 export default function MyPage() {
   const { user } = useEmotionStore();
-  const [currentLocation] = useLocation();
+  const [currentLocation, setLocation] = useLocation();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<'saved' | 'curated' | 'custom' | 'settings'>('saved');
   const [userInfo, setUserInfo] = useState({
@@ -86,10 +72,6 @@ export default function MyPage() {
     bio: '감정을 통해 세상을 이해하고 기록합니다.',
   });
   const [savedArticles, setSavedArticles] = useState<SavedArticleRecord[]>([]);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [socialConnections, setSocialConnections] = useState<UserSocialConnections>(createEmptySocialConnections());
-  const [socialLoading, setSocialLoading] = useState(false);
-  const [socialSaving, setSocialSaving] = useState(false);
   const [curatedInsights, setCuratedInsights] = useState<UserInsightRecord[]>([]);
   const [insightLoading, setInsightLoading] = useState(false);
   const [composedArticles, setComposedArticles] = useState<UserComposedArticleRecord[]>([]);
@@ -102,8 +84,6 @@ export default function MyPage() {
   const [insightCategoryFilter, setInsightCategoryFilter] = useState<InsightCategoryKey>('all');
   const [insightPage, setInsightPage] = useState(1);
   const [hoveredInsightTag, setHoveredInsightTag] = useState<string | null>(null);
-  const [settingsAuth, setSettingsAuth] = useState<MyPageSettingsAuth | null>(null);
-  const [settingsAuthLoading, setSettingsAuthLoading] = useState(true);
 
   const socialOwnerId = String(user?.id || 'guest');
 
@@ -115,50 +95,6 @@ export default function MyPage() {
       setActiveTab(tab);
     }
   }, [currentLocation]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadSettingsAuth = async () => {
-      try {
-        const ctx = await DBService.getAuthContext();
-        if (!mounted) return;
-        if (ctx?.userId) {
-          setSettingsAuth({
-            userId: ctx.userId,
-            role: (ctx.role as MyPageSettingsAuth['role']) || 'general',
-          });
-        } else {
-          setSettingsAuth(null);
-        }
-      } catch {
-        if (!mounted) return;
-        setSettingsAuth(null);
-      } finally {
-        if (mounted) setSettingsAuthLoading(false);
-      }
-    };
-
-    void loadSettingsAuth();
-
-    const loadSocialConnections = async () => {
-      setSocialLoading(true);
-      try {
-        const loaded = await DBService.getUserSocialConnections(socialOwnerId);
-        if (!mounted) return;
-        setSocialConnections(loaded);
-      } catch {
-        if (!mounted) return;
-        setSocialConnections(createEmptySocialConnections());
-      } finally {
-        if (mounted) setSocialLoading(false);
-      }
-    };
-    loadSocialConnections();
-    return () => {
-      mounted = false;
-    };
-  }, [socialOwnerId]);
 
   useEffect(() => {
     let mounted = true;
@@ -236,60 +172,6 @@ export default function MyPage() {
       mounted = false;
     };
   }, [socialOwnerId]);
-
-  const handleSaveSocialConnections = async () => {
-    setSocialSaving(true);
-    try {
-      const saved = await DBService.updateUserSocialConnections(socialOwnerId, socialConnections);
-      setSocialConnections(saved);
-      toast({
-        title: 'SNS 연결 설정 저장 완료',
-        description: '마이페이지 프로필 영역에 저장되었습니다. 아래 SNS 연결 카드에서 바로 확인할 수 있습니다.',
-        action: createToastLinkAction({
-          href: '/mypage?tab=profile',
-          label: '프로필 보기',
-        }),
-      });
-      void DBService.logInAppNotification({
-        type: 'admin_action',
-        title: 'SNS 연결 설정 저장 완료',
-        body: '마이페이지 프로필 영역에 저장되었습니다. 아래 SNS 연결 카드에서 바로 확인할 수 있습니다.',
-        url: '/mypage?tab=profile',
-      }).catch(() => {});
-    } catch (error: any) {
-      toast({
-        title: 'SNS 설정 저장 실패',
-        description: error?.message || '잠시 후 다시 시도해 주세요.',
-        variant: 'destructive',
-      });
-    } finally {
-      setSocialSaving(false);
-    }
-  };
-
-  const handleSaveProfile = async () => {
-    setSavingProfile(true);
-    try {
-      const saved = await DBService.updateUserProfile(socialOwnerId, userInfo);
-      setUserInfo(saved);
-      toast({
-        title: '프로필 저장 완료',
-        description: '이름, 이메일, 자기소개가 현재 계정 기준으로 저장되었습니다.',
-        action: createToastLinkAction({
-          href: '/mypage?tab=settings',
-          label: '설정 보기',
-        }),
-      });
-    } catch (error: any) {
-      toast({
-        title: '프로필 저장 실패',
-        description: error?.message || '잠시 후 다시 시도해 주세요.',
-        variant: 'destructive',
-      });
-    } finally {
-      setSavingProfile(false);
-    }
-  };
 
   const getEmotionColor = (emotion: string) => {
     return EMOTION_CONFIG.find((e) => e.type === emotion)?.color || '#888';
@@ -512,7 +394,7 @@ export default function MyPage() {
               variant="outline"
               size="sm"
               data-testid="button-edit-profile"
-              onClick={() => setActiveTab('settings')}
+              onClick={() => setLocation('/settings')}
             >
               <Edit className="w-4 h-4" />
               프로필 수정
@@ -1019,145 +901,22 @@ export default function MyPage() {
 
           {activeTab === 'settings' && (
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">프로필 설정</h3>
-              <div className="space-y-4">
-                <div className="space-y-3 rounded-2xl border border-gray-100 bg-slate-50/70 p-4">
-                  <div>
-                    <h4 className="text-base font-semibold text-gray-900">알림 세부 설정</h4>
-                    <p className="mt-1 text-sm text-gray-600">
-                      받고 싶은 알림만 골라서 켜고 끌 수 있어요. 마이페이지에서 바로 설정이 저장됩니다.
-                    </p>
-                  </div>
-
-                  {settingsAuthLoading ? (
-                    <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-5 text-sm text-gray-600">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      알림 설정을 불러오는 중...
-                    </div>
-                  ) : settingsAuth ? (
-                    <NotificationSettingsPage userId={settingsAuth.userId} role={settingsAuth.role} />
-                  ) : (
-                    <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-4 py-5 text-sm text-gray-600">
-                      로그인한 사용자만 알림 항목별 설정을 저장할 수 있어요.
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
-                  <input
-                    type="text"
-                    value={userInfo.name}
-                    onChange={(e) => setUserInfo({ ...userInfo, name: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                    data-testid="input-name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">이메일</label>
-                  <input
-                    type="email"
-                    value={userInfo.email}
-                    onChange={(e) => setUserInfo({ ...userInfo, email: e.target.value })}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                    data-testid="input-email"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">자기소개</label>
-                  <textarea
-                    value={userInfo.bio}
-                    onChange={(e) => setUserInfo({ ...userInfo, bio: e.target.value })}
-                    rows={3}
-                    className="w-full px-4 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
-                    data-testid="input-bio"
-                  />
-                </div>
-
-                <div className="pt-2 border-t border-gray-100">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <p className="text-sm font-semibold text-gray-800">SNS 계정 연결 (목업)</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        setSocialLoading(true);
-                        try {
-                          const loaded = await DBService.getUserSocialConnections(socialOwnerId);
-                          setSocialConnections(loaded);
-                          toast({ title: 'SNS 연결 정보 불러오기 완료' });
-                        } catch {
-                          toast({ title: 'SNS 연결 정보 불러오기 실패', variant: 'destructive' });
-                        } finally {
-                          setSocialLoading(false);
-                        }
-                      }}
-                      disabled={socialLoading}
-                    >
-                      {socialLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : '불러오기'}
+              <h3 className="text-lg font-semibold text-gray-800">설정</h3>
+              <p className="mt-2 text-sm text-gray-600">
+                프로필 수정, 비밀번호 변경, 알림 설정은 전용 설정 페이지에서 한 번에 관리할 수 있습니다.
+              </p>
+              <div className="mt-4 rounded-2xl border border-gray-100 bg-slate-50/80 p-4">
+                <p className="text-sm text-gray-700">
+                  현재 계정 정보와 알림 설정이 분리되어 보이던 중복 동선을 정리했습니다. 발표 시연은 아래 버튼으로 이동한 뒤 진행하는 것이 가장 안정적입니다.
+                </p>
+                <div className="mt-4">
+                  <Link href="/settings">
+                    <Button className="w-full" data-testid="button-open-settings-page">
+                      <Settings className="w-4 h-4 mr-2" />
+                      설정 페이지 열기
                     </Button>
-                  </div>
-                  <p className="text-xs text-gray-500 mb-3">
-                    현재는 저장/복원 목업 단계입니다. 실제 OAuth 연동은 추후 확장 예정입니다.
-                  </p>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Web 프로필 URL</label>
-                      <input
-                        type="text"
-                        value={socialConnections.webUrl}
-                        onChange={(e) => setSocialConnections({ ...socialConnections, webUrl: e.target.value })}
-                        placeholder="https://example.com/me"
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Instagram 계정</label>
-                      <input
-                        type="text"
-                        value={socialConnections.instagramHandle}
-                        onChange={(e) => setSocialConnections({ ...socialConnections, instagramHandle: e.target.value })}
-                        placeholder="@your_instagram"
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Threads 계정</label>
-                      <input
-                        type="text"
-                        value={socialConnections.threadsHandle}
-                        onChange={(e) => setSocialConnections({ ...socialConnections, threadsHandle: e.target.value })}
-                        placeholder="@your_threads"
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">YouTube 채널 URL</label>
-                      <input
-                        type="text"
-                        value={socialConnections.youtubeChannelUrl}
-                        onChange={(e) => setSocialConnections({ ...socialConnections, youtubeChannelUrl: e.target.value })}
-                        placeholder="https://youtube.com/@yourchannel"
-                        className="w-full px-3 py-2 rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-3 flex justify-end">
-                    <Button onClick={handleSaveSocialConnections} disabled={socialSaving}>
-                      {socialSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'SNS 연결 저장'}
-                    </Button>
-                  </div>
+                  </Link>
                 </div>
-                <GlassButton variant="primary" data-testid="button-save-settings" onClick={handleSaveProfile}>
-                  <Heart className="w-4 h-4" />
-                  {savingProfile ? '저장 중...' : '저장하기'}
-                </GlassButton>
-                <Link href="/settings">
-                  <Button variant="outline" className="w-full" data-testid="button-open-settings-page">
-                    <Settings className="w-4 h-4 mr-2" />
-                    설정 페이지 열기
-                  </Button>
-                </Link>
               </div>
             </div>
           )}

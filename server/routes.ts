@@ -4672,11 +4672,49 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     title: string;
   }>();
   const demoResetTokens = new Map<string, { phone: string; expiresAt: number }>();
+  const demoPasswordStore = new Map<string, string>([
+    ["demo-general-123", "demo1234"],
+    ["demo-general@example.com", "demo1234"],
+    ["demo-journalist-123", "demo1234"],
+    ["demo-journalist@example.com", "demo1234"],
+    ["demo-admin-123", "demo1234"],
+    ["demo-admin@example.com", "demo1234"],
+  ]);
   const demoPhoneToEmails = new Map<string, string[]>([
     ["010-0000-0000", ["demo.user@example.com"]],
     ["010-1111-2222", ["journal.user@example.com", "alt.user@example.com"]],
   ]);
   const journalistAllowedDomains = ["donga.com", "donga.co.kr", "dongailbo.com"];
+  const normalizeDemoPasswordKey = (value: unknown) => String(value || "").trim().toLowerCase();
+  const isDemoAuthTarget = (userIdValue: unknown, emailValue: unknown) => {
+    const userId = String(userIdValue || "").trim();
+    const email = normalizeDemoPasswordKey(emailValue);
+    return userId.startsWith("demo-") || email.startsWith("demo-");
+  };
+  const resolveDemoAccount = (emailValue: unknown) => {
+    const email = normalizeDemoPasswordKey(emailValue);
+    if (email === "demo-admin@example.com") {
+      return { userId: "demo-admin-123", email, name: "데모 관리자", role: "admin" as const };
+    }
+    if (email === "demo-journalist@example.com") {
+      return { userId: "demo-journalist-123", email, name: "데모 기자", role: "journalist" as const };
+    }
+    if (email === "demo-general@example.com") {
+      return { userId: "demo-general-123", email, name: "데모 독자", role: "general" as const };
+    }
+    return null;
+  };
+  const readDemoPassword = (userIdValue: unknown, emailValue: unknown) => {
+    const userId = normalizeDemoPasswordKey(userIdValue);
+    const email = normalizeDemoPasswordKey(emailValue);
+    return demoPasswordStore.get(userId) || demoPasswordStore.get(email) || "demo1234";
+  };
+  const writeDemoPassword = (userIdValue: unknown, emailValue: unknown, password: string) => {
+    const userId = normalizeDemoPasswordKey(userIdValue);
+    const email = normalizeDemoPasswordKey(emailValue);
+    if (userId) demoPasswordStore.set(userId, password);
+    if (email) demoPasswordStore.set(email, password);
+  };
   const verifyDongaEmployeeDirectory = async (_input: {
     email: string;
     role: "journalist" | "admin";
@@ -6842,6 +6880,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       return res.status(400).json({ error: "Weak password.", code: "AUTH_WEAK_PASSWORD" });
     }
 
+    const demoEmails = demoPhoneToEmails.get(tokenRow.phone) || [];
+    for (const demoEmail of demoEmails) {
+      writeDemoPassword("", demoEmail, newPassword);
+    }
     demoResetTokens.delete(token);
     res.json({ success: true, message: "Password changed (demo)." });
   });
@@ -6884,12 +6926,57 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
     }
 
-    // Demo contract endpoint: in production this should call Supabase Admin API.
+    if (isDemoAuthTarget(userId, email)) {
+      const expectedPassword = readDemoPassword(userId, email);
+      if (currentPassword !== expectedPassword) {
+        return res.status(400).json({
+          error: "Current password is incorrect.",
+          code: "AUTH_CURRENT_PASSWORD_MISMATCH",
+        });
+      }
+      writeDemoPassword(userId, email, newPassword);
+      return res.json({
+        success: true,
+        message: "Password changed (demo).",
+        userId: userId || null,
+        email: email || null,
+        mode: "demo",
+      });
+    }
+
+    // Production accounts should be updated from the authenticated client session.
     return res.json({
       success: true,
-      message: "Password changed (contract endpoint).",
+      message: "Password change request accepted. Update from authenticated client session.",
       userId: userId || null,
       email: email || null,
+      mode: "client-session",
+    });
+  });
+
+  app.post("/api/auth/demo-login", async (req, res) => {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const password = String(req.body?.password || "");
+    const demoAccount = resolveDemoAccount(email);
+
+    if (!demoAccount) {
+      return res.status(404).json({
+        error: "Demo account not found.",
+        code: "DEMO_AUTH_NOT_FOUND",
+      });
+    }
+
+    const expectedPassword = readDemoPassword(demoAccount.userId, demoAccount.email);
+    if (password !== expectedPassword) {
+      return res.status(401).json({
+        error: "Invalid demo password.",
+        code: "DEMO_AUTH_PASSWORD_MISMATCH",
+      });
+    }
+
+    return res.json({
+      success: true,
+      user: demoAccount,
     });
   });
 

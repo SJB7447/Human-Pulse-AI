@@ -718,6 +718,28 @@ export default function LoginPage() {
           setShowSignupPushPrompt(true);
         }
       } else {
+        if (String(email).trim().toLowerCase().startsWith('demo-')) {
+          const demoResponse = await fetch('/api/auth/demo-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+          });
+          const demoPayload = await demoResponse.json().catch(() => ({}));
+          if (!demoResponse.ok || !demoPayload?.user) {
+            throw new Error(demoPayload?.error || t.authErrorDesc);
+          }
+
+          setUser({
+            id: demoPayload.user.userId,
+            email: demoPayload.user.email,
+            name: demoPayload.user.name,
+            role: demoPayload.user.role,
+          });
+          toast({ title: t.loginSuccessTitle, description: t.loginSuccessDesc });
+          setLocation(redirectPath);
+          return;
+        }
+
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
 
