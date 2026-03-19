@@ -5,6 +5,7 @@ import { User, Bookmark, Sparkles, Edit, Trash2, Eye, Settings, Lightbulb, Share
 import { Header } from '@/components/Header';
 import { GlassButton } from '@/components/ui/glass-button';
 import { Button } from '@/components/ui/button';
+import { NotificationSettingsPage } from '@/components/notifications/NotificationSettingsPage';
 import { createToastLinkAction } from '@/lib/toastLinkAction';
 import { EMOTION_CONFIG, useEmotionStore } from '@/lib/store';
 import { DBService, type SavedArticleRecord, type UserComposedArticleRecord, type UserInsightRecord, type UserProfileRecord } from '@/services/DBService';
@@ -15,6 +16,10 @@ const INSIGHTS_PER_PAGE = 6;
 const PAGE_ELLIPSIS = 'ellipsis';
 type PageToken = number | typeof PAGE_ELLIPSIS;
 type InsightCategoryKey = 'all' | 'growth' | 'empathy' | 'vitality' | 'discomfort' | 'concern' | 'action' | 'untagged';
+type MyPageNotificationAuth = {
+  userId: string;
+  role: 'general' | 'journalist' | 'admin';
+};
 
 const INSIGHT_CATEGORY_LABEL: Record<InsightCategoryKey, string> = {
   all: '전체',
@@ -84,6 +89,8 @@ export default function MyPage() {
   const [insightCategoryFilter, setInsightCategoryFilter] = useState<InsightCategoryKey>('all');
   const [insightPage, setInsightPage] = useState(1);
   const [hoveredInsightTag, setHoveredInsightTag] = useState<string | null>(null);
+  const [notificationAuth, setNotificationAuth] = useState<MyPageNotificationAuth | null>(null);
+  const [notificationAuthLoading, setNotificationAuthLoading] = useState(true);
 
   const socialOwnerId = String(user?.id || 'guest');
 
@@ -98,6 +105,27 @@ export default function MyPage() {
 
   useEffect(() => {
     let mounted = true;
+    const loadNotificationAuth = async () => {
+      try {
+        const ctx = await DBService.getAuthContext();
+        if (!mounted) return;
+        if (ctx?.userId) {
+          setNotificationAuth({
+            userId: ctx.userId,
+            role: (ctx.role as MyPageNotificationAuth['role']) || 'general',
+          });
+        } else {
+          setNotificationAuth(null);
+        }
+      } catch {
+        if (!mounted) return;
+        setNotificationAuth(null);
+      } finally {
+        if (mounted) setNotificationAuthLoading(false);
+      }
+    };
+    void loadNotificationAuth();
+
     const loadProfile = async () => {
       try {
         const profile = await DBService.getUserProfile(socialOwnerId);
@@ -407,7 +435,7 @@ export default function MyPage() {
             { key: 'saved', label: '저장한 기사', icon: Bookmark },
             { key: 'curated', label: '내 인사이트', icon: Lightbulb },
             { key: 'custom', label: '내가 쓴 기사', icon: Sparkles },
-            { key: 'settings', label: '설정', icon: Settings },
+            { key: 'settings', label: '알림 설정', icon: Settings },
           ].map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -901,19 +929,33 @@ export default function MyPage() {
 
           {activeTab === 'settings' && (
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
-              <h3 className="text-lg font-semibold text-gray-800">설정</h3>
+              <h3 className="text-lg font-semibold text-gray-800">알림 설정</h3>
               <p className="mt-2 text-sm text-gray-600">
-                프로필 수정, 비밀번호 변경, 알림 설정은 전용 설정 페이지에서 한 번에 관리할 수 있습니다.
+                받고 싶은 알림은 여기서 바로 켜고 끌 수 있습니다. 프로필 수정과 비밀번호 변경은 별도 설정 페이지에서 관리합니다.
               </p>
+              <div className="mt-4">
+                {notificationAuthLoading ? (
+                  <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-slate-50 px-4 py-5 text-sm text-gray-600">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    알림 설정을 준비하는 중...
+                  </div>
+                ) : notificationAuth ? (
+                  <NotificationSettingsPage userId={notificationAuth.userId} role={notificationAuth.role} />
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-gray-200 bg-slate-50 px-4 py-5 text-sm text-gray-600">
+                    로그인한 사용자만 알림 항목별 설정을 저장할 수 있어요.
+                  </div>
+                )}
+              </div>
               <div className="mt-4 rounded-2xl border border-gray-100 bg-slate-50/80 p-4">
                 <p className="text-sm text-gray-700">
-                  현재 계정 정보와 알림 설정이 분리되어 보이던 중복 동선을 정리했습니다. 발표 시연은 아래 버튼으로 이동한 뒤 진행하는 것이 가장 안정적입니다.
+                  이름, 이메일, 자기소개 수정과 비밀번호 변경은 전용 설정 페이지에서 이어서 진행할 수 있습니다.
                 </p>
                 <div className="mt-4">
                   <Link href="/settings">
-                    <Button className="w-full" data-testid="button-open-settings-page">
+                    <Button variant="outline" className="w-full" data-testid="button-open-settings-page">
                       <Settings className="w-4 h-4 mr-2" />
-                      설정 페이지 열기
+                      프로필 설정 페이지 열기
                     </Button>
                   </Link>
                 </div>
