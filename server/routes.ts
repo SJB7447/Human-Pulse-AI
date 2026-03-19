@@ -6120,6 +6120,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           icon: "/favicon.png",
         });
       }
+    } else {
+      await notifyAdmins({
+        type: "admin_report",
+        title: "관리자 권한 요청이 들어왔어요",
+        body: `${String(email || "새 사용자")} 님이 관리자 권한 승인을 요청했어요.`,
+        url: "/admin",
+        icon: "/favicon.png",
+      });
     }
     res.status(201).json({ id: row.id, status: row.status, createdAt: row.createdAt });
   });
@@ -6131,6 +6139,21 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const target = roleRequestFallback.find((item) => item.id === id);
     if (!target) return res.status(404).json({ error: "Role request not found." });
     target.status = status as RoleRequestStatus;
+
+    const requestedRoleLabel = target.requestedRole === "journalist" ? "기자단" : "관리자";
+    const decisionTitle = status === "approved" ? "권한 요청이 승인됐어요" : "권한 요청 결과가 도착했어요";
+    const decisionBody = status === "approved"
+      ? `${requestedRoleLabel} 권한 요청이 승인되었습니다. 설정 페이지에서 변경 내용을 확인해 주세요.`
+      : `${requestedRoleLabel} 권한 요청이 반려되었습니다. 설정 페이지에서 다시 요청할 수 있습니다.`;
+
+    sendPushToUser(String(target.userId || "").trim(), {
+      type: "admin_action",
+      title: decisionTitle,
+      body: decisionBody,
+      url: "/settings",
+      icon: "/favicon.png",
+    }).catch(() => {});
+
     res.json({ id, status });
   });
 
