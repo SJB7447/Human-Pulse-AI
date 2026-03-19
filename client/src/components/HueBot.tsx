@@ -394,11 +394,9 @@ export function HueBot() {
             transition={{ duration: 0.2 }}
             className="absolute bottom-16 right-0 w-80 md:w-96 mb-2 rounded-2xl overflow-hidden"
             style={{
-              background:
-                'linear-gradient(180deg, rgba(255,247,244,0.96) 0%, rgba(255,255,255,0.95) 34%, rgba(248,250,255,0.96) 100%)',
+              backgroundColor: 'rgba(255, 255, 255, 0.98)',
               backdropFilter: 'blur(24px)',
-              border: '1px solid rgba(255,255,255,0.7)',
-              boxShadow: '0 18px 48px rgba(26, 36, 58, 0.16)',
+              boxShadow: '0 8px 40px rgba(0, 0, 0, 0.15)',
             }}
             id="hue-bot-chat-panel"
             data-testid="hue-bot-chat"
@@ -406,22 +404,6 @@ export function HueBot() {
             aria-label="Hue Bot 채팅 패널"
             aria-modal="false"
           >
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0"
-              style={{
-                background:
-                  'radial-gradient(circle at 12% 8%, rgba(255,176,82,0.22) 0%, rgba(255,176,82,0.10) 18%, rgba(255,255,255,0) 42%), radial-gradient(circle at 92% 8%, rgba(66,117,229,0.18) 0%, rgba(66,117,229,0.10) 20%, rgba(255,255,255,0) 44%), radial-gradient(circle at 78% 92%, rgba(167,115,249,0.12) 0%, rgba(167,115,249,0.06) 18%, rgba(255,255,255,0) 40%)',
-              }}
-            />
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 top-0 h-40"
-              style={{
-                background:
-                  'linear-gradient(180deg, rgba(244,96,107,0.16) 0%, rgba(244,96,107,0.09) 18%, rgba(255,255,255,0) 100%)',
-              }}
-            />
             <motion.span
               aria-hidden="true"
               className="pointer-events-none absolute inset-[-28px] -z-10 rounded-[32px]"
@@ -468,11 +450,9 @@ export function HueBot() {
               }}
             />
             <div
-              className="relative z-[1] p-4 flex items-center justify-between"
+              className="p-4 flex items-center justify-between"
               style={{
-                background:
-                  'linear-gradient(135deg, rgba(255,176,82,0.92) 0%, rgba(244,96,107,0.90) 48%, rgba(66,117,229,0.88) 100%)',
-                boxShadow: 'inset 0 -1px 0 rgba(255,255,255,0.18)',
+                background: 'linear-gradient(135deg, #FFB052 0%, #F4606B 50%, #4275E5 100%)',
               }}
             >
               <div className="flex items-center gap-2">
@@ -494,7 +474,7 @@ export function HueBot() {
               </button>
             </div>
 
-            <div className="relative z-[1] h-72 p-4 overflow-y-auto bg-transparent">
+            <div className="h-72 p-4 overflow-y-auto bg-gray-50/50">
               <div className="space-y-3">
                 {messages.map((msg) => (
                   <motion.div
@@ -640,7 +620,7 @@ export function HueBot() {
               </div>
             </div>
 
-            <div className="relative z-[1] p-3 bg-white/72 backdrop-blur-md">
+            <div className="p-3 bg-white">
               {cooldownSeconds > 0 && (
                 <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
                   {uiLanguage === 'ko'
