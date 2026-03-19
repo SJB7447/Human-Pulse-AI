@@ -27,13 +27,13 @@ const EMOTION_ICONS: Record<EmotionType, typeof Heart> = {
   spectrum: Blend,
 };
 
-const EMOTION_FILTER_COPY: Record<EmotionType, { label: string; hint: string }> = {
-  vibrance: { label: '설렘· 기쁨', hint: '읽는 순간 기분이 밝아지는 결' },
-  immersion: { label: '긴장· 열정', hint: '긴장감과 열기가 크게 느껴지는 결' },
-  clarity: { label: '냉철· 이성적', hint: '차분하게 분석하며 읽게 되는 결' },
-  gravity: { label: '묵직함· 성찰', hint: '가볍게 넘기기 어려운 깊은 결' },
-  serenity: { label: '힐링· 안정', hint: '회복과 안정을 천천히 주는 결' },
-  spectrum: { label: '다양함 · 전체보기', hint: '다양한 감정 층위를 함께 보는 결' },
+const EMOTION_FILTER_COPY: Record<EmotionType, { label: string }> = {
+  vibrance: { label: '설렘· 기쁨' },
+  immersion: { label: '긴장· 열정' },
+  clarity: { label: '냉철· 이성적' },
+  gravity: { label: '묵직함· 성찰' },
+  serenity: { label: '힐링· 안정' },
+  spectrum: { label: '다양함 · 전체보기' },
 };
 
 const MOCK_AUTHORS = [
@@ -182,7 +182,7 @@ export default function EmotionPage() {
   const [selectedCardBg, setSelectedCardBg] = useState<string>('rgba(255,255,255,0.96)');
   const [searchTerm, setSearchTerm] = useState('');
   const [topicFilter, setTopicFilter] = useState<ArticleTopicId | 'all'>('all');
-  const [sortKey, setSortKey] = useState<'latest' | 'oldest' | 'intensity_desc' | 'intensity_asc' | 'title_asc'>('latest');
+  const [sortKey, setSortKey] = useState<'latest'>('latest');
   const [visibleCount, setVisibleCount] = useState(ARTICLES_PER_PAGE);
   const [showPeripheralNudge, setShowPeripheralNudge] = useState(false);
   const [expandPeripheralNudge, setExpandPeripheralNudge] = useState(false);
@@ -514,24 +514,7 @@ export default function EmotionPage() {
     rows.sort((a, b) => {
       const aTime = new Date(a.created_at || 0).getTime();
       const bTime = new Date(b.created_at || 0).getTime();
-      const aIntensity = Number(a.intensity || 0);
-      const bIntensity = Number(b.intensity || 0);
-      const aTitle = (a.title || '').toLowerCase();
-      const bTitle = (b.title || '').toLowerCase();
-
-      switch (sortKey) {
-        case 'oldest':
-          return aTime - bTime;
-        case 'intensity_desc':
-          return bIntensity - aIntensity;
-        case 'intensity_asc':
-          return aIntensity - bIntensity;
-        case 'title_asc':
-          return aTitle.localeCompare(bTitle);
-        case 'latest':
-        default:
-          return bTime - aTime;
-      }
+      return bTime - aTime;
     });
 
     return rows;
@@ -732,10 +715,6 @@ export default function EmotionPage() {
                 data-testid="select-news-sort"
               >
                 <option value="latest">최신순</option>
-                <option value="oldest">오래된순</option>
-                <option value="intensity_desc">강도 높은순</option>
-                <option value="intensity_asc">강도 낮은순</option>
-                <option value="title_asc">제목순</option>
               </select>
             </div>
           </div>
