@@ -659,7 +659,7 @@ export default function CommunityPage() {
             >
               {EMOTION_CONFIG.map((entry) => (
                 <option key={entry.type} value={entry.type}>
-                  {entry.type}
+                  {entry.type.toUpperCase()}
                 </option>
               ))}
             </select>
