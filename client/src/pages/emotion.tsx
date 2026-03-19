@@ -724,7 +724,7 @@ export default function EmotionPage() {
             </div>
 
             <div className="mx-auto mb-5 max-w-5xl rounded-[30px] bg-white/86 p-5 shadow-[0_18px_40px_rgba(35,34,33,0.06)] ring-1 ring-white/80">
-            <div className="flex justify-end">
+            <div className="flex justify-center">
               <select
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
