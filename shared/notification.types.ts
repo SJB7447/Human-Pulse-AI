@@ -143,12 +143,12 @@ export const READER_NOTIFICATION_TOGGLES: NotificationToggleMeta<ReaderNotificat
   {
     key: 'keyword',
     title: '키워드 알림',
-    description: '관심 키워드가 포함된 기사나 이슈를 놓치지 않게 알려줍니다.',
+    description: '관심 키워드가 포함된 기사나 이슈를 놓치지 않게 알려드립니다.',
   },
   {
     key: 'digest',
     title: '요약 브리핑',
-    description: '하루 또는 주간 단위로 핵심 뉴스만 모아 전달합니다.',
+    description: '하루 또는 주간 단위로 핵심 뉴스를 모아 전달합니다.',
   },
 ];
 
@@ -156,12 +156,12 @@ export const REPORTER_NOTIFICATION_TOGGLES: NotificationToggleMeta<ReporterNotif
   {
     key: 'reporter_comment',
     title: '기사 댓글',
-    description: '내 기사에 새 댓글이 달리면 바로 확인할 수 있습니다.',
+    description: '내 기사에 댓글이 달리면 바로 확인할 수 있습니다.',
   },
   {
     key: 'reporter_reply',
     title: '댓글 답글',
-    description: '내 기사 댓글에 답글이 달리면 알려줍니다.',
+    description: '내 기사 댓글에 답글이 달리면 알려드립니다.',
   },
   {
     key: 'reporter_share_spike',
@@ -181,7 +181,7 @@ export const REPORTER_NOTIFICATION_TOGGLES: NotificationToggleMeta<ReporterNotif
   {
     key: 'reporter_edit_requested',
     title: '수정 요청',
-    description: '관리자가 기사 수정이나 보완을 요청하면 놓치지 않도록 알려줍니다.',
+    description: '관리자가 기사 수정이나 보완을 요청하면 놓치지 않도록 알려드립니다.',
     badge: '중요',
   },
   {
@@ -212,12 +212,12 @@ export const ADMIN_NOTIFICATION_GROUPS: Array<{
       {
         key: 'admin_push_fail',
         title: '푸시 발송 실패',
-        description: '푸시 알림 실패율이 높아졌을 때 바로 알려줍니다.',
+        description: '푸시 알림 실패율이 높아졌을 때 바로 알려드립니다.',
       },
       {
         key: 'admin_edge_error',
-        title: '서버/엣지 오류',
-        description: '핵심 함수나 API에서 오류가 반복될 때 빠르게 대응할 수 있습니다.',
+        title: '서버/API 오류',
+        description: '서버 함수나 API에서 오류가 반복되면 빠르게 대응할 수 있습니다.',
       },
     ],
   },
@@ -229,12 +229,12 @@ export const ADMIN_NOTIFICATION_GROUPS: Array<{
       {
         key: 'admin_new_reporter',
         title: '기자 권한 요청',
-        description: '새 기자 계정 권한 요청이 들어오면 알려줍니다.',
+        description: '새 기자 계정 권한 요청이 들어오면 알려드립니다.',
       },
       {
         key: 'admin_signup_spike',
-        title: '가입자 급증',
-        description: '짧은 시간 안에 가입자 수가 크게 늘어나면 확인합니다.',
+        title: '가입 요청 급증',
+        description: '짧은 시간 안에 가입 요청 수가 크게 늘어나면 확인합니다.',
       },
       {
         key: 'admin_keyword_abuse',
@@ -246,12 +246,12 @@ export const ADMIN_NOTIFICATION_GROUPS: Array<{
   {
     id: 'reports',
     title: '정기 운영 리포트',
-    description: '운영 현황과 핵심 수치를 요약해서 전달하는 리포트 알림입니다.',
+    description: '운영 현황과 집계 수치를 요약해서 전달하는 리포트 알림입니다.',
     keys: [
       {
         key: 'admin_daily_stats',
         title: '일일 운영 리포트',
-        description: '하루 운영 수치와 주요 변화를 요약해 전달합니다.',
+        description: '하루 운영 수치와 주요 변화를 요약해서 전달합니다.',
       },
     ],
   },

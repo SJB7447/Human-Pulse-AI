@@ -3898,6 +3898,29 @@ function normalizeHueBotText(input: string): string {
     .trim();
 }
 
+function normalizeHueBotSearchQuery(input: string): string {
+  const particlePattern = /^(은|는|이|가|을|를|도|만|와|과|랑|의|에|에서|에게|께|로|으로)$/;
+  const suffixPattern = /(으로는|으로|로는|에게는|에게|에서는|에서|에는|에|와는|와|과는|과|랑은|랑|은|는|이|가|을|를|도|만|의)$/;
+
+  return String(input || "")
+    .normalize("NFKC")
+    .replace(/[?!.,'"]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => {
+      if (particlePattern.test(token)) return "";
+      if (/^[가-힣]{2,}$/.test(token)) {
+        return token.replace(suffixPattern, "");
+      }
+      return token;
+    })
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function detectHueBotTopicEmotionHint(message: string): { emotion: EmotionType; reason: string; matchedKeywords: string[] } | null {
   const text = normalizeHueBotText(message);
   if (!text) return null;
@@ -4014,7 +4037,7 @@ function extractHueBotSearchSignal(message: string): {
     .trim();
 
   const query = cleaned || topicHint?.matchedKeywords?.[0] || raw;
-  const safeQuery = query.replace(/^#+/, "").trim();
+  const safeQuery = normalizeHueBotSearchQuery(query.replace(/^#+/, "").trim());
   if (!safeQuery) return null;
 
   return {
@@ -4762,6 +4785,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const keywordUsageWindow = new Map<string, number[]>();
   const signupRequestWindow: number[] = [];
   const DEMO_ADMIN_IDS = ["demo-admin-123"];
+  const demoRoleOverrides = new Map<string, "general" | "journalist" | "admin">();
 
   const resolveActor = (req: any): { actorId: string | null; actorRole: string; actorName: string; actorEmail: string } => {
     const actorIdHeader = req.headers?.["x-actor-id"];
@@ -4795,6 +4819,35 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         .map((item) => item.userId)
         .filter(Boolean),
     ]));
+  };
+
+  const resolveDemoRole = (userId: string): "general" | "journalist" | "admin" => {
+    const normalized = String(userId || "").trim();
+    if (!normalized.startsWith("demo-")) return "general";
+    return demoRoleOverrides.get(normalized)
+      || (normalized.includes("admin") ? "admin" : normalized.includes("journalist") ? "journalist" : "general");
+  };
+
+  const ensureAdminActor = (req: any): { actorId: string | null; actorRole: "admin" } => {
+    const actor = resolveActor(req);
+    if (actor.actorRole !== "admin") {
+      const error: any = new Error("관리자 권한이 필요합니다.");
+      error.status = 403;
+      throw error;
+    }
+    return { actorId: actor.actorId, actorRole: "admin" };
+  };
+
+  const ensureMatchingActor = (req: any, expectedUserId: string): { actorId: string | null; actorRole: string } => {
+    const actor = resolveActor(req);
+    const safeExpectedUserId = String(expectedUserId || "").trim();
+    if (actor.actorRole === "admin") return actor;
+    if (!actor.actorId || actor.actorId !== safeExpectedUserId) {
+      const error: any = new Error("본인 요청만 처리할 수 있습니다.");
+      error.status = 403;
+      throw error;
+    }
+    return actor;
   };
 
   const notifyAdmins = async (payload: {
@@ -6075,86 +6128,120 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.get("/api/role-requests", async (req, res) => {
-    const status = req.query.status as RoleRequestStatus | undefined;
-    const rows = roleRequestFallback
-      .filter((item) => (status ? item.status === status : true))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    res.json(rows);
+    try {
+      ensureAdminActor(req);
+      const status = req.query.status as RoleRequestStatus | undefined;
+      const rows = roleRequestFallback
+        .filter((item) => (status ? item.status === status : true))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      res.json(rows);
+    } catch (error: any) {
+      res.status(Number(error?.status || 500)).json({ error: String(error?.message || "역할 요청 목록을 불러오지 못했습니다.") });
+    }
   });
 
   app.post("/api/role-requests", async (req, res) => {
-    const { userId, email, requestedRole, reason } = req.body || {};
-    if (!userId || !["journalist", "admin"].includes(requestedRole)) {
-      return res.status(400).json({ error: "userId and valid requestedRole are required." });
-    }
-    const row = {
-      id: randomUUID(),
-      userId: String(userId),
-      email: String(email || ""),
-      requestedRole: requestedRole as RoleType,
-      reason: String(reason || ""),
-      status: "pending" as RoleRequestStatus,
-      createdAt: new Date().toISOString(),
-    };
-    roleRequestFallback.push(row);
-    if (requestedRole === "journalist") {
-      await notifyAdmins({
-        type: "admin_new_reporter",
-        title: "기자 가입 신청이 들어왔어요",
-        body: `${String(email || "새 사용자")} 님이 기자 계정 가입을 요청했어요.`,
-        url: "/admin",
-        icon: "/favicon.png",
-      });
+    try {
+      const { userId, email, requestedRole, reason } = req.body || {};
+      if (!userId || !["journalist", "admin"].includes(requestedRole)) {
+        return res.status(400).json({ error: "userId and valid requestedRole are required." });
+      }
+      ensureMatchingActor(req, String(userId));
 
-      const now = Date.now();
-      const recentSignupRequests = signupRequestWindow.filter((ts) => now - ts <= 10 * 60 * 1000);
-      recentSignupRequests.push(now);
-      signupRequestWindow.length = 0;
-      signupRequestWindow.push(...recentSignupRequests);
-      if (recentSignupRequests.length >= 3) {
+      const row = {
+        id: randomUUID(),
+        userId: String(userId),
+        email: String(email || ""),
+        requestedRole: requestedRole as RoleType,
+        reason: String(reason || ""),
+        status: "pending" as RoleRequestStatus,
+        createdAt: new Date().toISOString(),
+      };
+      roleRequestFallback.push(row);
+      if (requestedRole === "journalist") {
         await notifyAdmins({
-          type: "admin_signup_spike",
-          title: "기자 가입 요청이 급증하고 있어요",
-          body: `최근 10분 동안 기자 가입 요청이 ${recentSignupRequests.length}건 접수되었습니다.`,
+          type: "admin_new_reporter",
+          title: "기자 가입 신청이 들어왔어요",
+          body: `${String(email || "새 사용자")} 님이 기자 계정 가입을 요청했어요.`,
+          url: "/admin",
+          icon: "/favicon.png",
+        });
+
+        const now = Date.now();
+        const recentSignupRequests = signupRequestWindow.filter((ts) => now - ts <= 10 * 60 * 1000);
+        recentSignupRequests.push(now);
+        signupRequestWindow.length = 0;
+        signupRequestWindow.push(...recentSignupRequests);
+        if (recentSignupRequests.length >= 3) {
+          await notifyAdmins({
+            type: "admin_signup_spike",
+            title: "기자 가입 요청이 급증하고 있어요",
+            body: `최근 10분 동안 기자 가입 요청이 ${recentSignupRequests.length}건 접수되었습니다.`,
+            url: "/admin",
+            icon: "/favicon.png",
+          });
+        }
+      } else {
+        await notifyAdmins({
+          type: "admin_report",
+          title: "관리자 권한 요청이 들어왔어요",
+          body: `${String(email || "새 사용자")} 님이 관리자 권한 승인을 요청했어요.`,
           url: "/admin",
           icon: "/favicon.png",
         });
       }
-    } else {
-      await notifyAdmins({
-        type: "admin_report",
-        title: "관리자 권한 요청이 들어왔어요",
-        body: `${String(email || "새 사용자")} 님이 관리자 권한 승인을 요청했어요.`,
-        url: "/admin",
-        icon: "/favicon.png",
-      });
+      res.status(201).json({ id: row.id, status: row.status, createdAt: row.createdAt });
+    } catch (error: any) {
+      res.status(Number(error?.status || 500)).json({ error: String(error?.message || "역할 요청 등록에 실패했습니다.") });
     }
-    res.status(201).json({ id: row.id, status: row.status, createdAt: row.createdAt });
   });
 
   app.post("/api/role-requests/:id/decision", async (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body || {};
-    if (!["approved", "rejected"].includes(status)) return res.status(400).json({ error: "Invalid status." });
-    const target = roleRequestFallback.find((item) => item.id === id);
-    if (!target) return res.status(404).json({ error: "Role request not found." });
-    target.status = status as RoleRequestStatus;
+    try {
+      ensureAdminActor(req);
+      const { id } = req.params;
+      const { status } = req.body || {};
+      if (!["approved", "rejected"].includes(status)) return res.status(400).json({ error: "Invalid status." });
+      const target = roleRequestFallback.find((item) => item.id === id);
+      if (!target) return res.status(404).json({ error: "Role request not found." });
+      target.status = status as RoleRequestStatus;
 
-    const requestedRoleLabel = target.requestedRole === "journalist" ? "기자단" : "관리자";
-    const decisionTitle = status === "approved" ? "권한 요청이 승인됐어요" : "권한 요청 결과가 도착했어요";
-    const decisionBody = status === "approved"
-      ? `${requestedRoleLabel} 권한 요청이 승인되었습니다. 설정 페이지에서 변경 내용을 확인해 주세요.`
-      : `${requestedRoleLabel} 권한 요청이 반려되었습니다. 설정 페이지에서 다시 요청할 수 있습니다.`;
+      if (status === "approved") {
+        const requestedRole = target.requestedRole === "admin" ? "admin" : "journalist";
+        const targetUserId = String(target.userId || "").trim();
+        if (targetUserId.startsWith("demo-")) {
+          demoRoleOverrides.set(targetUserId, requestedRole);
+        } else if (targetUserId) {
+          await supabase.from("profiles").update({ role: requestedRole }).eq("id", targetUserId);
+        }
+      }
 
-    sendPushToUser(String(target.userId || "").trim(), {
-      type: "admin_action",
-      title: decisionTitle,
-      body: decisionBody,
-      url: "/settings",
-      icon: "/favicon.png",
-    }).catch(() => {});
+      const requestedRoleLabel = target.requestedRole === "journalist" ? "기자단" : "관리자";
+      const decisionTitle = status === "approved" ? "권한 요청이 승인됐어요" : "권한 요청 결과가 도착했어요";
+      const decisionBody = status === "approved"
+        ? `${requestedRoleLabel} 권한 요청이 승인되었습니다. 설정 페이지에서 변경 내용을 확인해 주세요.`
+        : `${requestedRoleLabel} 권한 요청이 반려되었습니다. 설정 페이지에서 다시 요청할 수 있습니다.`;
 
-    res.json({ id, status });
+      sendPushToUser(String(target.userId || "").trim(), {
+        type: "admin_action",
+        title: decisionTitle,
+        body: decisionBody,
+        url: "/settings",
+        icon: "/favicon.png",
+      }).catch(() => {});
+
+      res.json({ id, status });
+    } catch (error: any) {
+      res.status(Number(error?.status || 500)).json({ error: String(error?.message || "역할 요청 처리에 실패했습니다.") });
+    }
+  });
+
+  app.get("/api/demo-role", async (req, res) => {
+    const userId = String(req.query.userId || "").trim();
+    if (!userId.startsWith("demo-")) {
+      return res.status(400).json({ error: "demo userId is required." });
+    }
+    return res.json({ userId, role: resolveDemoRole(userId) });
   });
 
   const normalizeMoodScore = (value: unknown): number => {

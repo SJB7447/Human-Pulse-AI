@@ -1049,11 +1049,35 @@ export function NewsDetailModal({ article: initialArticle, emotionType, onClose,
     return () => observer.disconnect();
   }, [article?.id, recommendationObserverThreshold]);
 
-  const handleSave = () => {
-    toast({
-      title: "저장 완료",
-      description: "보관함에 저장되었습니다.",
-    });
+  const handleSave = async () => {
+    if (!article) return;
+    const auth = await DBService.getAuthContext().catch(() => null);
+    if (!auth?.userId) {
+      toast({
+        title: "로그인 필요",
+        description: "기사를 저장하려면 먼저 로그인해 주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const result = await DBService.toggleSavedArticle(auth.userId, {
+        id: String(article.id),
+        title: article.title,
+        emotion: (article.emotion || emotionType) as EmotionType,
+      });
+      toast({
+        title: result.saved ? "저장 완료" : "저장 해제 완료",
+        description: result.saved ? "이 계정의 보관함에 저장되었습니다." : "이 계정의 보관함에서 제거되었습니다.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "저장 실패",
+        description: error?.message || "잠시 후 다시 시도해 주세요.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleShare = () => {

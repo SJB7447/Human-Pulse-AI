@@ -65,12 +65,19 @@ export function useNotifications() {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === "NAVIGATE") fetch();
     };
+    const refreshHandler = () => {
+      void fetch(true);
+    };
     navigator.serviceWorker?.addEventListener("message", handler);
+    window.addEventListener("huebrief:notifications-refresh", refreshHandler as EventListener);
+    window.addEventListener("focus", refreshHandler);
     const poll = window.setInterval(() => {
       void fetch(true);
-    }, 15000);
+    }, 5000);
     return () => {
       navigator.serviceWorker?.removeEventListener("message", handler);
+      window.removeEventListener("huebrief:notifications-refresh", refreshHandler as EventListener);
+      window.removeEventListener("focus", refreshHandler);
       window.clearInterval(poll);
     };
   }, [fetch]);

@@ -8,22 +8,9 @@ import { Button } from '@/components/ui/button';
 import { NotificationSettingsPage } from '@/components/notifications/NotificationSettingsPage';
 import { createToastLinkAction } from '@/lib/toastLinkAction';
 import { EMOTION_CONFIG, useEmotionStore } from '@/lib/store';
-import { DBService, type UserComposedArticleRecord, type UserInsightRecord, type UserSocialConnections } from '@/services/DBService';
+import { DBService, type SavedArticleRecord, type UserComposedArticleRecord, type UserInsightRecord, type UserProfileRecord, type UserSocialConnections } from '@/services/DBService';
 import { useToast } from '@/hooks/use-toast';
 import { ResponsiveContainer, PieChart, Pie, Tooltip as RechartsTooltip, Cell } from 'recharts';
-
-interface SavedArticle {
-  id: number;
-  title: string;
-  emotion: string;
-  savedAt: string;
-}
-
-const MOCK_SAVED_ARTICLES: SavedArticle[] = [
-  { id: 1, title: '글로벌 경제 전망: 새로운 신호', emotion: 'vibrance', savedAt: '2024-01-15' },
-  { id: 2, title: '환경 보호를 위한 청년들의 움직임', emotion: 'serenity', savedAt: '2024-01-14' },
-  { id: 3, title: '혁신계의 새로운 바람', emotion: 'clarity', savedAt: '2024-01-13' },
-];
 
 const INSIGHTS_PER_PAGE = 6;
 const PAGE_ELLIPSIS = 'ellipsis';
@@ -98,6 +85,8 @@ export default function MyPage() {
     email: 'human@pulse.com',
     bio: '감정을 통해 세상을 이해하고 기록합니다.',
   });
+  const [savedArticles, setSavedArticles] = useState<SavedArticleRecord[]>([]);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [socialConnections, setSocialConnections] = useState<UserSocialConnections>(createEmptySocialConnections());
   const [socialLoading, setSocialLoading] = useState(false);
   const [socialSaving, setSocialSaving] = useState(false);
@@ -173,6 +162,41 @@ export default function MyPage() {
 
   useEffect(() => {
     let mounted = true;
+    const loadProfile = async () => {
+      try {
+        const profile = await DBService.getUserProfile(socialOwnerId);
+        if (!mounted) return;
+        setUserInfo(profile as UserProfileRecord);
+      } catch {
+        if (!mounted) return;
+      }
+    };
+    void loadProfile();
+    return () => {
+      mounted = false;
+    };
+  }, [socialOwnerId]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadSavedArticles = async () => {
+      try {
+        const rows = await DBService.getSavedArticles(socialOwnerId);
+        if (!mounted) return;
+        setSavedArticles(rows);
+      } catch {
+        if (!mounted) return;
+        setSavedArticles([]);
+      }
+    };
+    void loadSavedArticles();
+    return () => {
+      mounted = false;
+    };
+  }, [socialOwnerId]);
+
+  useEffect(() => {
+    let mounted = true;
     const loadComposedArticles = async () => {
       setComposedLoading(true);
       try {
@@ -240,6 +264,30 @@ export default function MyPage() {
       });
     } finally {
       setSocialSaving(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setSavingProfile(true);
+    try {
+      const saved = await DBService.updateUserProfile(socialOwnerId, userInfo);
+      setUserInfo(saved);
+      toast({
+        title: '프로필 저장 완료',
+        description: '이름, 이메일, 자기소개가 현재 계정 기준으로 저장되었습니다.',
+        action: createToastLinkAction({
+          href: '/mypage?tab=settings',
+          label: '설정 보기',
+        }),
+      });
+    } catch (error: any) {
+      toast({
+        title: '프로필 저장 실패',
+        description: error?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -460,7 +508,12 @@ export default function MyPage() {
               <p className="text-sm text-gray-500">{userInfo.email}</p>
               <p className="text-sm text-gray-600 mt-1">{userInfo.bio}</p>
             </div>
-            <GlassButton variant="outline" size="sm" data-testid="button-edit-profile">
+            <GlassButton
+              variant="outline"
+              size="sm"
+              data-testid="button-edit-profile"
+              onClick={() => setActiveTab('settings')}
+            >
               <Edit className="w-4 h-4" />
               프로필 수정
             </GlassButton>
@@ -491,7 +544,11 @@ export default function MyPage() {
         <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
           {activeTab === 'saved' && (
             <div className="space-y-3">
-              {MOCK_SAVED_ARTICLES.map((article) => (
+              {savedArticles.length === 0 ? (
+                <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-sm text-gray-500">
+                  아직 저장한 기사가 없습니다. 기사 상세에서 저장 버튼을 누르면 이 계정의 보관함에 쌓입니다.
+                </div>
+              ) : savedArticles.map((article) => (
                 <div
                   key={article.id}
                   className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between group overflow-visible hover-elevate"
@@ -501,14 +558,26 @@ export default function MyPage() {
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getEmotionColor(article.emotion) }} />
                     <div>
                       <h3 className="font-medium text-gray-800" data-testid={`text-saved-title-${article.id}`}>{article.title}</h3>
-                      <p className="text-xs text-gray-400">{article.savedAt}</p>
+                      <p className="text-xs text-gray-400">{new Date(article.savedAt).toLocaleDateString('ko-KR')}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button variant="ghost" size="icon" data-testid={`button-view-${article.id}`}>
                       <Eye className="w-4 h-4 text-gray-500" />
                     </Button>
-                    <Button variant="ghost" size="icon" data-testid={`button-delete-${article.id}`}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      data-testid={`button-delete-${article.id}`}
+                      onClick={async () => {
+                        const result = await DBService.toggleSavedArticle(socialOwnerId, {
+                          id: article.id,
+                          title: article.title,
+                          emotion: article.emotion,
+                        });
+                        setSavedArticles(result.items);
+                      }}
+                    >
                       <Trash2 className="w-4 h-4 text-red-400" />
                     </Button>
                   </div>
@@ -1079,9 +1148,9 @@ export default function MyPage() {
                     </Button>
                   </div>
                 </div>
-                <GlassButton variant="primary" data-testid="button-save-settings">
+                <GlassButton variant="primary" data-testid="button-save-settings" onClick={handleSaveProfile}>
                   <Heart className="w-4 h-4" />
-                  저장하기
+                  {savingProfile ? '저장 중...' : '저장하기'}
                 </GlassButton>
                 <Link href="/settings">
                   <Button variant="outline" className="w-full" data-testid="button-open-settings-page">

@@ -30,6 +30,24 @@ export function ProtectedRoute({
 
             let effectiveRole: UserRole = user?.role || 'general';
 
+            if (!session?.user && user?.id?.startsWith('demo-')) {
+                try {
+                    const response = await fetch(`/api/demo-role?userId=${encodeURIComponent(String(user.id).trim())}`);
+                    if (response.ok) {
+                        const payload = await response.json();
+                        const nextRole = String(payload?.role || '').trim().toLowerCase();
+                        if (nextRole === 'admin' || nextRole === 'journalist' || nextRole === 'general') {
+                            effectiveRole = nextRole;
+                            if (user.role !== nextRole) {
+                                setUser({ ...user, role: nextRole });
+                            }
+                        }
+                    }
+                } catch {
+                    // keep existing demo role when sync fails
+                }
+            }
+
             if (session?.user) {
                 let role: UserRole =
                     (session.user.user_metadata?.role as UserRole) || 'general';

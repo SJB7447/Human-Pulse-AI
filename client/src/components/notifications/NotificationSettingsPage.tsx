@@ -36,6 +36,22 @@ import { PermissionStatusBanner } from './PermissionStatusBanner';
 import { ToggleRow } from './ToggleRow';
 import { WarnIfOffModal } from './WarnIfOffModal';
 
+function cleanRoleLabel(role: NotificationSettingsRole): string {
+  if (role === 'admin') return '관리자';
+  if (role === 'reporter') return '기자단';
+  return '일반 사용자';
+}
+
+function cleanRoleDescription(role: NotificationSettingsRole): string {
+  if (role === 'admin') {
+    return '운영 이상 징후와 검토가 필요한 이벤트를 빠르게 확인할 수 있도록 관리자 전용 알림을 제공합니다.';
+  }
+  if (role === 'reporter') {
+    return '독자 반응 알림과 기사 운영 알림을 역할에 맞게 직접 조정할 수 있습니다.';
+  }
+  return '받고 싶은 알림만 골라 켜고 끌 수 있고, 브라우저 권한을 허용하면 실시간 브라우저 알림도 함께 받을 수 있습니다.';
+}
+
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 type TogglePrefKey = Exclude<NotificationPrefKey, 'quiet_hours_start' | 'quiet_hours_end'>;
 type SectionKey =
@@ -399,7 +415,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">알림 세부 설정</h1>
-          <p className="mt-1 text-sm text-gray-600">{roleDescription(normalizedRole)}</p>
+          <p className="mt-1 text-sm text-gray-600">{cleanRoleDescription(normalizedRole)}</p>
         </div>
         {statusLabel ? (
           <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
@@ -417,11 +433,11 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
           void ensurePushReady();
         }}
         onDisable={handlePushDisable}
-        roleLabel={roleLabel(normalizedRole)}
+        roleLabel={cleanRoleLabel(normalizedRole)}
       />
 
       <CollapsibleSection
-        title={`${roleLabel(normalizedRole)} 기본 알림`}
+        title={`${cleanRoleLabel(normalizedRole)} 기본 알림`}
         description={`현재 사용 가능한 ${visibleKeys.length}개 항목 중 ${enabledVisibleCount}개가 켜져 있습니다.`}
         badge={globalEnabled ? '활성화' : '비활성화'}
         open={openSections.base}
@@ -435,7 +451,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
               </span>
               <div>
                 <p className="text-base font-semibold text-gray-900">
-                  {roleLabel(normalizedRole)} 알림 활성화
+                  {cleanRoleLabel(normalizedRole)} 알림 활성화
                 </p>
                 <p className="mt-1 text-sm text-gray-600">
                   한 번에 켜고 끌 수 있고, 아래 항목은 개별적으로 조정할 수 있습니다.

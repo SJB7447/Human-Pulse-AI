@@ -38,6 +38,19 @@ export type UserSocialConnections = {
     updatedAt: string;
 };
 
+export type UserProfileRecord = {
+    name: string;
+    email: string;
+    bio: string;
+};
+
+export type SavedArticleRecord = {
+    id: string;
+    title: string;
+    emotion: EmotionType;
+    savedAt: string;
+};
+
 export type UserInsightRecord = {
     id: string;
     articleId: string;
@@ -108,6 +121,8 @@ export type CommunityPostLikeResponse = {
 const SOCIAL_CONNECTIONS_STORAGE_PREFIX = 'huebrief.socialConnections.v1';
 const USER_INSIGHTS_STORAGE_PREFIX = 'huebrief.userInsights.v1';
 const USER_COMPOSED_ARTICLES_STORAGE_PREFIX = 'huebrief.userComposedArticles.v1';
+const USER_PROFILE_STORAGE_PREFIX = 'huebrief.userProfile.v1';
+const SAVED_ARTICLES_STORAGE_PREFIX = 'huebrief.savedArticles.v1';
 
 const createDefaultSocialConnections = (): UserSocialConnections => ({
     webUrl: '',
@@ -116,6 +131,67 @@ const createDefaultSocialConnections = (): UserSocialConnections => ({
     youtubeChannelUrl: '',
     updatedAt: new Date(0).toISOString(),
 });
+
+const createProfileStorageKey = (userId: string): string =>
+    `${USER_PROFILE_STORAGE_PREFIX}:${String(userId || '').trim()}`;
+
+const createSavedArticlesStorageKey = (userId: string): string =>
+    `${SAVED_ARTICLES_STORAGE_PREFIX}:${String(userId || '').trim()}`;
+
+const createDefaultUserProfile = (userId: string, email = '', username = ''): UserProfileRecord => {
+    const safeUserId = String(userId || '').trim();
+    if (safeUserId === 'demo-admin-123') {
+        return {
+            name: '데모 관리자',
+            email: email || 'demo-admin@example.com',
+            bio: 'HueBrief 운영과 승인 흐름을 점검하는 관리자 데모 계정입니다.',
+        };
+    }
+    if (safeUserId === 'demo-journalist-123') {
+        return {
+            name: '데모 기자',
+            email: email || 'demo-journalist@example.com',
+            bio: '감정 뉴스 기사 작성과 배포를 시연하는 기자단 데모 계정입니다.',
+        };
+    }
+    if (safeUserId === 'demo-general-123') {
+        return {
+            name: '데모 독자',
+            email: email || 'demo-general@example.com',
+            bio: '감정 기반 뉴스 탐색과 커뮤니티 참여를 시연하는 일반 사용자 데모 계정입니다.',
+        };
+    }
+    return {
+        name: username || '김휴브리프',
+        email: email || 'human@pulse.com',
+        bio: '감정을 통해 세상을 이해하고 기록합니다.',
+    };
+};
+
+const parseSavedArticles = (raw: string | null): SavedArticleRecord[] => {
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((row: any): SavedArticleRecord | null => {
+                const id = String(row?.id || '').trim();
+                const title = String(row?.title || '').trim();
+                const emotion = normalizeInsightEmotion(row?.emotion);
+                if (!id || !title) return null;
+                return {
+                    id,
+                    title,
+                    emotion,
+                    savedAt: new Date(row?.savedAt || Date.now()).toISOString(),
+                };
+            })
+            .filter((row): row is SavedArticleRecord => Boolean(row))
+            .sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime());
+    } catch {
+        return [];
+    }
+};
 
 const normalizeInsightEmotion = (value: unknown): EmotionType => {
     const raw = String(value || '').trim().toLowerCase();
@@ -274,6 +350,11 @@ const buildAuthHeaders = async (): Promise<Record<string, string>> => {
     const { data } = await supabase.auth.getSession();
     const accessToken = String(data?.session?.access_token || '').trim();
     return accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+};
+
+const emitNotificationRefresh = () => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('huebrief:notifications-refresh'));
 };
 
 const normalizeOwnerToken = (value: unknown): string =>
@@ -701,11 +782,30 @@ export const DBService = {
         if (!user) {
             const storeUser = useEmotionStore.getState().user;
             if (storeUser) {
+                let effectiveRole = storeUser.role || 'general';
+                if (String(storeUser.id || '').startsWith('demo-')) {
+                    try {
+                        const response = await fetch(`/api/demo-role?userId=${encodeURIComponent(String(storeUser.id).trim())}`);
+                        if (response.ok) {
+                            const payload = await response.json();
+                            const nextRole = normalizeActorRole(payload?.role);
+                            effectiveRole = nextRole;
+                            if (storeUser.role !== nextRole) {
+                                useEmotionStore.getState().setUser({
+                                    ...storeUser,
+                                    role: nextRole,
+                                });
+                            }
+                        }
+                    } catch {
+                        // keep stored demo role when sync fails
+                    }
+                }
                 return {
                     userId: storeUser.id,
                     email: storeUser.email || '',
                     username: storeUser.name || storeUser.email?.split('@')[0] || 'user',
-                    role: storeUser.role || 'general',
+                    role: effectiveRole,
                 };
             }
             return null;
@@ -744,6 +844,78 @@ export const DBService = {
         } catch {
             return createDefaultSocialConnections();
         }
+    },
+
+    async getUserProfile(userId: string): Promise<UserProfileRecord> {
+        const auth = await this.getAuthContext().catch(() => null);
+        const fallback = createDefaultUserProfile(userId, auth?.email || '', auth?.username || '');
+        if (!userId || typeof window === 'undefined') {
+            return fallback;
+        }
+
+        const storageKey = createProfileStorageKey(userId);
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) return fallback;
+
+        try {
+            const parsed = JSON.parse(raw) as Partial<UserProfileRecord>;
+            return {
+                name: String(parsed?.name || fallback.name).trim() || fallback.name,
+                email: String(parsed?.email || fallback.email).trim() || fallback.email,
+                bio: String(parsed?.bio || fallback.bio).trim() || fallback.bio,
+            };
+        } catch {
+            return fallback;
+        }
+    },
+
+    async updateUserProfile(userId: string, patch: Partial<UserProfileRecord>): Promise<UserProfileRecord> {
+        const current = await this.getUserProfile(userId);
+        const next: UserProfileRecord = {
+            name: String(patch?.name || current.name).trim() || current.name,
+            email: String(patch?.email || current.email).trim() || current.email,
+            bio: String(patch?.bio || current.bio).trim() || current.bio,
+        };
+        if (!userId || typeof window === 'undefined') return next;
+        window.localStorage.setItem(createProfileStorageKey(userId), JSON.stringify(next));
+
+        const storeUser = useEmotionStore.getState().user;
+        if (storeUser && String(storeUser.id || '').trim() === String(userId).trim()) {
+            useEmotionStore.getState().setUser({
+                ...storeUser,
+                name: next.name,
+                email: next.email,
+            });
+        }
+        return next;
+    },
+
+    async getSavedArticles(userId: string): Promise<SavedArticleRecord[]> {
+        if (!userId || typeof window === 'undefined') return [];
+        return parseSavedArticles(window.localStorage.getItem(createSavedArticlesStorageKey(userId)));
+    },
+
+    async toggleSavedArticle(userId: string, article: { id: string; title: string; emotion: EmotionType }): Promise<{ saved: boolean; items: SavedArticleRecord[] }> {
+        if (!userId || typeof window === 'undefined') {
+            return { saved: false, items: [] };
+        }
+        const storageKey = createSavedArticlesStorageKey(userId);
+        const current = await this.getSavedArticles(userId);
+        const articleId = String(article.id || '').trim();
+        const exists = current.some((row) => row.id === articleId);
+        const next = exists
+            ? current.filter((row) => row.id !== articleId)
+            : [
+                {
+                    id: articleId,
+                    title: String(article.title || '').trim(),
+                    emotion: normalizeInsightEmotion(article.emotion),
+                    savedAt: new Date().toISOString(),
+                },
+                ...current,
+            ];
+        window.localStorage.setItem(storageKey, JSON.stringify(next));
+        return { saved: !exists, items: next };
     },
 
     async updateUserSocialConnections(
@@ -1258,7 +1430,9 @@ export const DBService = {
             body: JSON.stringify({}),
         });
         if (!response.ok) throw await createApiError(response, '테스트 알림 발송에 실패했습니다.');
-        return await response.json();
+        const payload = await response.json();
+        emitNotificationRefresh();
+        return payload;
     },
 
     async logInAppNotification(input: {
@@ -1285,7 +1459,9 @@ export const DBService = {
             body: JSON.stringify(input),
         });
         if (!response.ok) throw await createApiError(response, '알림 저장에 실패했습니다.');
-        return await response.json();
+        const payload = await response.json();
+        emitNotificationRefresh();
+        return payload;
     },
 
     async subscribePremium(userId: string) {
