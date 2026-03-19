@@ -331,6 +331,17 @@ const normalizeActorRole = (value: unknown): 'admin' | 'journalist' | 'general' 
     return 'general';
 };
 
+const encodeHeaderValue = (value: unknown, maxLength: number): string => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+
+    try {
+        return encodeURIComponent(normalized).slice(0, maxLength);
+    } catch {
+        return '';
+    }
+};
+
 const buildActorHeaders = (): Record<string, string> => {
     const actor = useEmotionStore.getState().user;
     if (!actor) return {};
@@ -341,8 +352,8 @@ const buildActorHeaders = (): Record<string, string> => {
     return {
         'x-actor-id': String(actor.id || '').slice(0, 128),
         'x-actor-role': isDemoAdminPath ? 'admin' : normalizeActorRole(actor.role),
-        'x-actor-name': String(actor.name || '').slice(0, 160),
-        'x-actor-email': String(actor.email || '').slice(0, 160),
+        'x-actor-name': encodeHeaderValue(actor.name, 160),
+        'x-actor-email': encodeHeaderValue(actor.email, 160),
     };
 };
 

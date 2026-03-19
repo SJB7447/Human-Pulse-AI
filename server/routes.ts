@@ -4825,14 +4825,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   const DEMO_ADMIN_IDS = ["demo-admin-123"];
   const demoRoleOverrides = new Map<string, "general" | "journalist" | "admin">();
 
+  const decodeActorHeader = (value: unknown, maxLength: number): string => {
+    const normalized = typeof value === "string" ? value.trim() : "";
+    if (!normalized) return "";
+
+    try {
+      return decodeURIComponent(normalized).trim().slice(0, maxLength);
+    } catch {
+      return normalized.slice(0, maxLength);
+    }
+  };
+
   const resolveActor = (req: any): { actorId: string | null; actorRole: string; actorName: string; actorEmail: string } => {
     const actorIdHeader = req.headers?.["x-actor-id"];
     const actorRoleHeader = req.headers?.["x-actor-role"];
     const actorNameHeader = req.headers?.["x-actor-name"];
     const actorEmailHeader = req.headers?.["x-actor-email"];
     const actorId = typeof actorIdHeader === "string" && actorIdHeader.trim() ? actorIdHeader.trim().slice(0, 128) : null;
-    const actorName = typeof actorNameHeader === "string" ? actorNameHeader.trim().slice(0, 160) : "";
-    const actorEmail = typeof actorEmailHeader === "string" ? actorEmailHeader.trim().slice(0, 160) : "";
+    const actorName = decodeActorHeader(actorNameHeader, 160);
+    const actorEmail = decodeActorHeader(actorEmailHeader, 160);
     const normalizeActorRole = (value: unknown): "admin" | "journalist" | "general" => {
       const raw = String(value || "").trim().toLowerCase();
       if (!raw) return "general";
