@@ -4529,6 +4529,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     createdAt: string;
     updatedAt: string;
   }> = [];
+  const communityPostLikes = new Map<string, Set<string>>();
   const communityCommentLikes = new Map<string, Set<string>>();
   const communityCommentRate = new Map<string, { windowStartedAt: number; count: number; lastPostedAt: number }>();
 
@@ -4579,6 +4580,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         createdAt,
         updatedAt: createdAt,
       });
+      const postLikeSeed = (index % 4) + 1;
+      communityPostLikes.set(
+        postId,
+        new Set(
+          Array.from({ length: postLikeSeed }).map(
+            (_, likeIndex) => `demo-post-like-user-${index + 1}-${likeIndex + 1}`,
+          ),
+        ),
+      );
 
       const commentCount = 2 + (index % 3);
       for (let commentIndex = 0; commentIndex < commentCount; commentIndex += 1) {
@@ -5095,14 +5105,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.get("/api/community", async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 30), 100);
+      const viewerUserId = String(req.query.userId || "").trim();
       const feedFromFallback = [...communityFallback]
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .map((row) => {
           const postComments = communityCommentsFallback.filter((comment) => comment.postId === row.id);
           const commentCount = postComments.length;
-          const likeCount = postComments.reduce((sum, comment) => {
-            return sum + (communityCommentLikes.get(comment.id)?.size || 0);
-          }, 0);
+          const likedUsers = communityPostLikes.get(row.id) || new Set<string>();
+          const likeCount = likedUsers.size;
 
           return {
             id: row.id,
@@ -5115,6 +5125,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
             sourceType: "community_post",
             commentCount,
             likeCount,
+            likedByMe: viewerUserId ? likedUsers.has(viewerUserId) : false,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt || row.createdAt,
           };
@@ -5135,7 +5146,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           sourceTitle: String(row.sourceTitle || ""),
           sourceUrl: String(row.sourceUrl || ""),
           commentCount: 0,
-          likeCount: 0,
+          likeCount: (communityPostLikes.get(String(row.id)) || new Set<string>()).size,
+          likedByMe: viewerUserId
+            ? (communityPostLikes.get(String(row.id)) || new Set<string>()).has(viewerUserId)
+            : false,
           createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
           updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : (row.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString()),
         }));
@@ -5166,7 +5180,38 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       createdAt: new Date().toISOString(),
     };
     if (isPublic) communityFallback.push(row);
+    communityPostLikes.set(row.id, new Set<string>());
     res.status(201).json({ id: row.id, createdAt: row.createdAt });
+  });
+
+  app.post("/api/community/:id/like", async (req, res) => {
+    try {
+      const postId = String(req.params.id || "").trim();
+      if (!postId) return res.status(400).json({ error: "postId is required." });
+
+      const userId = String(req.body?.userId || req.query.userId || "").trim();
+      if (!userId) return res.status(400).json({ error: "userId is required." });
+
+      const exists = await isCommunityPostExists(postId);
+      if (!exists) return res.status(404).json({ error: "Community post not found." });
+
+      const current = communityPostLikes.get(postId) || new Set<string>();
+      if (current.has(userId)) {
+        current.delete(userId);
+      } else {
+        current.add(userId);
+      }
+      communityPostLikes.set(postId, current);
+
+      return res.json({
+        postId,
+        likeCount: current.size,
+        likedByMe: current.has(userId),
+      });
+    } catch (error) {
+      console.error("[API] /api/community/:id/like failed:", error);
+      return res.status(500).json({ error: "Failed to toggle community post like." });
+    }
   });
 
   const isCommunityPostExists = async (postId: string): Promise<boolean> => {

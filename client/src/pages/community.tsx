@@ -24,6 +24,7 @@ interface CommunityItem {
   sourceUrl?: string;
   commentCount?: number;
   likeCount?: number;
+  likedByMe?: boolean;
   createdAt: string | null;
   updatedAt?: string | null;
 }
@@ -84,6 +85,7 @@ export default function CommunityPage() {
   const [savingCommentEdit, setSavingCommentEdit] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [likingCommentId, setLikingCommentId] = useState<string | null>(null);
+  const [likingPostId, setLikingPostId] = useState<string | null>(null);
   const [commentSort, setCommentSort] = useState<'latest' | 'popular'>('latest');
   const [editingPost, setEditingPost] = useState<CommunityItem | null>(null);
   const [editSummary, setEditSummary] = useState('');
@@ -409,6 +411,62 @@ export default function CommunityPage() {
     const ownerId = String(item.ownerId || '').trim();
     const currentUserId = String(user.id || '').trim();
     return (ownerId && ownerId === currentUserId) || isAdmin;
+  };
+
+  const applyPostReaction = (postId: string, next: { likeCount: number; likedByMe: boolean }) => {
+    setItems((prev) =>
+      prev.map((row) =>
+        row.id === postId
+          ? { ...row, likeCount: next.likeCount, likedByMe: next.likedByMe }
+          : row,
+      ),
+    );
+    setSelectedPost((prev) =>
+      prev?.id === postId ? { ...prev, likeCount: next.likeCount, likedByMe: next.likedByMe } : prev,
+    );
+  };
+
+  const handleTogglePostLike = async (item: CommunityItem) => {
+    if (!user) {
+      toast({
+        title: '로그인 필요',
+        description: '공감은 로그인 후 사용할 수 있습니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const postId = String(item.id || '').trim();
+    if (!postId) return;
+
+    const previous = {
+      likeCount: Number(item.likeCount || 0),
+      likedByMe: Boolean(item.likedByMe),
+    };
+    const optimistic = {
+      likeCount: previous.likedByMe ? Math.max(0, previous.likeCount - 1) : previous.likeCount + 1,
+      likedByMe: !previous.likedByMe,
+    };
+
+    applyPostReaction(postId, optimistic);
+    setLikingPostId(postId);
+
+    try {
+      const result = await DBService.toggleCommunityPostLike(postId);
+      applyPostReaction(postId, {
+        likeCount: Number(result.likeCount || 0),
+        likedByMe: Boolean(result.likedByMe),
+      });
+    } catch (e: any) {
+      applyPostReaction(postId, previous);
+      toast({
+        title: '게시글 공감 처리 실패',
+        description: e?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLikingPostId((current) => (current === postId ? null : current));
+    }
   };
 
   const openEditDialog = (item: CommunityItem) => {
@@ -759,10 +817,21 @@ export default function CommunityPage() {
                             <MessageCircle className="h-3.5 w-3.5" />
                             {Number(item.commentCount || 0)}
                           </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Heart className="h-3.5 w-3.5" />
+                          <button
+                            type="button"
+                            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 transition-colors ${
+                              item.likedByMe
+                                ? 'bg-rose-50 text-rose-600'
+                                : 'text-gray-500 hover:bg-rose-50 hover:text-rose-500'
+                            }`}
+                            onClick={() => void handleTogglePostLike(item)}
+                            disabled={likingPostId === item.id}
+                            title={`게시글 공감 ${Number(item.likeCount || 0)}개`}
+                            aria-label="게시글 공감"
+                          >
+                            <Heart className={`h-3.5 w-3.5 ${item.likedByMe ? 'fill-current' : ''}`} />
                             {Number(item.likeCount || 0)}
-                          </span>
+                          </button>
                         </div>
                       </div>
                       {canEditItem(item) ? (
@@ -881,6 +950,25 @@ export default function CommunityPage() {
                 <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
                   {String(selectedPost?.content || selectedPost?.excerpt || '')}
                 </p>
+                {selectedPost ? (
+                  <div className="mt-4 flex items-center justify-end border-t border-[#eee4d5] pt-3">
+                    <button
+                      type="button"
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                        selectedPost.likedByMe
+                          ? 'bg-rose-50 text-rose-600'
+                          : 'bg-white text-gray-500 hover:bg-rose-50 hover:text-rose-500'
+                      }`}
+                      onClick={() => void handleTogglePostLike(selectedPost)}
+                      disabled={likingPostId === selectedPost.id}
+                      title={`게시글 공감 ${Number(selectedPost.likeCount || 0)}개`}
+                      aria-label="게시글 공감"
+                    >
+                      <Heart className={`h-4 w-4 ${selectedPost.likedByMe ? 'fill-current' : ''}`} />
+                      <span>공감 {Number(selectedPost.likeCount || 0)}</span>
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <div className="rounded-lg border border-[#ebe3d3] bg-white/90 p-4">
                 <div className="flex items-center justify-between gap-2 flex-wrap">

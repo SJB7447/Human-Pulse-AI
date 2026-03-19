@@ -99,6 +99,12 @@ export type CommunityCommentRecord = {
     likedByMe: boolean;
 };
 
+export type CommunityPostLikeResponse = {
+    postId: string;
+    likeCount: number;
+    likedByMe: boolean;
+};
+
 const SOCIAL_CONNECTIONS_STORAGE_PREFIX = 'huebrief.socialConnections.v1';
 const USER_INSIGHTS_STORAGE_PREFIX = 'huebrief.userInsights.v1';
 const USER_COMPOSED_ARTICLES_STORAGE_PREFIX = 'huebrief.userComposedArticles.v1';
@@ -1054,7 +1060,9 @@ export const DBService = {
     },
 
     async getCommunityFeed(limit = 24) {
-        const response = await fetch(`/api/community?limit=${limit}`);
+        const auth = await this.getAuthContext().catch(() => null);
+        const userQuery = auth?.userId ? `&userId=${encodeURIComponent(auth.userId)}` : '';
+        const response = await fetch(`/api/community?limit=${limit}${userQuery}`);
         if (!response.ok) throw await createApiError(response, '커뮤니티 피드를 불러오지 못했습니다.');
         return await response.json();
     },
@@ -1167,6 +1175,20 @@ export const DBService = {
             }),
         });
         if (!response.ok) throw await createApiError(response, '댓글 공감 처리에 실패했습니다.');
+        return await response.json();
+    },
+
+    async toggleCommunityPostLike(postId: string): Promise<CommunityPostLikeResponse> {
+        const auth = await this.getAuthContext();
+        if (!auth) throw new Error('로그인이 필요합니다.');
+        const response = await fetch(`/api/community/${encodeURIComponent(postId)}/like`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...buildActorHeaders() },
+            body: JSON.stringify({
+                userId: auth.userId,
+            }),
+        });
+        if (!response.ok) throw await createApiError(response, '게시글 공감 처리에 실패했습니다.');
         return await response.json();
     },
 
