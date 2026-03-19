@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, Sparkles, Heart, ArrowRight, Search } from 'lucide-react';
 import { GeminiService } from '@/services/gemini';
 import { getSupabase } from '@/services/supabaseClient';
@@ -64,7 +64,6 @@ function detectMessageLanguage(input: string): 'ko' | 'en' {
 
 export function HueBot() {
   const [isOpen, setIsOpen] = useState(false);
-  const prefersReducedMotion = useReducedMotion();
   const [uiLanguage] = useState<'ko' | 'en'>(() => detectPreferredLanguage());
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -657,66 +656,14 @@ export function HueBot() {
         aria-expanded={isOpen}
         aria-controls="hue-bot-chat-panel"
       >
-        <motion.span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-[-12px] rounded-full"
-          style={{
-            background:
-              'radial-gradient(circle, rgba(255,176,82,0.26) 0%, rgba(244,96,107,0.18) 42%, rgba(66,117,229,0.10) 72%, rgba(94,213,196,0.00) 100%)',
-            filter: 'blur(8px)',
-          }}
-          animate={
-            prefersReducedMotion
-              ? { opacity: 0.55, scale: 1 }
-              : {
-                  opacity: [0.48, 0.82, 0.52],
-                  scale: [0.96, 1.16, 1.02],
-                }
-          }
-          transition={{
-            duration: isOpen ? 2.8 : 3.6,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
-        />
-        <motion.span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-[-22px] rounded-full"
-          style={{
-            background:
-              'radial-gradient(circle, rgba(66,117,229,0.16) 0%, rgba(94,213,196,0.10) 45%, rgba(255,255,255,0) 78%)',
-            filter: 'blur(14px)',
-          }}
-          animate={
-            prefersReducedMotion
-              ? { opacity: 0.34, scale: 1 }
-              : {
-                  opacity: [0.18, 0.46, 0.2],
-                  scale: [0.9, 1.22, 1.02],
-                }
-          }
-          transition={{
-            duration: isOpen ? 3.4 : 4.2,
-            repeat: Infinity,
-            ease: 'easeInOut',
-            delay: 0.2,
-          }}
-        />
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-[3px] rounded-full"
-          style={{
-            background: 'linear-gradient(145deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06))',
-          }}
-        />
         {isOpen ? (
-          <X className="relative z-[1] w-6 h-6 text-white" />
+          <X className="w-6 h-6 text-white" />
         ) : (
-          <Heart className="relative z-[1] w-6 h-6 text-white" />
+          <Heart className="w-6 h-6 text-white" />
         )}
 
         {showNotification && !isOpen && !isPeripheralNudgeVisible && (
-          <span className="absolute -top-1 -right-1 z-[1] w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
         )}
       </button>
     </div>
