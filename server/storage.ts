@@ -928,6 +928,17 @@ export class SupabaseStorage implements IStorage {
     return /row-level security|violates row-level security policy/i.test(message);
   }
 
+  private isTransientUpstreamError(error: any): boolean {
+    const message = String(error?.message || "");
+    const details = String(error?.details || "");
+    const hint = String(error?.hint || "");
+    const status = Number(error?.status || error?.statusCode || 0);
+    const combined = `${message} ${details} ${hint}`.toLowerCase();
+
+    if (status >= 500) return true;
+    return /cloudflare|connection timed out|timeout|timed out|522|fetch failed|upstream|bad gateway|service unavailable|internal server error|unexpected token '<'/i.test(combined);
+  }
+
   private mapUserConsent(row: any): UserConsent {
     const createdAtValue = row?.created_at ?? row?.createdAt ?? new Date();
     return {
@@ -1376,7 +1387,7 @@ export class SupabaseStorage implements IStorage {
       this.fallbackReports.set(mapped.id, mapped);
       return mapped;
     }
-    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error) && !this.isTransientUpstreamError(error)) {
       throw error;
     }
     this.fallbackReports.set(fallback.id, fallback);
@@ -1393,7 +1404,7 @@ export class SupabaseStorage implements IStorage {
       mapped.forEach((row) => this.fallbackReports.set(String(row.id), row));
       return mapped;
     }
-    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error) && !this.isTransientUpstreamError(error)) {
       throw error;
     }
     return Array.from(this.fallbackReports.values())
@@ -1421,7 +1432,7 @@ export class SupabaseStorage implements IStorage {
       this.fallbackReports.set(String(mapped.id), mapped);
       return mapped;
     }
-    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error) && !this.isTransientUpstreamError(error)) {
       throw error;
     }
 
@@ -1595,7 +1606,7 @@ export class SupabaseStorage implements IStorage {
       return mapped;
     }
 
-    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error) && !this.isTransientUpstreamError(error)) {
       throw error;
     }
 
@@ -1974,10 +1985,10 @@ export class SupabaseStorage implements IStorage {
         this.fallbackUserComposedArticles.set(String(mapped.id), mapped);
         return mapped;
       }
-      if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+      if (error && !this.isMissingTableError(error) && !this.isRlsError(error) && !this.isTransientUpstreamError(error)) {
         throw error;
       }
-    } else if (currentError && !this.isMissingTableError(currentError) && !this.isRlsError(currentError)) {
+    } else if (currentError && !this.isMissingTableError(currentError) && !this.isRlsError(currentError) && !this.isTransientUpstreamError(currentError)) {
       throw currentError;
     }
 
@@ -2021,7 +2032,7 @@ export class SupabaseStorage implements IStorage {
         .filter((row) => (status ? String((row as any).submissionStatus || "pending") === status : true))
         .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     }
-    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error) && !this.isTransientUpstreamError(error)) {
       throw error;
     }
     return Array.from(this.fallbackUserComposedArticles.values())
@@ -2051,7 +2062,7 @@ export class SupabaseStorage implements IStorage {
     if (!existingError && existingRow) {
       const mappedExisting = this.mapUserComposedArticle(existingRow);
       this.fallbackUserComposedArticles.set(String(mappedExisting.id), mappedExisting);
-    } else if (existingError && !this.isMissingTableError(existingError) && !this.isRlsError(existingError)) {
+    } else if (existingError && !this.isMissingTableError(existingError) && !this.isRlsError(existingError) && !this.isTransientUpstreamError(existingError)) {
       throw existingError;
     }
 
@@ -2070,7 +2081,7 @@ export class SupabaseStorage implements IStorage {
     if (error && this.isRlsError(error)) {
       throw new Error("Admin reader article approval is blocked by Supabase RLS. Check SUPABASE_SERVICE_ROLE_KEY for backend writes.");
     }
-    if (error && !this.isMissingTableError(error)) {
+    if (error && !this.isMissingTableError(error) && !this.isTransientUpstreamError(error)) {
       throw error;
     }
 
@@ -2091,7 +2102,7 @@ export class SupabaseStorage implements IStorage {
     if (refreshedError && this.isRlsError(refreshedError)) {
       throw new Error("Admin reader article approval is blocked by Supabase RLS. Check SUPABASE_SERVICE_ROLE_KEY for backend writes.");
     }
-    if (refreshedError && !this.isMissingTableError(refreshedError)) {
+    if (refreshedError && !this.isMissingTableError(refreshedError) && !this.isTransientUpstreamError(refreshedError)) {
       throw refreshedError;
     }
 
@@ -2123,7 +2134,7 @@ export class SupabaseStorage implements IStorage {
       if (deleted) this.fallbackUserComposedArticles.delete(safeArticleId);
       return deleted;
     }
-    if (error && !this.isMissingTableError(error) && !this.isRlsError(error)) {
+    if (error && !this.isMissingTableError(error) && !this.isRlsError(error) && !this.isTransientUpstreamError(error)) {
       throw error;
     }
 

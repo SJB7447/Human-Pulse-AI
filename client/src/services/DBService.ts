@@ -342,6 +342,19 @@ const encodeHeaderValue = (value: unknown, maxLength: number): string => {
     }
 };
 
+const mergeComposedRows = (
+    primary: UserComposedArticleRecord[],
+    fallback: UserComposedArticleRecord[],
+): UserComposedArticleRecord[] => {
+    const merged = new Map<string, UserComposedArticleRecord>();
+    primary.forEach((row) => merged.set(row.id, row));
+    fallback.forEach((row) => {
+        if (!merged.has(row.id)) merged.set(row.id, row);
+    });
+    return Array.from(merged.values())
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+};
+
 const buildActorHeaders = (): Record<string, string> => {
     const actor = useEmotionStore.getState().user;
     if (!actor) return {};
@@ -1038,6 +1051,8 @@ export const DBService = {
 
     async getUserComposedArticles(userId: string): Promise<UserComposedArticleRecord[]> {
         if (!userId || typeof window === 'undefined') return [];
+        const storageKey = createComposedStorageKey(userId);
+        const cachedRows = parseComposedRows(window.localStorage.getItem(storageKey));
         try {
             const response = await fetch(`/api/mypage/composed-articles?userId=${encodeURIComponent(String(userId).trim())}`, {
                 headers: { Accept: 'application/json' },
@@ -1045,11 +1060,11 @@ export const DBService = {
             if (!response.ok) throw await createApiError(response, 'Failed to fetch composed articles');
             const payload = await response.json();
             const rows = parseComposedRows(JSON.stringify(payload));
-            window.localStorage.setItem(createComposedStorageKey(userId), JSON.stringify(rows));
-            return rows;
+            const mergedRows = rows.length > 0 ? mergeComposedRows(rows, cachedRows) : cachedRows;
+            window.localStorage.setItem(storageKey, JSON.stringify(mergedRows));
+            return mergedRows;
         } catch {
-            const raw = window.localStorage.getItem(createComposedStorageKey(userId));
-            return parseComposedRows(raw);
+            return cachedRows;
         }
     },
 
