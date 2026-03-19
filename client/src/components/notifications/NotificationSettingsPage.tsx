@@ -355,7 +355,7 @@ export function NotificationSettingsPage({ userId, role }: NotificationSettingsP
   const handleGlobalToggle = (checked: boolean) => {
     const patch: Partial<NotificationPrefs> = {};
     visibleKeys.forEach((key) => {
-      patch[key] = checked ? DEFAULT_NOTIFICATION_PREFS[key] : false;
+      patch[key] = checked;
     });
     void commitPatch(patch);
   };
