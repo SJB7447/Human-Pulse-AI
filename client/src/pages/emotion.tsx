@@ -182,7 +182,7 @@ export default function EmotionPage() {
   const [selectedCardBg, setSelectedCardBg] = useState<string>('rgba(255,255,255,0.96)');
   const [searchTerm, setSearchTerm] = useState('');
   const [topicFilter, setTopicFilter] = useState<ArticleTopicId | 'all'>('all');
-  const [sortKey, setSortKey] = useState<'latest'>('latest');
+  const [sortKey, setSortKey] = useState<'latest' | 'oldest' | 'title'>('latest');
   const [visibleCount, setVisibleCount] = useState(ARTICLES_PER_PAGE);
   const [showPeripheralNudge, setShowPeripheralNudge] = useState(false);
   const [expandPeripheralNudge, setExpandPeripheralNudge] = useState(false);
@@ -512,8 +512,17 @@ export default function EmotionPage() {
     }
 
     rows.sort((a, b) => {
+      if (sortKey === 'title') {
+        return String(a.title || '').localeCompare(String(b.title || ''), 'ko');
+      }
+
       const aTime = new Date(a.created_at || 0).getTime();
       const bTime = new Date(b.created_at || 0).getTime();
+
+      if (sortKey === 'oldest') {
+        return aTime - bTime;
+      }
+
       return bTime - aTime;
     });
 
@@ -704,17 +713,17 @@ export default function EmotionPage() {
                   data-testid="input-news-search-top"
                 />
               </div>
-              <div className="w-full lg:w-auto">
-                <div className="w-full rounded-[26px] bg-white/86 p-3 shadow-[0_18px_40px_rgba(35,34,33,0.06)] ring-1 ring-white/80 lg:min-w-[260px]">
-                  <select
-                    value={sortKey}
-                    onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-                    className="h-14 w-full rounded-[20px] bg-white/94 px-4 text-sm text-gray-800 shadow-[0_10px_22px_rgba(35,34,33,0.05)] focus:outline-none focus:ring-2 focus:ring-black/10"
-                    data-testid="select-news-sort"
-                  >
-                    <option value="latest">최신순</option>
-                  </select>
-                </div>
+              <div className="w-full lg:w-auto lg:min-w-[260px]">
+                <select
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+                  className="h-14 w-full rounded-[20px] bg-white/94 px-4 text-sm text-gray-800 shadow-[0_10px_22px_rgba(35,34,33,0.05)] focus:outline-none focus:ring-2 focus:ring-black/10"
+                  data-testid="select-news-sort"
+                >
+                  <option value="latest">최신순</option>
+                  <option value="oldest">오래된순</option>
+                  <option value="title">제목순</option>
+                </select>
               </div>
             </div>
           <p className="pt-2 text-center text-sm font-medium text-human-sub">
