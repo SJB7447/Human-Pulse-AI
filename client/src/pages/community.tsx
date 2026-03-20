@@ -89,7 +89,6 @@ export default function CommunityPage() {
   const [likingPostId, setLikingPostId] = useState<string | null>(null);
   const [commentSort, setCommentSort] = useState<'latest' | 'popular'>('latest');
   const [editingPost, setEditingPost] = useState<CommunityItem | null>(null);
-  const [editSummary, setEditSummary] = useState('');
   const [editContent, setEditContent] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [lastPublishedLink, setLastPublishedLink] = useState('');
@@ -407,6 +406,7 @@ export default function CommunityPage() {
 
         return searchableText.includes(normalizedSearch);
       })
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
       .slice(0, 24);
   }, [feedCategoryFilter, feedEmotionFilter, feedSearchQuery, items]);
   const sortedComments = useMemo(() => {
@@ -487,16 +487,15 @@ export default function CommunityPage() {
 
   const openEditDialog = (item: CommunityItem) => {
     setEditingPost(item);
-    setEditSummary(String(item.excerpt || '').trim());
     setEditContent(String(item.content || item.excerpt || '').trim());
   };
 
   const handleSavePostEdit = async () => {
     if (!editingPost) return;
-    if (!editSummary.trim() && !editContent.trim()) {
+    if (!editContent.trim()) {
       toast({
         title: '수정 실패',
-        description: '요약 또는 본문을 입력해 주세요.',
+        description: '본문을 입력해 주세요.',
         variant: 'destructive',
       });
       return;
@@ -505,7 +504,6 @@ export default function CommunityPage() {
     setSavingEdit(true);
     try {
       const updated = await DBService.updateCommunityPost(editingPost.id, {
-        summary: editSummary.trim(),
         content: editContent.trim(),
       });
       setItems((prev) => prev.map((row) => (row.id === editingPost.id ? { ...row, ...(updated as CommunityItem) } : row)));
@@ -513,7 +511,7 @@ export default function CommunityPage() {
       setEditingPost(null);
       toast({
         title: '수정 완료',
-        description: '본문/요약/수정시각이 반영되었습니다.',
+        description: '본문과 수정시각이 반영되었습니다.',
       });
     } catch (e: any) {
       toast({
@@ -1134,15 +1132,6 @@ export default function CommunityPage() {
               <DialogTitle>커뮤니티 글 수정</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
-              <div>
-                <label className="text-xs text-gray-600">요약</label>
-                <textarea
-                  value={editSummary}
-                  onChange={(e) => setEditSummary(e.target.value)}
-                  className="mt-1 min-h-[88px] w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                  maxLength={1000}
-                />
-              </div>
               <div>
                 <label className="text-xs text-gray-600">본문</label>
                 <textarea
