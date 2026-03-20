@@ -112,6 +112,12 @@ export default function MyPage() {
   const [publishedArticles, setPublishedArticles] = useState<MyPagePublishedArticleRecord[]>([]);
   const [publishedArticlesLoading, setPublishedArticlesLoading] = useState(false);
   const [publishedArticlesError, setPublishedArticlesError] = useState('');
+  const [expandedPublishedArticleId, setExpandedPublishedArticleId] = useState<string | null>(null);
+  const [editingPublishedArticleId, setEditingPublishedArticleId] = useState<string | null>(null);
+  const [editingPublishedTitle, setEditingPublishedTitle] = useState('');
+  const [editingPublishedSummary, setEditingPublishedSummary] = useState('');
+  const [editingPublishedContent, setEditingPublishedContent] = useState('');
+  const [savingPublishedEdit, setSavingPublishedEdit] = useState(false);
   const [expandedComposedArticleId, setExpandedComposedArticleId] = useState<string | null>(null);
   const [editingComposedArticleId, setEditingComposedArticleId] = useState<string | null>(null);
   const [editingComposedTitle, setEditingComposedTitle] = useState('');
@@ -376,6 +382,75 @@ export default function MyPage() {
     } catch (error: any) {
       toast({
         title: '재승인 요청 실패',
+        description: error?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleStartEditPublished = (article: MyPagePublishedArticleRecord) => {
+    setExpandedPublishedArticleId(article.id);
+    setEditingPublishedArticleId(article.id);
+    setEditingPublishedTitle(article.title);
+    setEditingPublishedSummary(article.summary);
+    setEditingPublishedContent(article.content);
+  };
+
+  const handleSavePublishedEdit = async () => {
+    if (!editingPublishedArticleId) return;
+    const nextTitle = editingPublishedTitle.trim();
+    const nextSummary = editingPublishedSummary.trim();
+    const nextContent = editingPublishedContent.trim();
+    if (!nextTitle || !nextContent) {
+      toast({
+        title: '입력 필요',
+        description: '제목과 본문을 모두 입력해 주세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingPublishedEdit(true);
+    try {
+      const updated = await DBService.updateArticle(editingPublishedArticleId, {
+        title: nextTitle,
+        summary: nextSummary || nextContent.replace(/\s+/g, ' ').slice(0, 220),
+        content: nextContent,
+      });
+      const normalized = normalizePublishedArticleRecord(updated);
+      if (normalized) {
+        setPublishedArticles((prev) => [normalized, ...prev.filter((row) => row.id !== normalized.id)]);
+      }
+      setEditingPublishedArticleId(null);
+      toast({
+        title: '게시 기사 수정 완료',
+        description: '마이페이지 게시 기사 목록에 변경사항이 반영되었습니다.',
+      });
+    } catch (error: any) {
+      toast({
+        title: '게시 기사 수정 실패',
+        description: error?.message || '잠시 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingPublishedEdit(false);
+    }
+  };
+
+  const handleDeletePublishedArticle = async (articleId: string) => {
+    if (!confirm('정말로 이 게시 기사를 삭제하시겠습니까?')) return;
+    try {
+      await DBService.deleteArticle(articleId);
+      setPublishedArticles((prev) => prev.filter((row) => row.id !== articleId));
+      setExpandedPublishedArticleId((prev) => (prev === articleId ? null : prev));
+      setEditingPublishedArticleId((prev) => (prev === articleId ? null : prev));
+      toast({
+        title: '게시 기사 삭제 완료',
+        description: '마이페이지 게시 기사 목록에서 제거되었습니다.',
+      });
+    } catch (error: any) {
+      toast({
+        title: '게시 기사 삭제 실패',
         description: error?.message || '잠시 후 다시 시도해 주세요.',
         variant: 'destructive',
       });
@@ -1051,49 +1126,135 @@ export default function MyPage() {
                       className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 group overflow-visible hover-elevate"
                       data-testid={`published-article-${article.id}`}
                     >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl"
-                          style={{ backgroundColor: `${getEmotionColor(article.emotion)}20` }}
-                        >
-                          <Sparkles className="h-5 w-5" style={{ color: getEmotionColor(article.emotion) }} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${article.isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                              {article.isPublished ? '발행됨' : '숨김'}
-                            </span>
-                            <span
-                              className="text-xs px-2 py-0.5 rounded-full"
-                              style={{
-                                backgroundColor: `${getEmotionColor(article.emotion)}20`,
-                                color: getEmotionColor(article.emotion),
-                              }}
-                            >
-                              {EMOTION_CONFIG.find((e) => e.type === article.emotion)?.labelKo || article.emotion}
-                            </span>
-                            {article.category ? (
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                                {article.category}
-                              </span>
-                            ) : null}
-                            <span className="text-xs text-gray-400">
-                              {article.createdAt ? new Date(article.createdAt).toLocaleString() : '작성 시각 미확인'}
-                            </span>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <div
+                            className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl"
+                            style={{ backgroundColor: `${getEmotionColor(article.emotion)}20` }}
+                          >
+                            <Sparkles className="h-5 w-5" style={{ color: getEmotionColor(article.emotion) }} />
                           </div>
-                          <p className="mt-3 font-medium text-gray-800">
-                            {article.title}
-                          </p>
-                          <p className="mt-1 text-sm text-gray-600 leading-relaxed line-clamp-2">
-                            {article.summary || article.content || '기사 요약이 없습니다.'}
-                          </p>
-                          {article.authorName ? (
-                            <p className="mt-2 text-[11px] text-gray-500">
-                              작성자: {article.authorName}
-                            </p>
-                          ) : null}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${article.isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {article.isPublished ? '발행됨' : '숨김'}
+                              </span>
+                              <span
+                                className="text-xs px-2 py-0.5 rounded-full"
+                                style={{
+                                  backgroundColor: `${getEmotionColor(article.emotion)}20`,
+                                  color: getEmotionColor(article.emotion),
+                                }}
+                              >
+                                {EMOTION_CONFIG.find((e) => e.type === article.emotion)?.labelKo || article.emotion}
+                              </span>
+                              {article.category ? (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                  {article.category}
+                                </span>
+                              ) : null}
+                              <span className="text-xs text-gray-400">
+                                {article.createdAt ? new Date(article.createdAt).toLocaleString() : '작성 시각 미확인'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="mt-3 text-left font-medium text-gray-800 hover:underline"
+                              onClick={() => setExpandedPublishedArticleId((prev) => (prev === article.id ? null : article.id))}
+                            >
+                              {article.title}
+                            </button>
+                            <button
+                              type="button"
+                              className="mt-1 text-left text-sm text-gray-600 leading-relaxed line-clamp-2 hover:text-gray-800"
+                              onClick={() => setExpandedPublishedArticleId((prev) => (prev === article.id ? null : article.id))}
+                            >
+                              {article.summary || article.content || '기사 요약이 없습니다.'}
+                            </button>
+                            {article.authorName ? (
+                              <p className="mt-2 text-[11px] text-gray-500">
+                                작성자: {article.authorName}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            data-testid={`button-view-published-${article.id}`}
+                            onClick={() => setExpandedPublishedArticleId((prev) => (prev === article.id ? null : article.id))}
+                          >
+                            <Eye className="w-4 h-4 text-gray-500" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            data-testid={`button-edit-published-${article.id}`}
+                            onClick={() => handleStartEditPublished(article)}
+                          >
+                            <Edit className="w-4 h-4 text-gray-500" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            data-testid={`button-delete-published-${article.id}`}
+                            onClick={() => void handleDeletePublishedArticle(article.id)}
+                          >
+                            <Trash2 className="w-4 h-4 text-red-400" />
+                          </Button>
                         </div>
                       </div>
+                      {expandedPublishedArticleId === article.id ? (
+                        <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
+                          {editingPublishedArticleId === article.id ? (
+                            <>
+                              <input
+                                value={editingPublishedTitle}
+                                onChange={(e) => setEditingPublishedTitle(e.target.value)}
+                                className="w-full h-10 rounded-md border border-gray-300 bg-white px-3 text-sm"
+                                placeholder="기사 제목"
+                              />
+                              <input
+                                value={editingPublishedSummary}
+                                onChange={(e) => setEditingPublishedSummary(e.target.value)}
+                                className="w-full h-10 rounded-md border border-gray-300 bg-white px-3 text-sm"
+                                placeholder="기사 요약"
+                              />
+                              <textarea
+                                value={editingPublishedContent}
+                                onChange={(e) => setEditingPublishedContent(e.target.value)}
+                                className="w-full min-h-[220px] rounded-md border border-gray-300 bg-white p-3 text-sm leading-relaxed"
+                                placeholder="기사 본문"
+                              />
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setEditingPublishedArticleId(null)}
+                                  disabled={savingPublishedEdit}
+                                >
+                                  취소
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => void handleSavePublishedEdit()}
+                                  disabled={savingPublishedEdit}
+                                >
+                                  저장
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-xs text-gray-500">기사 전체 보기</p>
+                              <p className="whitespace-pre-wrap text-sm text-gray-700 leading-relaxed">
+                                {article.content || article.summary || '기사 본문이 없습니다.'}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
