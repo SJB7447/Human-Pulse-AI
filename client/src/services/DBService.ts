@@ -655,7 +655,9 @@ export const DBService = {
 
     async getAdminReaderArticles(status?: 'pending' | 'approved' | 'rejected') {
         const search = status ? `?status=${encodeURIComponent(status)}` : '';
-        const response = await fetch(`/api/admin/reader-articles${search}`);
+        const response = await fetch(`/api/admin/reader-articles${search}`, {
+            headers: buildActorHeaders(),
+        });
         if (!response.ok) throw await createApiError(response, 'Failed to fetch reader articles');
         return parseComposedRows(JSON.stringify(await response.json()));
     },

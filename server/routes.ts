@@ -6081,9 +6081,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         : undefined;
       const rows = await storage.getReaderComposedArticles(status);
       return res.json(rows);
-    } catch (error) {
+    } catch (error: any) {
       console.error("[API] /api/admin/reader-articles failed:", error);
-      return res.status(500).json({ error: "Failed to load reader articles." });
+      return res.status(Number(error?.status) || 500).json({
+        error: Number(error?.status) === 403 ? "관리자 권한이 필요합니다." : "Failed to load reader articles.",
+      });
     }
   });
 
@@ -6126,9 +6128,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       }
 
       return res.json(updated);
-    } catch (error) {
+    } catch (error: any) {
       console.error("[API] /api/admin/reader-articles/:id/decision failed:", error);
-      return res.status(500).json({ error: "Failed to update reader article decision." });
+      return res.status(Number(error?.status) || 500).json({
+        error: Number(error?.status) === 403 ? "관리자 권한이 필요합니다." : "Failed to update reader article decision.",
+      });
     }
   });
 
@@ -6157,9 +6161,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       );
 
       return res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("[API] /api/admin/reader-articles/:id delete failed:", error);
-      return res.status(500).json({ error: "Failed to delete reader article." });
+      return res.status(Number(error?.status) || 500).json({
+        error: Number(error?.status) === 403 ? "관리자 권한이 필요합니다." : "Failed to delete reader article.",
+      });
     }
   });
 
