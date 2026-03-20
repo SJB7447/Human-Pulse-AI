@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Link, useLocation } from 'wouter';
+import { useLocation } from 'wouter';
 import { User, Bookmark, Sparkles, Edit, Trash2, Eye, Settings, Lightbulb, Share2, MessageSquare, Loader2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { GlassButton } from '@/components/ui/glass-button';
@@ -19,6 +19,17 @@ type InsightCategoryKey = 'all' | 'growth' | 'empathy' | 'vitality' | 'discomfor
 type MyPageNotificationAuth = {
   userId: string;
   role: 'general' | 'journalist' | 'admin';
+};
+type MyPagePublishedArticleRecord = {
+  id: string;
+  title: string;
+  summary: string;
+  content: string;
+  category: string;
+  emotion: string;
+  isPublished: boolean;
+  createdAt: string;
+  authorName: string;
 };
 
 const INSIGHT_CATEGORY_LABEL: Record<InsightCategoryKey, string> = {
@@ -66,6 +77,23 @@ const INSIGHT_GROUP_COLOR: Record<Exclude<InsightCategoryKey, 'all' | 'untagged'
   action: '#4f89de',
 };
 
+const normalizePublishedArticleRecord = (row: any): MyPagePublishedArticleRecord | null => {
+  const id = String(row?.id || '').trim();
+  const title = String(row?.title || '').trim();
+  if (!id || !title) return null;
+  return {
+    id,
+    title,
+    summary: String(row?.summary || '').trim(),
+    content: String(row?.content || '').trim(),
+    category: String(row?.category || '').trim(),
+    emotion: String(row?.emotion || '').trim().toLowerCase() || 'spectrum',
+    isPublished: row?.is_published !== false && row?.isPublished !== false,
+    createdAt: String(row?.created_at || row?.createdAt || '').trim(),
+    authorName: String(row?.authorName || row?.author_name || '').trim(),
+  };
+};
+
 export default function MyPage() {
   const { user } = useEmotionStore();
   const [currentLocation, setLocation] = useLocation();
@@ -81,6 +109,9 @@ export default function MyPage() {
   const [insightLoading, setInsightLoading] = useState(false);
   const [composedArticles, setComposedArticles] = useState<UserComposedArticleRecord[]>([]);
   const [composedLoading, setComposedLoading] = useState(false);
+  const [publishedArticles, setPublishedArticles] = useState<MyPagePublishedArticleRecord[]>([]);
+  const [publishedArticlesLoading, setPublishedArticlesLoading] = useState(false);
+  const [publishedArticlesError, setPublishedArticlesError] = useState('');
   const [expandedComposedArticleId, setExpandedComposedArticleId] = useState<string | null>(null);
   const [editingComposedArticleId, setEditingComposedArticleId] = useState<string | null>(null);
   const [editingComposedTitle, setEditingComposedTitle] = useState('');
@@ -93,6 +124,8 @@ export default function MyPage() {
   const [notificationAuthLoading, setNotificationAuthLoading] = useState(true);
 
   const socialOwnerId = String(user?.id || 'guest');
+  const effectiveRole = notificationAuth?.role || user?.role || 'general';
+  const canViewPublishedArticles = effectiveRole === 'journalist' || effectiveRole === 'admin';
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -179,6 +212,49 @@ export default function MyPage() {
       mounted = false;
     };
   }, [socialOwnerId]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!canViewPublishedArticles || !socialOwnerId || socialOwnerId === 'guest') {
+      setPublishedArticles([]);
+      setPublishedArticlesError('');
+      setPublishedArticlesLoading(false);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    const loadPublishedArticles = async () => {
+      setPublishedArticlesLoading(true);
+      setPublishedArticlesError('');
+      try {
+        const authorNames = [userInfo.name, user?.name].filter((value): value is string => Boolean(value && value.trim()));
+        const authorEmails = [userInfo.email, user?.email].filter((value): value is string => Boolean(value && value.trim()));
+        const rows = await DBService.getMyArticles(socialOwnerId, {
+          authorNames,
+          authorEmails,
+        });
+        if (!mounted) return;
+        const normalized = rows
+          .map((row: any) => normalizePublishedArticleRecord(row))
+          .filter((row: MyPagePublishedArticleRecord | null): row is MyPagePublishedArticleRecord => Boolean(row))
+          .sort((a: MyPagePublishedArticleRecord, b: MyPagePublishedArticleRecord) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setPublishedArticles(normalized);
+      } catch (error: any) {
+        if (!mounted) return;
+        setPublishedArticles([]);
+        setPublishedArticlesError(error?.message || '뉴스에 올린 기사 목록을 불러오지 못했습니다.');
+      } finally {
+        if (mounted) setPublishedArticlesLoading(false);
+      }
+    };
+
+    void loadPublishedArticles();
+    return () => {
+      mounted = false;
+    };
+  }, [canViewPublishedArticles, socialOwnerId, user?.email, user?.name, userInfo.email, userInfo.name]);
 
   useEffect(() => {
     let mounted = true;
@@ -769,11 +845,25 @@ export default function MyPage() {
           )}
 
           {activeTab === 'custom' && (
-            <div className="space-y-3">
+            <div className="space-y-4">
+              <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">내가 저장한 생성 기사</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      독자 의견 기반으로 저장한 AI 생성 기사입니다. 기존 수정, 삭제, 재승인 요청 흐름은 그대로 유지됩니다.
+                    </p>
+                  </div>
+                  <span className="inline-flex items-center rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                    생성 기사 {composedArticles.length}
+                  </span>
+                </div>
+              </div>
+
               {composedLoading ? (
                 <div className="bg-white rounded-xl p-8 border border-gray-100 flex items-center justify-center gap-2 text-gray-500">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  불러오는 중...
+                  생성 기사 불러오는 중...
                 </div>
               ) : composedArticles.length === 0 ? (
                 <div className="bg-white rounded-xl p-8 border border-gray-100 text-center text-gray-500">
@@ -924,6 +1014,90 @@ export default function MyPage() {
                   )}
                 </div>
               ))}
+
+              {canViewPublishedArticles ? (
+                <div className="space-y-3">
+                  <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-800">내가 뉴스에 올린 기사</h3>
+                        <p className="mt-1 text-sm text-gray-500">
+                          기자단과 관리자 계정에서만 보이는 섹션입니다. 서비스에 실제로 등록된 본인 기사만 별도로 모아 보여줍니다.
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                        게시 기사 {publishedArticles.length}
+                      </span>
+                    </div>
+                  </div>
+
+                  {publishedArticlesLoading ? (
+                    <div className="bg-white rounded-xl p-8 border border-gray-100 flex items-center justify-center gap-2 text-gray-500">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      게시 기사 불러오는 중...
+                    </div>
+                  ) : publishedArticlesError ? (
+                    <InlineSectionError
+                      title="게시 기사 로딩 실패"
+                      message={publishedArticlesError}
+                    />
+                  ) : publishedArticles.length === 0 ? (
+                    <div className="bg-white rounded-xl p-8 border border-gray-100 text-center text-gray-500">
+                      이 계정으로 게시한 뉴스 기사가 아직 없습니다.
+                    </div>
+                  ) : publishedArticles.map((article) => (
+                    <div
+                      key={`published-article-${article.id}`}
+                      className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 group overflow-visible hover-elevate"
+                      data-testid={`published-article-${article.id}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl"
+                          style={{ backgroundColor: `${getEmotionColor(article.emotion)}20` }}
+                        >
+                          <Sparkles className="h-5 w-5" style={{ color: getEmotionColor(article.emotion) }} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${article.isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {article.isPublished ? '발행됨' : '숨김'}
+                            </span>
+                            <span
+                              className="text-xs px-2 py-0.5 rounded-full"
+                              style={{
+                                backgroundColor: `${getEmotionColor(article.emotion)}20`,
+                                color: getEmotionColor(article.emotion),
+                              }}
+                            >
+                              {EMOTION_CONFIG.find((e) => e.type === article.emotion)?.labelKo || article.emotion}
+                            </span>
+                            {article.category ? (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                                {article.category}
+                              </span>
+                            ) : null}
+                            <span className="text-xs text-gray-400">
+                              {article.createdAt ? new Date(article.createdAt).toLocaleString() : '작성 시각 미확인'}
+                            </span>
+                          </div>
+                          <p className="mt-3 font-medium text-gray-800">
+                            {article.title}
+                          </p>
+                          <p className="mt-1 text-sm text-gray-600 leading-relaxed line-clamp-2">
+                            {article.summary || article.content || '기사 요약이 없습니다.'}
+                          </p>
+                          {article.authorName ? (
+                            <p className="mt-2 text-[11px] text-gray-500">
+                              작성자: {article.authorName}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -956,6 +1130,18 @@ export default function MyPage() {
           )}
         </motion.div>
       </main>
+    </div>
+  );
+}
+
+function InlineSectionError({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-4">
+      <p className="text-sm font-semibold text-rose-900">{title}</p>
+      <p className="mt-1 text-sm text-rose-700">{message}</p>
+      <p className="mt-2 text-[11px] text-rose-600">
+        다른 섹션은 계속 사용할 수 있습니다.
+      </p>
     </div>
   );
 }
