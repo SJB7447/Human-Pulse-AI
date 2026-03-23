@@ -250,38 +250,6 @@ const REVIEW_SLA_TARGET_HOURS = 24;
 const NEWS_LIST_CACHE_TTL_MS = 15_000;
 const ADMIN_STATS_CACHE_TTL_MS = 30_000;
 
-type DemoNewsSeedInput = {
-  id: string;
-  title: string;
-  summary: string;
-  content: string;
-  source: string;
-  image: string;
-  category: string;
-  emotion: EmotionType;
-  intensity: number;
-};
-
-const buildDemoNewsSeedItems = (): NewsItem[] =>
-  DEMO_NEWS_SEED_DATA.map((item, index) => ({
-    id: item.id,
-    title: item.title,
-    summary: item.summary,
-    content: item.content,
-    source: item.source,
-    image: item.image,
-    category: item.category,
-    emotion: item.emotion,
-    intensity: item.intensity,
-    views: 180 + index * 23,
-    saves: 12 + (index % 5) * 4,
-    platforms: ["interactive"],
-    isPublished: true,
-    authorId: null,
-    authorName: "HueBrief Demo Seed",
-    createdAt: new Date(Date.now() - index * 1000 * 60 * 90),
-  })) as NewsItem[];
-
 const NEWS_LIST_SELECT =
   "id,title,summary,content,source,image,category,emotion,intensity,views,saves,platforms,is_published,author_id,author_name,created_at";
 const ADMIN_STATS_NEWS_SELECT =
@@ -406,11 +374,6 @@ export class MemStorage implements IStorage {
     this.seedNews();
   }
 
-  private seedNews() {
-    buildDemoNewsSeedItems().forEach((item) => {
-      this.newsItems.set(item.id, item);
-    });
-  }
 
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
@@ -541,16 +504,6 @@ export class MemStorage implements IStorage {
     }
   }
 
-  async toggleSave(id: string, userId: string): Promise<boolean> {
-    // Mock logic: just increment saves count on item for demo
-    const item = this.newsItems.get(id);
-    if (item) {
-      item.saves = (item.saves || 0) + 1;
-      this.newsItems.set(id, item);
-      return true;
-    }
-    return false;
-  }
 
   async createReport(articleId: string, reason: string): Promise<Report> {
     const id = randomUUID();
@@ -829,11 +782,6 @@ export class SupabaseStorage implements IStorage {
   private readCache: Map<string, { expiresAt: number; value: unknown }> = new Map();
   private readCacheInflight: Map<string, Promise<unknown>> = new Map();
 
-  constructor() {
-    buildDemoNewsSeedItems().forEach((item) => {
-      this.fallbackNews.set(item.id, item);
-    });
-  }
 
   private invalidateCache(...prefixes: string[]): void {
     if (prefixes.length === 0) return;
